@@ -1,0 +1,8 @@
+<dashboard theme="light" script="js/assetdb.js">
+  <label>Configure</label>
+  <row>
+    <html>
+      <div id="ab_config"></div>
+    </html>
+  </row>
+</dashboard>
