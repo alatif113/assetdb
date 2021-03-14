@@ -14,3 +14,18 @@ modtime = 1614471917.599945000
 [transforms/asset_db]
 version = 8.1.2
 modtime = 1613606732.775039000
+
+[assetdb/test]
+owner = admin
+version = 8.1.2
+modtime = 1615699050.610762000
+
+[assetdb/nt_host]
+owner = admin
+version = 8.1.2
+modtime = 1615699223.835950000
+
+[assetdb/new_field]
+owner = admin
+version = 8.1.2
+modtime = 1615700124.879182000
