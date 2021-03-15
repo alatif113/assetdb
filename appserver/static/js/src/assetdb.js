@@ -195,7 +195,7 @@ require([
 					type: typeInput.getValue(),
 					merge_method: mergeMethodInput.getValue(),
 					merge_order: mergeOrderInput.getValue(),
-					max_values: spinnerInput.getValue(),
+					max_values: spinnerInput.getValue() || 2,
 					eval_expression: evalExpInput.getValue(),
 				};
 
