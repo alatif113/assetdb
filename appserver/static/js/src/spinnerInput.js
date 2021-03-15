@@ -47,7 +47,7 @@ define(function (require, exports, module) {
 		}
 
 		getValue() {
-			return $('input', this.$input).val();
+			return parseInt($('input', this.$input).val());
 		}
 
 		getInput() {

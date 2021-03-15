@@ -13,24 +13,24 @@ require([
 	'splunkjs/mvc/simplexml/ready!',
 ], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput) {
 	$el = $('#ab_config');
-	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
-	var service = mvc.createService();
+	const ENDPOINT_BASE = '/SERVICEsNS/nobody/assetdb/configs/';
+	const SERVICE = mvc.createService();
 
-	function getConf(service, endpoint) {
+	function getConf(endpoint) {
 		let path = ENDPOINT_BASE + endpoint;
-		let deferred = service.get(path, {}, function (err, results) {});
+		let deferred = SERVICE.get(path, {}, function (err, results) {});
 		return deferred.promise();
 	}
 
-	function setConf(service, endpoint, data) {
+	function setConf(endpoint, data) {
 		let path = ENDPOINT_BASE + endpoint;
-		let deferred = service.post(path, data, function (err, results) {});
+		let deferred = SERVICE.post(path, data, function (err, results) {});
 		return deferred.promise();
 	}
 
-	function delConf(service, endpoint) {
+	function delConf(endpoint) {
 		let path = ENDPOINT_BASE + endpoint;
-		let deferred = service.del(path, function (err, results) {
+		let deferred = SERVICE.del(path, function (err, results) {
 			deferred.resolve(results);
 		});
 		return deferred.promise();
@@ -131,7 +131,6 @@ require([
 			help: 'An SPL eval expression, example: replace(field1, "[^w]", "")',
 		});
 
-		// Form
 		$form = $(`
             <div class="form-horizontal">
                 <div class="input-group-base"></div>
@@ -149,12 +148,9 @@ require([
 			.append(typeInput.getInput());
 
 		$('.input-group-single', $form).append(mergeMethodInput.getInput()).append(mergeOrderInput.getInput());
-
 		$('.input-group-multivalue', $form).append(spinnerInput.getInput());
-
 		$('.input-group-eval', $form).append(evalExpInput.getInput());
 
-		// Form section visibility
 		let type = typeInput.getValue();
 		$('.input-group-toggle', $form).hide();
 		$(`.input-group-${type}`, $form).show();
@@ -173,18 +169,23 @@ require([
 			data.value == 'latest' ? $input.hide() : $input.show();
 		});
 
-		// Modal
 		let editAddModal = new Modal({
 			wide: true,
 			title: field ? 'Edit Field' : 'Add Field',
 			primaryButton: 'Save',
 			onRemove: function () {
-				console.log(mergeOrderInput.getId());
 				mvc.Components.getInstance(mergeOrderInput.getId()).dispose();
 			},
 			onPrimaryBtnClick: function () {
+				if (fieldNameInput.isEditable()) {
+					let pattern = /^\w+$/;
+					if (!pattern.test(fieldNameInput.getValue())) {
+						fieldNameInput.setError('Field name can only use alphanumeric characters and underscores');
+						return;
+					}
+				}
+
 				let endpoint = 'conf-assetdb/';
-				console.log(mergeOrderInput.getValue());
 
 				let data = {
 					key_field: keyFieldInput.getValue(),
@@ -204,14 +205,30 @@ require([
 					endpoint += fieldNameInput.getValue();
 				}
 
-				setConf(service, endpoint, data);
+				setConf(endpoint, data);
 				this.hide();
 			},
 		});
 
-		// Set form body and show
 		editAddModal.setBody($form);
 		editAddModal.show();
+	}
+
+	function deleteField(name) {
+		let deleteModal = new Modal({
+			wide: false,
+			title: 'Delete Field',
+			primaryButton: 'Delete',
+			onPrimaryBtnClick: function () {
+				let endpoint = 'conf-assetdb/' + name;
+				delConf(endpoint);
+				this.hide();
+			},
+		});
+
+		let $body = $(`<div>Are you sure you want to delete field ${name}?</div>`);
+		deleteModal.setBody($body);
+		deleteModal.show();
 	}
 
 	$button = $('<button class="button">Click Me!</button>');

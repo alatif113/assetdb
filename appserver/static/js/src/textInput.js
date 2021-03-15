@@ -40,6 +40,12 @@ define(function (require, exports, module) {
 		isEditable() {
 			return this.editable;
 		}
+
+		setError(error) {
+			$('.error-block', this.$input).remove();
+			let $error = $(`<div class="error-block">${error}</div>`);
+			this.$input.append($error);
+		}
 	}
 
 	return TextInput;
