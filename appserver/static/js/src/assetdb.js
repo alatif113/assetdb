@@ -5,11 +5,11 @@ require([
 	'jquery',
 	'splunkjs/mvc',
 	'splunkjs/mvc/searchmanager',
-	'/static/app/assetdb/js/modal.js',
-	'/static/app/assetdb/js/textInput.js',
-	'/static/app/assetdb/js/radioInput.js',
-	'/static/app/assetdb/js/spinnerInput.js',
-	'/static/app/assetdb/js/multiselectInput.js',
+	'/static/app/assetdb/js/modal.min.js',
+	'/static/app/assetdb/js/textInput.min.js',
+	'/static/app/assetdb/js/radioInput.min.js',
+	'/static/app/assetdb/js/spinnerInput.min.js',
+	'/static/app/assetdb/js/multiselectInput.min.js',
 	'splunkjs/mvc/simplexml/ready!',
 ], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput) {
 	$el = $('#ab_config');

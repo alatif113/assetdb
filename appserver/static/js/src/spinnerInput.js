@@ -24,7 +24,7 @@ define(function (require, exports, module) {
                     </div>
                 </div>`);
 
-			$('.increment-up', this.$input).click(function () {
+			$('.increment-up', this.$input).on('click', (e) => {
 				let $text_input = $('input', this.$input);
 				let current_val = parseInt($text_input.val()) || 2;
 				let target_val = (current_val += 1);
@@ -32,7 +32,7 @@ define(function (require, exports, module) {
 				return false;
 			});
 
-			$('.increment-down', this.$input).click(function () {
+			$('.increment-down', this.$input).on('click', (e) => {
 				let $text_input = $('input', this.$input);
 				let current_val = parseInt($text_input.val()) || 2;
 				let target_val = Math.max(2, (current_val -= 1));

@@ -1,27 +1,29 @@
 {
-  "name": "assetdb",
-  "version": "1.0.0",
-  "description": "",
-  "main": "assetdb.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/alatif113/assetdb.git"
-  },
-  "author": "Mohammed Latif",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/alatif113/assetdb/issues"
-  },
-  "homepage": "https://github.com/alatif113/assetdb#readme",
-  "dependencies": {
-    "babel-cli": "^6.26.0"
-  },
-  "devDependencies": {
-    "@babel/cli": "^7.13.10",
-    "@babel/core": "^7.13.10",
-    "@babel/preset-env": "^7.13.10"
-  }
+	"name": "assetdb",
+	"version": "1.0.0",
+	"description": "",
+	"main": "assetdb.js",
+	"scripts": {
+		"build": "babel appserver/static/js/src -d appserver/static/js --source-maps inline",
+		"minify": "cd appserver/static/js; rm *.min.js > /dev/null; for f in *.js; do short=${f%.js}; terser $short.js --compress --mangle --source-map \"content=inline\" --output $short.min.js; rm $short.js; done;"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/alatif113/assetdb.git"
+	},
+	"author": "Mohammed Latif",
+	"license": "ISC",
+	"bugs": {
+		"url": "https://github.com/alatif113/assetdb/issues"
+	},
+	"homepage": "https://github.com/alatif113/assetdb#readme",
+	"dependencies": {
+		"babel-cli": "^6.26.0",
+		"terser": "^5.6.0"
+	},
+	"devDependencies": {
+		"@babel/cli": "^7.13.10",
+		"@babel/core": "^7.13.10",
+		"@babel/preset-env": "^7.13.10"
+	}
 }
