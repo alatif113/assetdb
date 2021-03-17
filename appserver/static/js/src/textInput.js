@@ -21,7 +21,7 @@ define(function (require, exports, module) {
                     </div>
                 </div>`);
 
-			this.editable = data.editable;
+			this.editable = data.editable || data.editable == undefined ? true : false;
 
 			if (data.help) {
 				let $help = $(`<div class="help-block">${data.help}</div>`);

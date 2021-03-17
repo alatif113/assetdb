@@ -1,0 +1,20 @@
+.disabled .controls {
+	pointer-events: none;
+	opacity: 0.5;
+}
+
+.more-info {
+	margin-top: 10px;
+}
+
+.key-tag {
+	padding: 4px 6px;
+	background: #3c454d;
+	font-size: 10px;
+	color: #fff;
+	margin-left: 5px;
+	border-radius: 3px;
+	font-weight: bold;
+	vertical-align: top;
+	text-transform: uppercase;
+}

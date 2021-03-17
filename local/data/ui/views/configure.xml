@@ -1,4 +1,4 @@
-<dashboard theme="light" script="js/assetdb.min.js">
+<dashboard theme="light" script="js/assetdb.min.js" stylesheet="css/assetdb.css">
   <label>Configure</label>
   <row>
     <html>

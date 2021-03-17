@@ -13,7 +13,7 @@ require([
 	'splunkjs/mvc/simplexml/ready!',
 ], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput) {
 	$el = $('#ab_config');
-	const ENDPOINT_BASE = '/SERVICEsNS/nobody/assetdb/configs/';
+	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
 	const SERVICE = mvc.createService();
 
 	function getConf(endpoint) {
@@ -40,8 +40,8 @@ require([
 		let fieldNameInput = new TextInput({
 			id: 'inputFieldName',
 			label: 'Field Name',
-			editable: field.name ? false : true,
-			value: field.name || '',
+			editable: field?.name ? false : true,
+			value: field?.name || '',
 		});
 
 		let keyFieldInput = new RadioInput({
@@ -51,9 +51,11 @@ require([
 				{ label: 'Yes', value: 1 },
 				{ label: 'No', value: 0 },
 			],
-			value: field.key_field || 0,
+			value: field?.content?.key_field || 0,
 			help: 'Key fields define a unique asset',
 		});
+
+		if (field?.content?.default) keyFieldInput.disable();
 
 		let caseSensitiveInput = new RadioInput({
 			id: 'inputCaseSensitive',
@@ -62,21 +64,21 @@ require([
 				{ label: 'Yes', value: 1 },
 				{ label: 'No', value: 0 },
 			],
-			value: field.case_sensitive || 0,
+			value: field?.content?.case_sensitive || 0,
 			help: 'If No, field values are converted to lowercase',
 		});
 
 		let ignoreValuesInput = new TextInput({
 			id: 'inputIgnoreValues',
 			label: 'Ignore Values',
-			value: field.ignore_values || 'null,unknown,undefined',
+			value: field?.content?.ignore_values || '',
 			help: '[Optional] A comma separated list of values to ignore',
 		});
 
 		let fillnullInput = new TextInput({
 			id: 'inputFillnull',
 			label: 'Fill Null',
-			value: field.fillnull || '',
+			value: field?.content?.fillnull || '',
 			help: '[Optional] Fill null entries with a static value',
 		});
 
@@ -88,10 +90,11 @@ require([
 				{ label: 'Multivalue', value: 'multivalue' },
 				{ label: 'Eval', value: 'eval' },
 			],
-			value: field.type || 'single',
-			help:
-				'Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field',
+			value: field?.content?.type || 'single',
+			help: 'Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field',
 		});
+
+		if (!parseInt(field.content.key_field)) typeInput.disable();
 
 		let mergeMethodInput = new RadioInput({
 			id: 'inputMergeMethod',
@@ -100,7 +103,7 @@ require([
 				{ label: 'Latest', value: 'latest' },
 				{ label: 'Coalesce', value: 'coalesce' },
 			],
-			value: field.merge_method || 'latest',
+			value: field?.content?.merge_method || 'latest',
 			help: 'Either take the most recent value or define a precedence based on the source data',
 		});
 
@@ -112,22 +115,21 @@ require([
 				{ label: 'test2', value: 'test2' },
 				{ label: 'test3', value: 'test3' },
 			],
-			value: field.merge_order || [],
-			help:
-				'[Optional] Define the precedence of the source data; if no precendence is provided, a random order is used',
+			value: field?.content?.merge_order || [],
+			help: '[Optional] Define the precedence of the source data; if no precendence is provided, a random order is used',
 		});
 
 		let spinnerInput = new SpinnerInput({
 			id: 'inputMaxValues',
 			label: 'Max Values',
-			value: field.max_values || 10,
+			value: field?.content?.max_values || 10,
 			help: 'The maximum number of values to store as a multivalue',
 		});
 
 		let evalExpInput = new TextInput({
 			id: 'inputEvalExp',
 			label: 'Eval Expression',
-			value: field.eval_expression || '',
+			value: field?.content?.eval_expression || '',
 			help: 'An SPL eval expression, example: replace(field1, "[^w]", "")',
 		});
 
@@ -158,6 +160,15 @@ require([
 		let mergeMethod = mergeMethodInput.getValue();
 		let $input = mergeOrderInput.getInput();
 		mergeMethod == 'latest' ? $input.hide() : $input.show();
+
+		keyFieldInput.getInput().on('change', function (e, data) {
+			if (data.value == '1') {
+				typeInput.setValue('single');
+				typeInput.disable();
+			} else {
+				typeInput.enable();
+			}
+		});
 
 		typeInput.getInput().on('change', function (e, data) {
 			$('.input-group-toggle', $form).hide();
@@ -205,8 +216,11 @@ require([
 					endpoint += fieldNameInput.getValue();
 				}
 
-				setConf(endpoint, data);
-				this.hide();
+				let d = setConf(endpoint, data);
+				$.when(d).done(() => {
+					buildTable();
+					this.hide();
+				});
 			},
 		});
 
@@ -221,20 +235,177 @@ require([
 			primaryButton: 'Delete',
 			onPrimaryBtnClick: function () {
 				let endpoint = 'conf-assetdb/' + name;
-				delConf(endpoint);
-				this.hide();
+				let d = delConf(endpoint);
+				$.when(d).done(() => {
+					buildTable();
+					this.hide();
+				});
 			},
 		});
 
-		let $body = $(`<div>Are you sure you want to delete field ${name}?</div>`);
+		let $body = $(`<div>Are you sure you want to delete field <i>${name}</i>?</div>`);
 		deleteModal.setBody($body);
 		deleteModal.show();
 	}
 
-	$button = $('<button class="button">Click Me!</button>');
-	$button.appendTo($el);
+	function buildTable() {
+		$el.html('');
 
-	$button.click(function () {
-		editAddField();
-	});
+		$button = $('<a href="#" class="btn btn-primary">Add Field</a>');
+		$button.on('click', () => editAddField());
+		$button.appendTo($el);
+
+		let d = getConf('conf-assetdb');
+
+		$.when(d).done((data) => {
+			let fields = JSON.parse(data).entry;
+			let $table = $(`
+				<table class="table table-chrome table-row-expanding table-hover">
+					<thead>
+						<tr>
+							<th data-key="" class="col-info"><i class="icon-info"></i></th>
+							<th>Field</th>
+							<th>Type</th>
+							<th>Action</th>
+						</tr>
+					</thead>
+					<tbody></tbody>
+				</table>`);
+
+			fields.forEach(function (field) {
+				let isKey = parseInt(field.content.key_field);
+				let caseSensitive = parseInt(field.content.case_sensitive);
+
+				$tr = $(`
+					<tr data-name="${field.name}">
+						<td class="expands"><a href="#"><i class="icon-triangle-down-small"></i></a></td>
+						<td>
+							<span>${field.name}</span>${isKey ? '<span class="key-tag">Key</span>' : ''}
+							<div class="more-info" style="display: none">
+								<dl class="list-dotted">
+									<dt>Key Field</dt><dd>${isKey ? 'Yes' : 'No'}</dd>
+									<dt>Case Sensitive</dt><dd>${caseSensitive ? 'Yes' : 'No'}</dd>
+									<dt>Ignore Values</dt><dd>${field.content.ignore_values || 'N/A'}</dd>
+									<dt>Fill Null</dt><dd>${field.content.fillnull || 'N/A'}</dd>
+								</dl>
+							</div>
+						</td>
+						<td>${field.content.type}</td>
+						<td><a class="adb-field-edit" href="#">Edit</a> ${field.content.default ? '' : '| <a class="adb-field-delete" href="#">Delete</a></td>'}
+					</tr>`);
+
+				let $dl = $('dl', $tr);
+				if (field.content.type == 'single') {
+					$dl.append(`<dt>Merge Method</dt><dd>${field.content.merge_method}</dd>`);
+					if (field.content.merge_method == 'coalesce') {
+						$dl.append(`<dt>Merge Order</dt><dd>${field.content.merge_order}</dd>`);
+					}
+				} else if (field.content.type == 'multivalue') {
+					$dl.append(`<dt>Max Values</dt><dd>${field.content.max_values}</dd>`);
+				} else if (field.content.type == 'eval') {
+					$dl.append(`<dt>Eval Expression</dt><dd>${field.content.eval_expression}</dd>`);
+				}
+
+				$('td.expands', $tr).on('click', function () {
+					$(this).next().find('.more-info').toggle();
+					$('i', this).toggleClass('icon-triangle-right-small').toggleClass('icon-triangle-down-small');
+					return false;
+				});
+
+				$('.adb-field-edit', $tr).on('click', () => editAddField(field));
+				$('.adb-field-delete', $tr).on('click', () => deleteField(field.name));
+
+				$('tbody', $table).append($tr);
+			});
+
+			$el.append($table);
+		});
+	}
+
+	function makeMergeSearch() {
+		let d = getConf('conf-assetdb');
+
+		$.when(d).done((data) => {
+			let fields = JSON.parse(data).entry;
+			let preEval = '';
+			let stats = [];
+			let postEval = '';
+			let keys = [];
+			let table = [];
+			let fillnull = {};
+			let ignoreValues = [];
+			let caseSensitive = [];
+			let maxValues = [];
+
+			fields.forEach(function (field) {
+				if (parseInt(field.content.key_field)) keys.push(field.name);
+
+				if (field.content.ignore_values) {
+					let ignoreValuesArray = field.content.ignore_values.split(',');
+					let ignoreValuesMerge = ignoreValuesArray.map((value) => {
+						return `"${value}"`;
+					});
+					ignoreValues.push(`${field.name} = if(in(${field.name}, ${ignoreValuesMerge.join(', ')}), null(), ${field.name})`);
+				}
+
+				if (field.content.fillnull) {
+					let value = field.content.fillnull;
+					if (value in fillnull) fillnull[value].push(field.name);
+					else fillnull[value] = [field.name];
+				}
+
+				if (!parseInt(field.content.case_sensitive)) {
+					caseSensitive.push(`${field.name} = lower(${field.name})`);
+				}
+
+				if (field.content.type == 'single') {
+					if (field.content.merge_method == 'latest') {
+						stats.push(`latest(${field.name}) as ${field.name}`);
+					} else if (field.content.merge_method == 'coalesce') {
+						let mergeOrderArray = field.content.merge_order.split(',');
+
+						let preEvalMerge = mergeOrderArray.map((lookup) => {
+							return `${lookup}_${field.name} = ${field.name}`;
+						});
+						preEval += `\n| eval ${preEvalMerge.join(', ')}`;
+
+						let statsMerge = mergeOrderArray.map((lookup) => {
+							return `latest(${lookup}_${field.name}) as ${lookup}_${field.name}`;
+						});
+						stats = stats.concat(statsMerge);
+
+						let postEvalMerge = mergeOrderArray.map((lookup) => {
+							return `${lookup}_${field.name}`;
+						});
+						postEval += `\n| eval ${field.name} = coalesce(${postEvalMerge.join(', ')})`;
+					}
+				} else if (field.content.type == 'multivalue') {
+					stats.push(`values(${field.name}) as ${field.name}`);
+					maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
+				} else if (field.content.type == 'eval') {
+					postEval += `\n| eval ${field.name} = ${field.content.eval_expression}`;
+				}
+
+				table.push(field.name);
+			});
+
+			preEval += `\n| eval _key = ${keys.join('.')}`;
+			console.log(maxValues);
+
+			let search = '';
+			if (caseSensitive.length) search += `\n| eval ${caseSensitive.join(', ')}`;
+			if (ignoreValues.length) search += `\n| eval ${ignoreValues.join(', ')}`;
+			for (k in fillnull) search += `\n| fillnull ${fillnull[k].join(' ')} value="${k}"`;
+			search += preEval;
+			search += `\n| stats ${stats.join(', ')} by _key`;
+			if (maxValues.length) search += `\n| eval ${maxValues.join(', ')}`;
+			search += postEval;
+			search += `\n| table _key, ${table.join(', ')}`;
+
+			console.log(search);
+		});
+	}
+
+	buildTable();
+	makeMergeSearch();
 });

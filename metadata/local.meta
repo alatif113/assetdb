@@ -9,63 +9,33 @@ modtime = 1613343869.017681000
 [views/configure]
 owner = admin
 version = 8.1.2
-modtime = 1615783748.252518000
+modtime = 1615874141.162979000
 
 [transforms/asset_db]
 version = 8.1.2
 modtime = 1613606732.775039000
 
-[assetdb/test]
-owner = admin
-version = 8.1.2
-modtime = 1615699050.610762000
-
 [assetdb/nt_host]
 owner = admin
 version = 8.1.2
-modtime = 1615699223.835950000
+modtime = 1615945911.547163000
 
-[assetdb/new_field]
+[assetdb/ip]
 owner = admin
 version = 8.1.2
-modtime = 1615700124.879182000
+modtime = 1615946872.182281000
 
-[assetdb/new_field2]
+[assetdb/mac]
 owner = admin
 version = 8.1.2
-modtime = 1615701236.606732000
+modtime = 1615946876.228598000
 
-[assetdb/new_field3]
+[assetdb/owner]
 owner = admin
 version = 8.1.2
-modtime = 1615701255.314837000
+modtime = 1615946905.672495000
 
-[assetdb/a1]
+[assetdb/os]
 owner = admin
 version = 8.1.2
-modtime = 1615701314.693704000
-
-[assetdb/a2]
-owner = admin
-version = 8.1.2
-modtime = 1615701364.283536000
-
-[assetdb/a3]
-owner = admin
-version = 8.1.2
-modtime = 1615701410.678973000
-
-[assetdb/a5]
-owner = admin
-version = 8.1.2
-modtime = 1615701451.914749000
-
-[assetdb/a8]
-owner = admin
-version = 8.1.2
-modtime = 1615701574.127480000
-
-[assetdb/t6]
-owner = admin
-version = 8.1.2
-modtime = 1615701589.186241000
+modtime = 1615946928.577108000

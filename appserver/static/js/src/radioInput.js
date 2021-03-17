@@ -50,6 +50,18 @@ define(function (require, exports, module) {
 		getInput() {
 			return this.$input;
 		}
+
+		setValue(value) {
+			$(`button[data-value="${value}"]`, this.$input).trigger('click');
+		}
+
+		disable() {
+			this.$input.addClass('disabled');
+		}
+
+		enable() {
+			this.$input.removeClass('disabled');
+		}
 	}
 
 	return RadioInput;
