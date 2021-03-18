@@ -257,8 +257,9 @@ require([
 			let $container = $(`
 				<div class="grid-container">
 					<div class="grid-col grid-col-1">
+						<h2>Asset Lookups <i class="icon-info-circle" data-toggle="tooltip" title="Select lookup tables with asset data from individual sources to include within the merge process."></i></h2>
 						<a href="#" class="btn btn-primary btn-add-field">Add Lookup</a>
-						<table class="lookups-table table table-chrome table-row-expanding table-hover">
+						<table class="lookups-table table table-striped table-chrome table-row-expanding table-hover">
 							<thead>
 								<tr>
 									<th>Lookup</th>
@@ -269,8 +270,9 @@ require([
 						</table>
 					</div>
 					<div class="grid-col grid-col-2">
+						<h2>Asset Fields <i class="icon-info-circle" data-toggle="tooltip" title="Configure asset fields and how they are merged across individual lookups."></i></h2>
 						<a href="#" class="btn btn-primary btn-add-field">Add Field</a>
-						<table class="fields-table table table-chrome table-row-expanding table-hover">
+						<table class="fields-table table table-striped table-chrome table-row-expanding table-hover">
 							<thead>
 								<tr>
 									<th data-key="" class="col-info"><i class="icon-info"></i></th>
@@ -289,7 +291,7 @@ require([
 
 			fields.forEach(function (field) {
 				console.log(field);
-				if (field.name == 'adb_lookups') {
+				if (field.name == 'general') {
 					if (!field?.content?.lookups) return;
 
 					let lookups = field.content.lookups.split(',');
@@ -368,57 +370,66 @@ require([
 			let ignoreValues = [];
 			let caseSensitive = [];
 			let maxValues = [];
+			let lookups = [];
 
 			fields.forEach(function (field) {
-				if (parseInt(field.content.key_field)) keys.push(field.name);
-
-				if (field.content.ignore_values) {
-					let ignoreValuesArray = field.content.ignore_values.split(',');
-					let ignoreValuesMerge = ignoreValuesArray.map((value) => {
-						return `"${value}"`;
+				if (field.name == 'general' && field?.content?.lookups) {
+					let lookupsArray = field.content.lookups.split(',');
+					lookups = lookupsArray.map((lookup) => {
+						return `\n| \`append_adb_lookup(${lookup})\``;
 					});
-					ignoreValues.push(`${field.name} = if(in(${field.name}, ${ignoreValuesMerge.join(', ')}), null(), ${field.name})`);
-				}
+				} else {
+					if (parseInt(field.content.key_field)) keys.push(field.name);
 
-				if (field.content.fillnull) {
-					let value = field.content.fillnull;
-					if (value in fillnull) fillnull[value].push(field.name);
-					else fillnull[value] = [field.name];
-				}
-
-				if (!parseInt(field.content.case_sensitive)) {
-					caseSensitive.push(`${field.name} = lower(${field.name})`);
-				}
-
-				if (field.content.type == 'single') {
-					if (field.content.merge_method == 'latest') {
-						stats.push(`latest(${field.name}) as ${field.name}`);
-					} else if (field.content.merge_method == 'coalesce') {
-						fieldSplit.push(`{adb_source}_${field.name} = ${field.name}`);
-
-						let mergeOrderArray = field.content.merge_order.split(',');
-
-						let statsMerge = mergeOrderArray.map((lookup) => {
-							return `latest(${lookup}_${field.name}) as ${lookup}_${field.name}`;
+					if (field.content.ignore_values) {
+						let ignoreValuesArray = field.content.ignore_values.split(',');
+						let ignoreValuesMerge = ignoreValuesArray.map((value) => {
+							return `"${value}"`;
 						});
-						stats = stats.concat(statsMerge);
-
-						let postEvalMerge = mergeOrderArray.map((lookup) => {
-							return `${lookup}_${field.name}`;
-						});
-						coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
+						ignoreValues.push(`${field.name} = if(in(${field.name}, ${ignoreValuesMerge.join(', ')}), null(), ${field.name})`);
 					}
-				} else if (field.content.type == 'multivalue') {
-					stats.push(`values(${field.name}) as ${field.name}`);
-					maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
-				} else if (field.content.type == 'eval') {
-					evalExp.push(`${field.name} = ${field.content.eval_expression}`);
-				}
 
-				table.push(field.name);
+					if (field.content.fillnull) {
+						let value = field.content.fillnull;
+						if (value in fillnull) fillnull[value].push(field.name);
+						else fillnull[value] = [field.name];
+					}
+
+					if (!parseInt(field.content.case_sensitive)) {
+						caseSensitive.push(`${field.name} = lower(${field.name})`);
+					}
+
+					if (field.content.type == 'single') {
+						if (field.content.merge_method == 'latest') {
+							stats.push(`latest(${field.name}) as ${field.name}`);
+						} else if (field.content.merge_method == 'coalesce') {
+							fieldSplit.push(`{adb_source}_${field.name} = ${field.name}`);
+
+							let mergeOrderArray = field.content.merge_order.split(',');
+
+							let statsMerge = mergeOrderArray.map((lookup) => {
+								return `latest(${lookup}_${field.name}) as ${lookup}_${field.name}`;
+							});
+							stats = stats.concat(statsMerge);
+
+							let postEvalMerge = mergeOrderArray.map((lookup) => {
+								return `${lookup}_${field.name}`;
+							});
+							coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
+						}
+					} else if (field.content.type == 'multivalue') {
+						stats.push(`values(${field.name}) as ${field.name}`);
+						maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
+					} else if (field.content.type == 'eval') {
+						evalExp.push(`${field.name} = ${field.content.eval_expression}`);
+					}
+
+					table.push(field.name);
+				}
 			});
 
-			let search = '';
+			let search = '| makeresults';
+			if (lookups.length) search += lookups.join('');
 			if (caseSensitive.length) search += `\n| eval ${caseSensitive.join(', ')}`;
 			if (ignoreValues.length) search += `\n| eval ${ignoreValues.join(', ')}`;
 			if (keys.length) search += `\n| eval _key = ${keys.join('.')}`;

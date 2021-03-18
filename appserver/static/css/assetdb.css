@@ -4,6 +4,7 @@
 
 table {
 	background: #fff;
+	margin-top: 10px;
 }
 
 .disabled .controls {
@@ -29,7 +30,7 @@ table {
 
 .grid-container {
 	display: grid;
-	column-gap: 50px;
+	column-gap: 20px;
 }
 
 .grid-col-1 {
@@ -38,4 +39,13 @@ table {
 
 .grid-col-2 {
 	grid-column: 2 / span 2;
+}
+
+.grid-col {
+	background: #fff;
+	padding: 20px;
+}
+
+.grid-col > h2 {
+	margin-top: 0px !important;
 }
