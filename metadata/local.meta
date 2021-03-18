@@ -39,3 +39,14 @@ modtime = 1615946905.672495000
 owner = admin
 version = 8.1.2
 modtime = 1615946928.577108000
+
+[assetdb/id]
+owner = admin
+version = 8.1.2
+modtime = 1615957779.703076000
+
+[macros/append_adb_lookup%281%29]
+export = none
+owner = admin
+version = 8.1.2
+modtime = 1615959284.485158000

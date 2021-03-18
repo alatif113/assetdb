@@ -1,3 +1,11 @@
+.dashboard-panel {
+	background: transparent !important;
+}
+
+table {
+	background: #fff;
+}
+
 .disabled .controls {
 	pointer-events: none;
 	opacity: 0.5;
@@ -17,4 +25,17 @@
 	font-weight: bold;
 	vertical-align: top;
 	text-transform: uppercase;
+}
+
+.grid-container {
+	display: grid;
+	column-gap: 50px;
+}
+
+.grid-col-1 {
+	grid-column: 1 / span 1;
+}
+
+.grid-col-2 {
+	grid-column: 2 / span 2;
 }
