@@ -9,7 +9,7 @@ modtime = 1613343869.017681000
 [views/configure]
 owner = admin
 version = 8.1.2
-modtime = 1615874141.162979000
+modtime = 1616125419.445923000
 
 [transforms/asset_db]
 version = 8.1.2
@@ -50,3 +50,17 @@ export = none
 owner = admin
 version = 8.1.2
 modtime = 1615959284.485158000
+
+[assetdb/priority]
+owner = admin
+version = 8.1.2
+modtime = 1616213651.849498000
+
+[assetdb/vendor]
+owner = admin
+version = 8.1.2
+modtime = 1616215618.110441000
+
+[assetdb/general]
+version = 8.1.2
+modtime = 1616279655.278973000

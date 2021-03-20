@@ -2,9 +2,24 @@
 	background: transparent !important;
 }
 
+div[data-component='splunk-core:/splunkjs/mvc/components/Dropdown'],
+.dropdown-input {
+	width: 100% !important;
+}
+
 table {
 	background: #fff;
 	margin-top: 10px;
+}
+
+.container {
+	width: 940px;
+	margin: auto auto 40px;
+	-webkit-box-sizing: border-box;
+	box-sizing: border-box;
+	background-color: #fff;
+	-webkit-box-shadow: 0 1px 1px #e1e6eb;
+	box-shadow: 0 1px 1px #e1e6eb;
 }
 
 .disabled .controls {
@@ -28,24 +43,133 @@ table {
 	text-transform: uppercase;
 }
 
-.grid-container {
-	display: grid;
-	column-gap: 20px;
-}
-
-.grid-col-1 {
-	grid-column: 1 / span 1;
-}
-
-.grid-col-2 {
-	grid-column: 2 / span 2;
-}
-
-.grid-col {
-	background: #fff;
+section {
+	display: none;
 	padding: 20px;
 }
 
-.grid-col > h2 {
-	margin-top: 0px !important;
+section.active {
+	display: block;
+}
+
+.query-container {
+	border: 1px solid #c3cbd4;
+	border-radius: 3px;
+	clear: both;
+	box-sizing: border-box;
+	overflow-y: auto;
+	margin-top: 10px;
+}
+
+.raw-query {
+	display: none !important;
+}
+
+.formatted-query {
+	display: table;
+	font-family: 'Splunk Platform Mono', Inconsolata, Consolas, 'Droid Sans Mono', Monaco, 'Courier New', Courier, monospace;
+	font-size: 14px;
+	border-collapse: collapse;
+	border-spacing: 0;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.row {
+	display: table-row;
+	padding: 0;
+	counter-increment: line;
+	box-sizing: border-box;
+}
+
+.gutter {
+	background: #f5f5f5;
+	height: 20px;
+	display: table-cell;
+	padding: 0;
+	padding-left: 6px;
+	padding-right: 6px;
+	width: 25px;
+	text-align: right;
+	font-size: 12px;
+	vertical-align: top;
+	color: #6b7785;
+	-webkit-touch-callout: none;
+	/* iOS Safari */
+	-webkit-user-select: none;
+	/* Safari */
+	-khtml-user-select: none;
+	/* Konqueror HTML */
+	-moz-user-select: none;
+	/* Old versions of Firefox */
+	-ms-user-select: none;
+	/* Internet Explorer/Edge */
+	user-select: none;
+	/* Non-prefixed version */
+	font-family: inherit;
+	box-sizing: border-box;
+}
+
+.row:nth-child(2) {
+	counter-reset: line;
+	box-sizing: border-box;
+}
+
+.row span.gutter:before {
+	content: counter(line);
+	box-sizing: border-box;
+}
+
+.row:first-child span.gutter:before,
+.row:last-child span.gutter:before {
+	content: '';
+	box-sizing: border-box;
+}
+
+.formatted-query .code {
+	padding-left: 10px;
+	padding-right: 10px;
+	text-indent: 0px;
+	box-sizing: border-box;
+	display: table-cell;
+	line-height: 20px;
+	height: 20px;
+	vertical-align: top;
+	font-family: inherit;
+	box-sizing: border-box;
+	word-break: break-word;
+}
+
+.query.multiline .code {
+	padding-left: 40px;
+	text-indent: -30px;
+	box-sizing: border-box;
+}
+
+.code span {
+	transition: 0.25s ease;
+}
+
+.row:first-child .gutter,
+.row:last-child .gutter,
+.row:first-child .code,
+.row:last-child .code {
+	height: 9px;
+	box-sizing: border-box;
+}
+
+span.keyword.highlight {
+	color: #2662fc;
+}
+
+span.function.highlight {
+	color: #cf00cf;
+}
+
+span.operator-word.highlight {
+	color: #f58220;
+}
+
+span.argument.highlight {
+	color: #5ca300;
 }
