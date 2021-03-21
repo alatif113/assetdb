@@ -11,44 +11,47 @@ require([
 	'/static/app/assetdb/js/src/spinnerInput.js',
 	'/static/app/assetdb/js/src/multiselectInput.js',
 	'/static/app/assetdb/js/src/format.js',
-	'splunkjs/mvc/simpleform/formutils',
 	'splunkjs/mvc/searchmanager',
 	'splunkjs/mvc/simpleform/input/dropdown',
-	'splunkjs/mvc/simplexml/urltokenmodel',
 	'splunkjs/mvc/simplexml/ready!',
-], function (
-	_,
-	$,
-	mvc,
-	SearchManager,
-	Modal,
-	TextInput,
-	RadioInput,
-	SpinnerInput,
-	MultiSelectInput,
-	format,
-	FormUtils,
-	SearchManager,
-	DropdownInput,
-	UrlTokenModel
-) {
+], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, SearchManager, DropdownInput) {
 	$el = $('#ab_config');
 	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
 	const SERVICE = mvc.createService();
-	const urlTokenModel = mvc.Components.getInstance('url');
 
+	/**
+	 * GET request against a Splunk REST API
+	 *
+	 * @param {String}		endpoint	Splunk REST API endpoint.
+	 *
+	 * @return {Promise} 				Jquery promise with retrieved configuration data.
+	 */
 	function getConf(endpoint) {
 		let path = ENDPOINT_BASE + endpoint;
 		let deferred = SERVICE.get(path, {}, function (err, results) {});
 		return deferred.promise();
 	}
 
+	/**
+	 * POST request against a Splunk REST API
+	 *
+	 * @param {String}		endpoint	Splunk REST API endpoint.
+	 *
+	 * @return {Promise} 				Jquery promise with set configuration data.
+	 */
 	function setConf(endpoint, data) {
 		let path = ENDPOINT_BASE + endpoint;
 		let deferred = SERVICE.post(path, data, function (err, results) {});
 		return deferred.promise();
 	}
 
+	/**
+	 * DELETE request against a Splunk REST API
+	 *
+	 * @param {String}		endpoint	Splunk REST API endpoint.
+	 *
+	 * @return {Promise} 				Jquery promise with deleted configuration data.
+	 */
 	function delConf(endpoint) {
 		let path = ENDPOINT_BASE + endpoint;
 		let deferred = SERVICE.del(path, function (err, results) {
@@ -57,7 +60,16 @@ require([
 		return deferred.promise();
 	}
 
-	function editAddField(lookups, field = {}) {
+	/**
+	 * Create and show the EditAdd modal to add a new field or edit an existing field within the field list.
+	 *
+	 * @param {Array}	lookupArray		Array of lookup names currently within the asset lookup list.
+	 * @param {Array}	fieldArray		Array of field names currently within the asset field list.
+	 * @param {Object}	field			Field object to be edited. Empty object if a new field is being added.
+	 *
+	 */
+	function editAddField(lookupArray, fieldArray, field = {}) {
+		console.log(fieldArray);
 		let fieldNameInput = new TextInput({
 			id: 'inputFieldName',
 			label: 'Field Name',
@@ -129,7 +141,7 @@ require([
 		let mergeOrderInput = new MultiSelectInput({
 			id: 'inputMergeOrder',
 			label: 'Merge Order',
-			choices: lookups.map((lookup) => {
+			choices: lookupArray.map((lookup) => {
 				return { label: lookup, value: lookup };
 			}),
 			value: field?.content?.merge_order || [],
@@ -213,9 +225,11 @@ require([
 					}
 				}
 
-				let endpoint = 'conf-assetdb/';
+				let endpointAssetdb = 'conf-assetdb/';
+				let endpointTransforms = 'conf-transforms/asset_db';
+				let endpointSavedSearches = 'conf-savedsearches/assetdb-lookupgen';
 
-				let data = {
+				let dataAssetdb = {
 					key_field: keyFieldInput.getValue(),
 					case_sensitive: caseSensitiveInput.getValue(),
 					ignore_values: ignoreValuesInput.getValue(),
@@ -227,14 +241,24 @@ require([
 					eval_expression: evalExpInput.getValue(),
 				};
 
+				let dataTransforms = {
+					fields_list: fieldArray.join(','),
+				};
+
+				let dataSavedSearch = {
+					search: makeMergeSearch(fields),
+				};
+
 				if (fieldNameInput.isEditable()) {
-					data.name = fieldNameInput.getValue();
+					dataAssetdb.name = fieldNameInput.getValue();
 				} else {
-					endpoint += fieldNameInput.getValue();
+					endpointAssetdb += fieldNameInput.getValue();
 				}
 
-				let promise = setConf(endpoint, data);
-				$.when(promise).done(() => {
+				let promiseAssetdb = setConf(endpointAssetdb, dataAssetdb);
+				let promiseTransforms = setConf(endpointTransforms, dataTransforms);
+
+				$.when(promiseAssetdb, promiseTransforms).done(() => {
 					buildContent('section-fields');
 					this.hide();
 				});
@@ -245,15 +269,33 @@ require([
 		editAddModal.show();
 	}
 
-	function deleteField(name) {
+	/**
+	 * Create and show the Delete modal to delete an existing field within the field list.
+	 *
+	 * @param {Array}	fieldArray		Array of field names currently within the asset field list.
+	 * @param {String}	field			Field name of the field to be deleted.
+	 *
+	 */
+	function deleteField(fieldArray, name) {
 		let deleteModal = new Modal({
 			wide: false,
 			title: 'Delete Field',
 			primaryButton: 'Delete',
 			onPrimaryBtnClick: function () {
-				let endpoint = 'conf-assetdb/' + name;
-				let promise = delConf(endpoint);
-				$.when(promise).done(() => {
+				let endpointAssetdb = 'conf-assetdb/' + name;
+				let endpointTransforms = 'conf-transforms/asset_db';
+
+				const index = fieldArray.indexOf(lookup);
+				if (index > -1) fieldArray.splice(index, 1);
+
+				let dataTransforms = {
+					fields_list: fieldArray.join(','),
+				};
+
+				let promiseAssetdb = delConf(endpointAssetdb);
+				let promiseTransforms = setConf(endpointTransforms, dataTransforms);
+
+				$.when(promiseAssetdb, promiseTransforms).done(() => {
 					buildContent('section-fields');
 					this.hide();
 				});
@@ -265,7 +307,13 @@ require([
 		deleteModal.show();
 	}
 
-	function addLookup(lookups) {
+	/**
+	 * Create and show the AddLookup modal to add a new lookup within the asset lookup list.
+	 *
+	 * @param {Array}	lookupArray		Array of lookup names currently within the asset lookup list.
+	 *
+	 */
+	function addLookup(lookupArray) {
 		$form = $(`
             <div class="form">
 				<div class="control-group shared-controls-controlgroup control-group-default">                
@@ -345,12 +393,12 @@ require([
 				let value = lookupInput.val();
 				if (!value) {
 					return;
-				} else if (lookups.indexOf(value) > -1) {
+				} else if (lookupArray.indexOf(value) > -1) {
 					$('.input-lookup .splunk-choice-input-message div').text(`The lookup file ${value} has already been added.`);
 				} else {
-					lookups.push(value);
+					lookupArray.push(value);
 					let endpoint = 'conf-assetdb/general';
-					let data = { lookups: lookups.join(',') };
+					let data = { lookups: lookupArray.join(',') };
 					let promise = setConf(endpoint, data);
 					$.when(promise).done(() => {
 						buildContent('section-lookups');
@@ -364,16 +412,23 @@ require([
 		addModal.show();
 	}
 
-	function deleteLookup(lookups, lookup) {
-		const index = lookups.indexOf(lookup);
-		if (index > -1) lookups.splice(index, 1);
+	/**
+	 * Create and show the DeleteLookup modal to delete an existing lookup within the asset lookup list.
+	 *
+	 * @param {Array}	lookupArray		Array of lookup names currently within the asset lookup list.
+	 * @param {String}	lookup			Lookup name to be deleted.
+	 *
+	 */
+	function deleteLookup(lookupArray, lookup) {
+		const index = lookupArray.indexOf(lookup);
+		if (index > -1) lookupArray.splice(index, 1);
 		let deleteModal = new Modal({
 			wide: false,
 			title: 'Remove Lookup',
 			primaryButton: 'Remove',
 			onPrimaryBtnClick: function () {
 				let endpoint = 'conf-assetdb/general';
-				let data = { lookups: lookups.join(',') };
+				let data = { lookups: lookupArray.join(',') };
 				let promise = setConf(endpoint, data);
 				$.when(promise).done(() => {
 					buildContent('section-lookups');
@@ -389,6 +444,12 @@ require([
 		deleteModal.show();
 	}
 
+	/**
+	 * Build the HTML content of the page
+	 *
+	 * @param {String}	activeSection	Class name of the section that should be active once HTML is built.
+	 *
+	 */
 	function buildContent(activeSection = 'section-lookups') {
 		$el.html('');
 
@@ -396,7 +457,6 @@ require([
 
 		$.when(promise).done((data) => {
 			let fields = JSON.parse(data).entry;
-
 			let $container = $(`
 				<div class="container">
 					<ul class="nav nav-tabs main-tabs shared-tabcontrols-tabbar">
@@ -463,20 +523,27 @@ require([
 			let general = fields.find((obj) => {
 				return obj.name === 'general';
 			});
-			let lookups = general?.content?.lookups.split(',') || [];
+			let lookupArray = general?.content?.lookups.split(',') || [];
+			let fieldArray = fields.reduce(function (result, obj) {
+				if (obj.name !== 'general') {
+					result.push(obj.name);
+				}
+				return result;
+			}, []);
+			fieldArray.push('_key');
 
-			$('.btn-add-field', $container).on('click', () => editAddField());
-			$('.btn-add-lookup', $container).on('click', () => addLookup(lookups));
+			$('.btn-add-field', $container).on('click', () => editAddField(lookupArray, fieldArray));
+			$('.btn-add-lookup', $container).on('click', () => addLookup(lookupArray));
 
-			lookups.forEach(function (lookup) {
+			lookupArray.forEach(function (lookup) {
 				let $tr = $(`
 					<tr data-name="${lookup}">
 						<td>${lookup}</td>
 						<td><a class="adb-lookup-edit" href="#">Edit <i class="icon-external"></i></a> | <a class="adb-lookup-delete" href="#">Delete</a></td>'}
 					</tr>
 				`);
-				$('.adb-lookup-edit', $tr).on('click', () => addLookup(lookups));
-				$('.adb-lookup-delete', $tr).on('click', () => deleteLookup(lookups, lookup));
+				$('.adb-lookup-edit', $tr).on('click', () => addLookup(lookupArray));
+				$('.adb-lookup-delete', $tr).on('click', () => deleteLookup(lookupArray, lookup));
 				$('.lookups-table tbody', $container).append($tr);
 			});
 
@@ -522,8 +589,8 @@ require([
 					return false;
 				});
 
-				$('.adb-field-edit', $tr).on('click', () => editAddField(lookups, field));
-				$('.adb-field-delete', $tr).on('click', () => deleteField(field.name));
+				$('.adb-field-edit', $tr).on('click', () => editAddField(lookupArray, fieldArray, field));
+				$('.adb-field-delete', $tr).on('click', () => deleteField(fieldArray, field.name));
 
 				$('.fields-table tbody', $container).append($tr);
 			});
@@ -537,7 +604,14 @@ require([
 		});
 	}
 
-	function makeMergeSearch(fields) {
+	/**
+	 * Build the Splunk merge search query
+	 *
+	 * @param {Array}		fieldArray	Array of field stanzas and their key value pairs from the assetdb.conf configuration file.
+	 *
+	 * @return {String}		Built Splunk query
+	 */
+	function makeMergeSearch(fieldArray) {
 		let fieldSplit = [];
 		let coalesce = [];
 		let stats = [];
@@ -550,7 +624,7 @@ require([
 		let maxValues = [];
 		let lookups = [];
 
-		fields.forEach(function (field) {
+		fieldArray.forEach(function (field) {
 			if (field.name == 'general' && field?.content?.lookups) {
 				let lookupsArray = field.content.lookups.split(',');
 				console.log(lookupsArray);
