@@ -1,6 +1,6 @@
 # AssetDB
 
-AssetDB is a Splunk application that allows merging distinct data sources into an asset data base, without the need for Splunk Enterprise. The app is currently in development, and its README will be updated once it is stable with base functionality.
+AssetDB is a Splunk application that allows merging distinct data sources into an asset data base, without the need for Splunk Enterprise Security. The app is currently in development, and its README will be updated once it is stable with base functionality.
 
 Version 1.0.0 will allow:
 
