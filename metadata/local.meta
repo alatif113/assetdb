@@ -13,7 +13,7 @@ modtime = 1616125419.445923000
 
 [transforms/asset_db]
 version = 8.1.2
-modtime = 1616355197.531418000
+modtime = 1616376584.632373000
 
 [assetdb/nt_host]
 owner = admin
@@ -29,11 +29,6 @@ modtime = 1615946872.182281000
 owner = admin
 version = 8.1.2
 modtime = 1615946876.228598000
-
-[assetdb/owner]
-owner = admin
-version = 8.1.2
-modtime = 1615946905.672495000
 
 [assetdb/os]
 owner = admin
@@ -51,27 +46,17 @@ owner = admin
 version = 8.1.2
 modtime = 1615959284.485158000
 
-[assetdb/priority]
-owner = admin
-version = 8.1.2
-modtime = 1616213651.849498000
-
-[assetdb/vendor]
-owner = admin
-version = 8.1.2
-modtime = 1616215618.110441000
-
 [assetdb/general]
 version = 8.1.2
-modtime = 1616279655.278973000
-
-[assetdb/bunit]
-owner = admin
-version = 8.1.2
-modtime = 1616355197.525889000
+modtime = 1616377369.370257000
 
 [savedsearches/assetdb-lookupgen]
 export = system
 owner = admin
 version = 8.1.2
-modtime = 1616355488.297585000
+modtime = 1616377369.394845000
+
+[assetdb/owner]
+owner = admin
+version = 8.1.2
+modtime = 1616376584.625703000

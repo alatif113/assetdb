@@ -61,6 +61,90 @@ require([
 	}
 
 	/**
+	 * Update the 'lookups' key within the 'general' stanza of assetdb.conf
+	 *
+	 * @param {Array}		lookupArray	Splunk REST API endpoint.
+	 * @param {String}	lookupName
+	 *
+	 * @return {Promise} 				Jquery promise with deleted configuration data.
+	 */
+	function updateLookups(lookupArray, lookupName, operation) {
+		let endpoint = 'conf-assetdb/general/';
+
+		if (operation == 'add') {
+			lookupArray.push(lookupName);
+		} else if (operation == 'delete') {
+			let index = lookupArray.indexOf(lookupName);
+			if (index > -1) lookupArray.splice(index, 1);
+		} else {
+			return;
+		}
+
+		let data = { lookups: lookupArray.join(',') };
+		let promise = setConf(endpoint, data);
+		return promise;
+	}
+
+	function updateField(fieldArray, fieldData, fieldName, operation) {
+		console.log(operation);
+		let endpoint = 'conf-assetdb/';
+		let promises = [];
+
+		// Update assetdb.conf
+		if (operation == 'add' || operation == 'edit') {
+			if (operation == 'add') {
+				fieldData.name = fieldName;
+			} else {
+				endpoint += fieldName;
+			}
+			console.log(fieldData);
+			promises.push(setConf(endpoint, fieldData));
+		} else if (operation == 'delete') {
+			endpoint += fieldName;
+			promises.push(delConf(endpoint));
+		}
+
+		// Update transforms.conf
+		if (operation == 'add' || operation == 'delete') {
+			let endpoint = 'conf-transforms/asset_db';
+			let fieldNames = fieldArray.reduce(function (result, obj) {
+				if (obj.name !== 'general') {
+					result.push(obj.name);
+				}
+				return result;
+			}, []);
+			let index = fieldNames.indexOf(fieldName);
+
+			if (operation == 'add' && index == -1) {
+				fieldNames.push(fieldName);
+			} else if (operation == 'delete' && index > -1) {
+				fieldNames.splice(index, 1);
+			}
+
+			fieldNames.push('_key');
+
+			let data = { fields_list: fieldNames.join(',') };
+			promises.push(setConf(endpoint, data));
+		}
+
+		return $.when(...promises);
+	}
+
+	function updateSearch() {
+		let endpoint = 'conf-savedsearches/assetdb-lookupgen';
+		let promise = makeMergeSearch();
+		return $.when(promise)
+			.then((query) => {
+				console.log(query);
+				let data = { search: query };
+				return data;
+			})
+			.then((data) => {
+				return setConf(endpoint, data);
+			});
+	}
+
+	/**
 	 * Create and show the EditAdd modal to add a new field or edit an existing field within the field list.
 	 *
 	 * @param {Array}	lookupArray		Array of lookup names currently within the asset lookup list.
@@ -69,7 +153,6 @@ require([
 	 *
 	 */
 	function editAddField(lookupArray, fieldArray, field = {}) {
-		console.log(fieldArray);
 		let fieldNameInput = new TextInput({
 			id: 'inputFieldName',
 			label: 'Field Name',
@@ -225,11 +308,8 @@ require([
 					}
 				}
 
-				let endpointAssetdb = 'conf-assetdb/';
-				let endpointTransforms = 'conf-transforms/asset_db';
-				let endpointSavedSearches = 'conf-savedsearches/assetdb-lookupgen';
-
-				let dataAssetdb = {
+				let operation = fieldNameInput.isEditable() ? 'add' : 'edit';
+				let fieldData = {
 					key_field: keyFieldInput.getValue(),
 					case_sensitive: caseSensitiveInput.getValue(),
 					ignore_values: ignoreValuesInput.getValue(),
@@ -241,24 +321,10 @@ require([
 					eval_expression: evalExpInput.getValue(),
 				};
 
-				let dataTransforms = {
-					fields_list: fieldArray.join(','),
-				};
+				let promise = updateField(fieldArray, fieldData, fieldNameInput.getValue(), operation);
 
-				let dataSavedSearch = {
-					search: makeMergeSearch(fields),
-				};
-
-				if (fieldNameInput.isEditable()) {
-					dataAssetdb.name = fieldNameInput.getValue();
-				} else {
-					endpointAssetdb += fieldNameInput.getValue();
-				}
-
-				let promiseAssetdb = setConf(endpointAssetdb, dataAssetdb);
-				let promiseTransforms = setConf(endpointTransforms, dataTransforms);
-
-				$.when(promiseAssetdb, promiseTransforms).done(() => {
+				$.when(promise).done(() => {
+					updateSearch();
 					buildContent('section-fields');
 					this.hide();
 				});
@@ -276,33 +342,23 @@ require([
 	 * @param {String}	field			Field name of the field to be deleted.
 	 *
 	 */
-	function deleteField(fieldArray, name) {
+	function deleteField(fieldArray, fieldName) {
 		let deleteModal = new Modal({
 			wide: false,
 			title: 'Delete Field',
 			primaryButton: 'Delete',
 			onPrimaryBtnClick: function () {
-				let endpointAssetdb = 'conf-assetdb/' + name;
-				let endpointTransforms = 'conf-transforms/asset_db';
+				let promise = updateField(fieldArray, {}, fieldName, 'delete');
 
-				const index = fieldArray.indexOf(lookup);
-				if (index > -1) fieldArray.splice(index, 1);
-
-				let dataTransforms = {
-					fields_list: fieldArray.join(','),
-				};
-
-				let promiseAssetdb = delConf(endpointAssetdb);
-				let promiseTransforms = setConf(endpointTransforms, dataTransforms);
-
-				$.when(promiseAssetdb, promiseTransforms).done(() => {
+				$.when(promise).done(() => {
+					updateSearch();
 					buildContent('section-fields');
 					this.hide();
 				});
 			},
 		});
 
-		let $body = $(`<div>Are you sure you want to delete field <i>${name}</i>?</div>`);
+		let $body = $(`<div>Are you sure you want to delete field <i>${fieldName}</i>?</div>`);
 		deleteModal.setBody($body);
 		deleteModal.show();
 	}
@@ -396,11 +452,9 @@ require([
 				} else if (lookupArray.indexOf(value) > -1) {
 					$('.input-lookup .splunk-choice-input-message div').text(`The lookup file ${value} has already been added.`);
 				} else {
-					lookupArray.push(value);
-					let endpoint = 'conf-assetdb/general';
-					let data = { lookups: lookupArray.join(',') };
-					let promise = setConf(endpoint, data);
+					let promise = updateLookups(lookupArray, value, 'add');
 					$.when(promise).done(() => {
+						updateSearch();
 						buildContent('section-lookups');
 						this.hide();
 					});
@@ -416,21 +470,20 @@ require([
 	 * Create and show the DeleteLookup modal to delete an existing lookup within the asset lookup list.
 	 *
 	 * @param {Array}	lookupArray		Array of lookup names currently within the asset lookup list.
-	 * @param {String}	lookup			Lookup name to be deleted.
+	 * @param {String}	lookupName			Lookup name to be deleted.
 	 *
 	 */
-	function deleteLookup(lookupArray, lookup) {
-		const index = lookupArray.indexOf(lookup);
+	function deleteLookup(lookupArray, lookupName) {
+		const index = lookupArray.indexOf(lookupName);
 		if (index > -1) lookupArray.splice(index, 1);
 		let deleteModal = new Modal({
 			wide: false,
 			title: 'Remove Lookup',
 			primaryButton: 'Remove',
 			onPrimaryBtnClick: function () {
-				let endpoint = 'conf-assetdb/general';
-				let data = { lookups: lookupArray.join(',') };
-				let promise = setConf(endpoint, data);
+				let promise = updateLookups(lookupArray, lookupName, 'delete');
 				$.when(promise).done(() => {
+					updateSearch();
 					buildContent('section-lookups');
 					this.hide();
 				});
@@ -438,7 +491,7 @@ require([
 		});
 
 		let $body = $(
-			`<div>Are you sure you want to remove asset lookup <i>${lookup}</i> from the merge process? Note: The lookup will still exist within Splunk.</div>`
+			`<div>Are you sure you want to remove asset lookup <i>${lookupName}</i> from the merge process? Note: The lookup will still exist within Splunk.</div>`
 		);
 		deleteModal.setBody($body);
 		deleteModal.show();
@@ -456,7 +509,7 @@ require([
 		let promise = getConf('conf-assetdb');
 
 		$.when(promise).done((data) => {
-			let fields = JSON.parse(data).entry;
+			let fieldArray = JSON.parse(data).entry;
 			let $container = $(`
 				<div class="container">
 					<ul class="nav nav-tabs main-tabs shared-tabcontrols-tabbar">
@@ -520,17 +573,10 @@ require([
 				$(`section[data-section-id="${section_id}"]`, $container).addClass('active');
 			});
 
-			let general = fields.find((obj) => {
+			let general = fieldArray.find((obj) => {
 				return obj.name === 'general';
 			});
 			let lookupArray = general?.content?.lookups.split(',') || [];
-			let fieldArray = fields.reduce(function (result, obj) {
-				if (obj.name !== 'general') {
-					result.push(obj.name);
-				}
-				return result;
-			}, []);
-			fieldArray.push('_key');
 
 			$('.btn-add-field', $container).on('click', () => editAddField(lookupArray, fieldArray));
 			$('.btn-add-lookup', $container).on('click', () => addLookup(lookupArray));
@@ -547,7 +593,7 @@ require([
 				$('.lookups-table tbody', $container).append($tr);
 			});
 
-			fields.forEach(function (field) {
+			fieldArray.forEach(function (field) {
 				if (field.name == 'general') return;
 
 				let isKey = parseInt(field.content.key_field);
@@ -595,11 +641,12 @@ require([
 				$('.fields-table tbody', $container).append($tr);
 			});
 
-			let query = makeMergeSearch(fields);
-			let $formatted_query = format(query, true, true);
-			$('.raw-query', $container).val(query);
-			$('.formatted-query', $container).append($formatted_query);
-
+			let promise = makeMergeSearch(fieldArray);
+			$.when(promise).done((data) => {
+				let $formatted_query = format(data, true, true);
+				$('.raw-query', $container).val(data);
+				$('.formatted-query', $container).append($formatted_query);
+			});
 			$el.append($container);
 		});
 	}
@@ -607,93 +654,94 @@ require([
 	/**
 	 * Build the Splunk merge search query
 	 *
-	 * @param {Array}		fieldArray	Array of field stanzas and their key value pairs from the assetdb.conf configuration file.
-	 *
 	 * @return {String}		Built Splunk query
 	 */
-	function makeMergeSearch(fieldArray) {
-		let fieldSplit = [];
-		let coalesce = [];
-		let stats = [];
-		let evalExp = [];
-		let keys = [];
-		let table = [];
-		let fillnull = [];
-		let ignoreValues = [];
-		let caseSensitive = [];
-		let maxValues = [];
-		let lookups = [];
+	function makeMergeSearch(fieldArray = []) {
+		let promise = fieldArray.length ? $.Deferred().resolve().promise() : getConf('conf-assetdb');
 
-		fieldArray.forEach(function (field) {
-			if (field.name == 'general' && field?.content?.lookups) {
-				let lookupsArray = field.content.lookups.split(',');
-				console.log(lookupsArray);
-				lookups = lookupsArray.map((lookup) => {
-					return `\n| \`append_adb_lookup(${lookup})\``;
-				});
-			} else {
-				if (parseInt(field.content.key_field)) keys.push(field.name);
+		return $.when(promise).then((data) => {
+			if (!fieldArray.length) fieldArray = JSON.parse(data).entry;
+			let fieldSplit = [];
+			let coalesce = [];
+			let stats = [];
+			let evalExp = [];
+			let keys = [];
+			let table = [];
+			let fillnull = [];
+			let ignoreValues = [];
+			let caseSensitive = [];
+			let maxValues = [];
+			let lookups = [];
 
-				if (field.content.ignore_values) {
-					let ignoreValuesArray = field.content.ignore_values.split(',');
-					let ignoreValuesMerge = ignoreValuesArray.map((value) => {
-						return `"${value}"`;
+			fieldArray.forEach(function (field) {
+				if (field.name == 'general' && field?.content?.lookups) {
+					let lookupsArray = field.content.lookups.split(',');
+					lookups = lookupsArray.map((lookup) => {
+						return `\n| \`append_adb_lookup(${lookup})\``;
 					});
-					ignoreValues.push(`${field.name} = if(in(${field.name}, ${ignoreValuesMerge.join(', ')}), null(), ${field.name})`);
-				}
+				} else {
+					if (parseInt(field.content.key_field)) keys.push(field.name);
 
-				if (field?.content?.fillnull) {
-					fillnull.push(`${field.name} = if(isnull(${field.name}), "${field.content.fillnull}", ${field.name})`);
-				}
-
-				if (!parseInt(field.content.case_sensitive)) {
-					caseSensitive.push(`${field.name} = lower(${field.name})`);
-				}
-
-				if (field.content.type == 'single') {
-					if (field.content.merge_method == 'latest') {
-						stats.push(`latest(${field.name}) as ${field.name}`);
-					} else if (field.content.merge_method == 'coalesce') {
-						fieldSplit.push(`{adb_source}_${field.name} = ${field.name}`);
-
-						let mergeOrderArray = field.content.merge_order.split(',');
-
-						let statsMerge = mergeOrderArray.map((lookup) => {
-							return `latest(${lookup}_${field.name}) as ${lookup}_${field.name}`;
+					if (field.content.ignore_values) {
+						let ignoreValuesArray = field.content.ignore_values.split(',');
+						let ignoreValuesMerge = ignoreValuesArray.map((value) => {
+							return `"${value}"`;
 						});
-						stats = stats.concat(statsMerge);
-
-						let postEvalMerge = mergeOrderArray.map((lookup) => {
-							return `${lookup}_${field.name}`;
-						});
-						coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
+						ignoreValues.push(`${field.name} = if(in(${field.name}, ${ignoreValuesMerge.join(', ')}), null(), ${field.name})`);
 					}
-				} else if (field.content.type == 'multivalue') {
-					stats.push(`values(${field.name}) as ${field.name}`);
-					maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
-				} else if (field.content.type == 'eval') {
-					evalExp.push(`${field.name} = ${field.content.eval_expression}`);
+
+					if (field?.content?.fillnull) {
+						fillnull.push(`${field.name} = if(isnull(${field.name}), "${field.content.fillnull}", ${field.name})`);
+					}
+
+					if (!parseInt(field.content.case_sensitive)) {
+						caseSensitive.push(`${field.name} = lower(${field.name})`);
+					}
+
+					if (field.content.type == 'single') {
+						if (field.content.merge_method == 'latest') {
+							stats.push(`latest(${field.name}) as ${field.name}`);
+						} else if (field.content.merge_method == 'coalesce') {
+							fieldSplit.push(`{adb_source}_${field.name} = ${field.name}`);
+
+							let mergeOrderArray = field.content.merge_order.split(',');
+
+							let statsMerge = mergeOrderArray.map((lookup) => {
+								return `latest(${lookup}_${field.name}) as ${lookup}_${field.name}`;
+							});
+							stats = stats.concat(statsMerge);
+
+							let postEvalMerge = mergeOrderArray.map((lookup) => {
+								return `${lookup}_${field.name}`;
+							});
+							coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
+						}
+					} else if (field.content.type == 'multivalue') {
+						stats.push(`values(${field.name}) as ${field.name}`);
+						maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
+					} else if (field.content.type == 'eval') {
+						evalExp.push(`${field.name} = ${field.content.eval_expression}`);
+					}
+
+					table.push(field.name);
 				}
+			});
 
-				table.push(field.name);
-			}
+			let search = '| makeresults';
+			if (lookups.length) search += lookups.join('');
+			if (caseSensitive.length) search += `\n| eval ${caseSensitive.join(', ')}`;
+			if (ignoreValues.length) search += `\n| eval ${ignoreValues.join(', ')}`;
+			if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
+			if (keys.length) search += `\n| eval _key = ${keys.join('.')}`;
+			if (fieldSplit.length) search += `\n| eval ${fieldSplit.join(', ')}`;
+			if (stats.length) search += `\n| stats ${stats.join(', ')} by _key`;
+			if (maxValues.length) search += `\n| eval ${maxValues.join(', ')}`;
+			if (coalesce.length) search += `\n| eval ${coalesce.join(', ')}`;
+			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
+			search += `\n| table _key, ${table.join(', ')}`;
+
+			return search;
 		});
-
-		let search = '| makeresults';
-		if (lookups.length) search += lookups.join('');
-		if (caseSensitive.length) search += `\n| eval ${caseSensitive.join(', ')}`;
-		if (ignoreValues.length) search += `\n| eval ${ignoreValues.join(', ')}`;
-		if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
-		if (keys.length) search += `\n| eval _key = ${keys.join('.')}`;
-		if (fieldSplit.length) search += `\n| eval ${fieldSplit.join(', ')}`;
-		if (stats.length) search += `\n| stats ${stats.join(', ')} by _key`;
-		if (maxValues.length) search += `\n| eval ${maxValues.join(', ')}`;
-		if (coalesce.length) search += `\n| eval ${coalesce.join(', ')}`;
-		if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
-		search += `\n| table _key, ${table.join(', ')}`;
-
-		return search;
 	}
-
 	buildContent();
 });
