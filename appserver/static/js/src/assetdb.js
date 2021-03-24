@@ -737,6 +737,7 @@ require([
 
 			let search = '| makeresults';
 			if (lookups.length) search += lookups.join('');
+			search += '\n| foreach * [eval <<FIELD>>=split(<<FIELD>>, "|")]';
 			if (caseSensitive.length) search += `\n| eval ${caseSensitive.join(', ')}`;
 			if (ignoreValues.length) search += `\n| eval ${ignoreValues.join(', ')}`;
 			if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
