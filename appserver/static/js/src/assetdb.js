@@ -28,7 +28,7 @@ require([
 	 */
 	function getConf(endpoint) {
 		let path = ENDPOINT_BASE + endpoint;
-		let deferred = SERVICE.get(path, {}, function (err, results) {});
+		let deferred = SERVICE.get(path, {});
 		return deferred.promise();
 	}
 
@@ -41,7 +41,7 @@ require([
 	 */
 	function setConf(endpoint, data) {
 		let path = ENDPOINT_BASE + endpoint;
-		let deferred = SERVICE.post(path, data, function (err, results) {});
+		let deferred = SERVICE.post(path, data);
 		return deferred.promise();
 	}
 
@@ -54,9 +54,7 @@ require([
 	 */
 	function delConf(endpoint) {
 		let path = ENDPOINT_BASE + endpoint;
-		let deferred = SERVICE.del(path, function (err, results) {
-			deferred.resolve(results);
-		});
+		let deferred = SERVICE.del(path);
 		return deferred.promise();
 	}
 
@@ -96,7 +94,6 @@ require([
 	 * @return {Promise} 				Jquery promise
 	 */
 	function updateField(fieldArray, fieldData, fieldName, operation) {
-		console.log(operation);
 		let endpoint = 'conf-assetdb/';
 		let promises = [];
 
@@ -107,7 +104,6 @@ require([
 			} else {
 				endpoint += fieldName;
 			}
-			console.log(fieldData);
 			promises.push(setConf(endpoint, fieldData));
 		} else if (operation == 'delete') {
 			endpoint += fieldName;
@@ -148,7 +144,6 @@ require([
 		let promise = makeMergeSearch();
 		return $.when(promise)
 			.then((query) => {
-				console.log(query);
 				let data = { search: query };
 				return data;
 			})
