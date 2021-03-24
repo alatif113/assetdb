@@ -63,10 +63,10 @@ require([
 	/**
 	 * Update the 'lookups' key within the 'general' stanza of assetdb.conf
 	 *
-	 * @param {Array}		lookupArray	Splunk REST API endpoint.
-	 * @param {String}	lookupName
+	 * @param {Array}	lookupArray		Array of lookup names currently within the lookup list
+	 * @param {String}	lookupName		Lookup name to add or delete
 	 *
-	 * @return {Promise} 				Jquery promise with deleted configuration data.
+	 * @return {Promise} 				Jquery promise
 	 */
 	function updateLookups(lookupArray, lookupName, operation) {
 		let endpoint = 'conf-assetdb/general/';
@@ -85,6 +85,16 @@ require([
 		return promise;
 	}
 
+	/**
+	 * Update a field within assetdb.conf
+	 *
+	 * @param {Array}	fieldArray		Array of field data from assetdb.conf
+	 * @param {Object}	fieldData		Field object of field being added or edited. Empty object if field is being deleted
+	 * @param {String}	fieldName		Field name of field being added, edited, or deleted
+	 * @param {String}	operation		Operation to be performed: add, edit, or delete
+	 *
+	 * @return {Promise} 				Jquery promise
+	 */
 	function updateField(fieldArray, fieldData, fieldName, operation) {
 		console.log(operation);
 		let endpoint = 'conf-assetdb/';
@@ -130,6 +140,9 @@ require([
 		return $.when(...promises);
 	}
 
+	/**
+	 * Update the 'assetdb_merge-lookupgen' search within savedsearches.conf
+	 */
 	function updateSearch() {
 		let endpoint = 'conf-savedsearches/assetdb-lookupgen';
 		let promise = makeMergeSearch();
@@ -396,7 +409,7 @@ require([
 			{ tokens: true }
 		);
 
-		let s = new SearchManager(
+		new SearchManager(
 			{
 				id: 'searchLookup',
 				preview: true,
