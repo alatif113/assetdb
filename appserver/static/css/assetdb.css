@@ -173,3 +173,11 @@ span.operator-word.highlight {
 span.argument.highlight {
 	color: #5ca300;
 }
+
+.error-message {
+	color: red;
+}
+
+.btn-edit-schedule {
+	margin-left: 10px;
+}

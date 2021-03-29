@@ -13,7 +13,7 @@ modtime = 1616125419.445923000
 
 [transforms/asset_db]
 version = 8.1.2
-modtime = 1616556063.836909000
+modtime = 1616641138.548446000
 
 [assetdb/nt_host]
 owner = admin
@@ -33,7 +33,7 @@ modtime = 1615946876.228598000
 [assetdb/os]
 owner = admin
 version = 8.1.2
-modtime = 1615946928.577108000
+modtime = 1616640762.095973000
 
 [assetdb/id]
 owner = admin
@@ -48,20 +48,33 @@ modtime = 1615959284.485158000
 
 [assetdb/general]
 version = 8.1.2
-modtime = 1616377369.370257000
+modtime = 1616731737.825775000
 
 [savedsearches/assetdb-lookupgen]
 export = system
 owner = admin
 version = 8.1.2
-modtime = 1616556103.176864000
-
-[assetdb/owner]
-owner = admin
-version = 8.1.2
-modtime = 1616376584.625703000
+modtime = 1616731737.854673000
 
 [assetdb/_time]
 owner = admin
 version = 8.1.2
 modtime = 1616556103.153302000
+
+[lookups/assetdb_test1.csv]
+export = system
+owner = admin
+version = 8.1.2
+modtime = 1616640228.669516000
+
+[lookups/assetdb_test2.csv]
+export = system
+owner = admin
+version = 8.1.2
+modtime = 1616640233.083584000
+
+[lookups/assetdb_test3.csv]
+export = system
+owner = admin
+version = 8.1.2
+modtime = 1616640237.200577000

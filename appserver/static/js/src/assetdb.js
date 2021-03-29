@@ -15,7 +15,7 @@ require([
 	'splunkjs/mvc/simpleform/input/dropdown',
 	'splunkjs/mvc/simplexml/ready!',
 ], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, SearchManager, DropdownInput) {
-	$el = $('#ab_config');
+	const $el = $('#ab_config');
 	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
 	const SERVICE = mvc.createService();
 
@@ -235,7 +235,7 @@ require([
 			choices: lookupArray.map((lookup) => {
 				return { label: lookup, value: lookup };
 			}),
-			value: field?.content?.merge_order || [],
+			value: lookupArray || [],
 			help: '[Optional] Define the precedence of the source data; if no precendence is provided, a random order is used',
 		});
 
@@ -409,7 +409,8 @@ require([
 				id: 'searchLookup',
 				preview: true,
 				cache: true,
-				search: '| rest /services/data/transforms/lookups | search eai:acl.app=$app$ | table title',
+				search:
+					'| rest /services/data/lookup-table-files | search eai:acl.app=$app$ | table title | append [| rest /services/data/transforms/lookups | search eai:acl.app=$app$ | table title] | dedup title',
 			},
 			{ tokens: true }
 		);
@@ -561,9 +562,9 @@ require([
 					</section>
 					<section data-section-id="section-search">
 						<p><i class="icon-info-circle"></i> Auto generated search that merges all asset lookups according to configured fields and their respective merge settings.</p>
-						<a href="#" class="btn btn-primary btn-add-field">Run Search <i class="icon-external"></i></a>
+						<a target="_blank" href="/app/assetdb/search?s=%2FservicesNS%2Fnobody%2Fassetdb%2Fsaved%2Fsearches%2Fassetdb-lookupgen" class="btn btn-primary">Run Search <i class="icon-external"></i></a>
+						<a target="_blank" href="/manager/assetdb/saved/searches?app=assetdb&search=assetdb-lookupgen" class="btn btn-edit-schedule">Edit Schedule <i class="icon-external"></i></a>
 						<div class="query-container">
-							<textarea class="raw-query"></textarea>
 							<div class="formatted-query"></div>
 						</div>
 					</section>
@@ -584,7 +585,21 @@ require([
 			let general = fieldArray.find((obj) => {
 				return obj.name === 'general';
 			});
-			let lookupArray = general?.content?.lookups.split(',') || [];
+			let lookupArray = general?.content?.lookups ? general.content.lookups.split(',') : [];
+
+			if (!lookupArray.length) {
+				let error =
+					'<p class="error-message"><i class="icon-warning"></i> WARNING: You must add at least one lookup to merge into the asset database!</p>';
+				$('section[data-section-id="section-lookups"] p', $container).last().after(error);
+				$('section[data-section-id="section-search"] p', $container).last().after(error);
+			}
+
+			if (fieldArray.length < 2) {
+				let error =
+					'<p class="error-message"><i class="icon-warning"></i> WARNING: You must add at least one field to include in the asset database!</p>';
+				$('section[data-section-id="section-fields"] p', $container).last().after(error);
+				$('section[data-section-id="section-search"] p', $container).last().after(error);
+			}
 
 			$('.btn-add-field', $container).on('click', () => editAddField(lookupArray, fieldArray));
 			$('.btn-add-lookup', $container).on('click', () => addLookup(lookupArray));
@@ -652,7 +667,6 @@ require([
 			let promise = makeMergeSearch(fieldArray);
 			$.when(promise).done((data) => {
 				let $formatted_query = format(data, true, true);
-				$('.raw-query', $container).val(data);
 				$('.formatted-query', $container).append($formatted_query);
 			});
 			$el.append($container);
@@ -720,7 +734,7 @@ require([
 							stats = stats.concat(statsMerge);
 
 							let postEvalMerge = mergeOrderArray.map((lookup) => {
-								return `${lookup}_${field.name}`;
+								return `'${lookup}_${field.name}'`;
 							});
 							coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
 						}
@@ -748,6 +762,7 @@ require([
 			if (coalesce.length) search += `\n| eval ${coalesce.join(', ')}`;
 			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
 			search += `\n| table _key, ${table.join(', ')}`;
+			search += '\n| outputlookup assetdb-lookupgen';
 
 			return search;
 		});
