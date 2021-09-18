@@ -11,10 +11,9 @@ require([
 	'/static/app/assetdb/js/src/spinnerInput.js',
 	'/static/app/assetdb/js/src/multiselectInput.js',
 	'/static/app/assetdb/js/src/format.js',
-	'splunkjs/mvc/searchmanager',
 	'splunkjs/mvc/simpleform/input/dropdown',
 	'splunkjs/mvc/simplexml/ready!',
-], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, SearchManager, DropdownInput) {
+], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, DropdownInput) {
 	const $el = $('#ab_config');
 	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
 	const SERVICE = mvc.createService();
@@ -94,25 +93,16 @@ require([
 	 * @return {Promise} 				Jquery promise
 	 */
 	function updateField(fieldArray, fieldData, fieldName, operation) {
-		let endpoint = 'conf-assetdb/';
 		let promises = [];
 
-		// Update assetdb.conf
-		if (operation == 'add' || operation == 'edit') {
-			if (operation == 'add') {
-				fieldData.name = fieldName;
-			} else {
-				endpoint += fieldName;
-			}
-			promises.push(setConf(endpoint, fieldData));
-		} else if (operation == 'delete') {
-			endpoint += fieldName;
-			promises.push(delConf(endpoint));
-		}
+		if (operation == 'add') {
+			// Update assetdb.conf
+			let endpoint_assetdb = 'conf-assetdb/';
+			fieldData.name = fieldName;
+			promises.push(setConf(endpoint_assetdb, fieldData));
 
-		// Update transforms.conf
-		if (operation == 'add' || operation == 'delete') {
-			let endpoint = 'conf-transforms/asset_db';
+			// Update transforms.conf
+			let endpoint_transforms = 'conf-transforms/assetdb';
 			let fieldNames = fieldArray.reduce(function (result, obj) {
 				if (obj.name !== 'general') {
 					result.push(obj.name);
@@ -121,16 +111,42 @@ require([
 			}, []);
 			let index = fieldNames.indexOf(fieldName);
 
-			if (operation == 'add' && index == -1) {
+			if (index == -1) {
 				fieldNames.push(fieldName);
-			} else if (operation == 'delete' && index > -1) {
+			}
+
+			fieldNames.push('_key');
+			fieldNames.push('asset');
+
+			let fields_list = { fields_list: fieldNames.join(',') };
+			promises.push(setConf(endpoint_transforms, fields_list));
+
+		} else if (operation == 'edit') {
+			// Update assetdb.conf
+			let endpoint_assetdb = 'conf-assetdb/' + fieldName;
+			promises.push(setConf(endpoint_assetdb, fieldData));
+
+		} else if (operation == 'delete') {
+			promises.push(delConf('conf-assetdb/' + fieldName));
+
+			// Update transforms.conf
+			let endpoint_transforms = 'conf-transforms/assetdb';
+			let fieldNames = fieldArray.reduce(function (result, obj) {
+				if (obj.name !== 'general') {
+					result.push(obj.name);
+				}
+				return result;
+			}, []);
+			let index = fieldNames.indexOf(fieldName);
+
+			if (index > -1) {
 				fieldNames.splice(index, 1);
 			}
 
 			fieldNames.push('_key');
 
 			let data = { fields_list: fieldNames.join(',') };
-			promises.push(setConf(endpoint, data));
+			promises.push(setConf(endpoint_transforms, data));
 		}
 
 		return $.when(...promises);
@@ -204,19 +220,17 @@ require([
 			help: '[Optional] Fill null entries with a static value',
 		});
 
-		let typeInput = new RadioInput({
-			id: 'inputType',
-			label: 'Type',
+		let fieldTypeInput = new RadioInput({
+			id: 'inputFieldType',
+			label: 'Field Type',
 			choices: [
 				{ label: 'Single', value: 'single' },
 				{ label: 'Multivalue', value: 'multivalue' },
 				{ label: 'Eval', value: 'eval' },
 			],
-			value: field?.content?.type || 'single',
+			value: field?.content?.field_type || 'single',
 			help: 'Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field',
 		});
-
-		if (parseInt(field?.content?.key_field)) typeInput.disable();
 
 		let mergeMethodInput = new RadioInput({
 			id: 'inputMergeMethod',
@@ -235,7 +249,7 @@ require([
 			choices: lookupArray.map((lookup) => {
 				return { label: lookup, value: lookup };
 			}),
-			value: lookupArray || [],
+			value: [],
 			help: '[Optional] Define the precedence of the source data; if no precendence is provided, a random order is used',
 		});
 
@@ -267,30 +281,21 @@ require([
 			.append(caseSensitiveInput.getInput())
 			.append(ignoreValuesInput.getInput())
 			.append(fillnullInput.getInput())
-			.append(typeInput.getInput());
+			.append(fieldTypeInput.getInput());
 
 		$('.input-group-single', $form).append(mergeMethodInput.getInput()).append(mergeOrderInput.getInput());
 		$('.input-group-multivalue', $form).append(spinnerInput.getInput());
 		$('.input-group-eval', $form).append(evalExpInput.getInput());
 
-		let type = typeInput.getValue();
+		let field_type = fieldTypeInput.getValue();
 		$('.input-group-toggle', $form).hide();
-		$(`.input-group-${type}`, $form).show();
+		$(`.input-group-${field_type}`, $form).show();
 
 		let mergeMethod = mergeMethodInput.getValue();
 		let $input = mergeOrderInput.getInput();
 		mergeMethod == 'latest' ? $input.hide() : $input.show();
 
-		keyFieldInput.getInput().on('change', function (e, data) {
-			if (data.value == '1') {
-				typeInput.setValue('single');
-				typeInput.disable();
-			} else {
-				typeInput.enable();
-			}
-		});
-
-		typeInput.getInput().on('change', function (e, data) {
+		fieldTypeInput.getInput().on('change', function (e, data) {
 			$('.input-group-toggle', $form).hide();
 			$(`.input-group-${data.value}`, $form).show();
 		});
@@ -308,10 +313,14 @@ require([
 				mvc.Components.getInstance(mergeOrderInput.getId()).dispose();
 			},
 			onPrimaryBtnClick: function () {
+				let self = this;
 				if (fieldNameInput.isEditable()) {
 					let pattern = /^\w+$/;
 					if (!pattern.test(fieldNameInput.getValue())) {
 						fieldNameInput.setError('Field name can only use alphanumeric characters and underscores');
+						return;
+					} else if (fieldNameInput.getValue() == 'asset') {
+						fieldNameInput.setError('"asset" is a default field and cannot be replaced, choose another field name');
 						return;
 					}
 				}
@@ -322,7 +331,7 @@ require([
 					case_sensitive: caseSensitiveInput.getValue(),
 					ignore_values: ignoreValuesInput.getValue(),
 					fillnull: fillnullInput.getValue(),
-					type: typeInput.getValue(),
+					field_type: fieldTypeInput.getValue(),
 					merge_method: mergeMethodInput.getValue(),
 					merge_order: mergeOrderInput.getValue(),
 					max_values: spinnerInput.getValue() || 2,
@@ -399,7 +408,7 @@ require([
 				id: 'searchApp',
 				preview: true,
 				cache: true,
-				search: '| rest /services/apps/local | search disabled=0 | fields title label',
+				search: '| rest /services/apps/local | search disabled=0 | fields title label | sort title',
 			},
 			{ tokens: true }
 		);
@@ -410,7 +419,7 @@ require([
 				preview: true,
 				cache: true,
 				search:
-					'| rest /services/data/lookup-table-files | search eai:acl.app=$app$ | table title | append [| rest /services/data/transforms/lookups | search eai:acl.app=$app$ | table title] | dedup title',
+					'| rest /services/data/lookup-table-files | search eai:acl.app=$app$ | table title | append [| rest /services/data/transforms/lookups | search eai:acl.app=$app$ | table title] | dedup title | sort title',
 			},
 			{ tokens: true }
 		);
@@ -553,7 +562,7 @@ require([
 								<tr>
 									<th data-key="" class="col-info"><i class="icon-info"></i></th>
 									<th>Field</th>
-									<th>Type</th>
+									<th>Field Type</th>
 									<th>Action</th>
 								</tr>
 							</thead>
@@ -608,10 +617,9 @@ require([
 				let $tr = $(`
 					<tr data-name="${lookup}">
 						<td>${lookup}</td>
-						<td><a class="adb-lookup-edit" href="#">Edit <i class="icon-external"></i></a> | <a class="adb-lookup-delete" href="#">Delete</a></td>'}
+						<td><a class="adb-lookup-delete" href="#">Delete</a></td>'}
 					</tr>
 				`);
-				$('.adb-lookup-edit', $tr).on('click', () => addLookup(lookupArray));
 				$('.adb-lookup-delete', $tr).on('click', () => deleteLookup(lookupArray, lookup));
 				$('.lookups-table tbody', $container).append($tr);
 			});
@@ -636,19 +644,19 @@ require([
 								</dl>
 							</div>
 						</td>
-						<td>${field.content.type}</td>
+						<td>${field.content.field_type}</td>
 						<td><a class="adb-field-edit" href="#">Edit</a> | <a class="adb-field-delete" href="#">Delete</a></td>'}
 					</tr>`);
 
 				let $dl = $('dl', $tr);
-				if (field.content.type == 'single') {
+				if (field.content.field_type == 'single') {
 					$dl.append(`<dt>Merge Method</dt><dd>${field.content.merge_method}</dd>`);
 					if (field.content.merge_method == 'coalesce') {
 						$dl.append(`<dt>Merge Order</dt><dd>${field.content.merge_order}</dd>`);
 					}
-				} else if (field.content.type == 'multivalue') {
+				} else if (field.content.field_type == 'multivalue') {
 					$dl.append(`<dt>Max Values</dt><dd>${field.content.max_values}</dd>`);
-				} else if (field.content.type == 'eval') {
+				} else if (field.content.field_type == 'eval') {
 					$dl.append(`<dt>Eval Expression</dt><dd>${field.content.eval_expression}</dd>`);
 				}
 
@@ -685,6 +693,7 @@ require([
 			if (!fieldArray.length) fieldArray = JSON.parse(data).entry;
 			let fieldSplit = [];
 			let coalesce = [];
+			let multivalue = [];
 			let stats = [];
 			let evalExp = [];
 			let keys = [];
@@ -702,7 +711,9 @@ require([
 						return `\n| \`append_adb_lookup(${lookup})\``;
 					});
 				} else {
-					if (parseInt(field.content.key_field)) keys.push(field.name);
+					if (parseInt(field.content.key_field)) {
+						keys.push(field.name);
+					}
 
 					if (field.content.ignore_values) {
 						let ignoreValuesArray = field.content.ignore_values.split(',');
@@ -720,7 +731,7 @@ require([
 						caseSensitive.push(`${field.name} = lower(${field.name})`);
 					}
 
-					if (field.content.type == 'single') {
+					if (field.content.field_type == 'single') {
 						if (field.content.merge_method == 'latest') {
 							stats.push(`latest(${field.name}) as ${field.name}`);
 						} else if (field.content.merge_method == 'coalesce') {
@@ -738,10 +749,11 @@ require([
 							});
 							coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
 						}
-					} else if (field.content.type == 'multivalue') {
+					} else if (field.content.field_type == 'multivalue') {
+						multivalue.push(field.name);
 						stats.push(`values(${field.name}) as ${field.name}`);
 						maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
-					} else if (field.content.type == 'eval') {
+					} else if (field.content.field_type == 'eval') {
 						evalExp.push(`${field.name} = ${field.content.eval_expression}`);
 					}
 
@@ -751,18 +763,31 @@ require([
 
 			let search = '| makeresults';
 			if (lookups.length) search += lookups.join('');
-			search += '\n| foreach * [eval <<FIELD>>=split(<<FIELD>>, "|")]';
+			search += `\n| foreach ${table.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
 			if (caseSensitive.length) search += `\n| eval ${caseSensitive.join(', ')}`;
 			if (ignoreValues.length) search += `\n| eval ${ignoreValues.join(', ')}`;
 			if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
-			if (keys.length) search += `\n| eval _key = ${keys.join('.')}`;
 			if (fieldSplit.length) search += `\n| eval ${fieldSplit.join(', ')}`;
-			if (stats.length) search += `\n| stats ${stats.join(', ')} by _key`;
+			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
+			keys.forEach(function(key) {
+				let eventstats = [];
+				keys.forEach(function(key2) {
+					if (key != key2) eventstats.push(`values(${key2}) as key_${key2}`)
+				})
+				search += `\n| eventstats ${eventstats.join(', ')} by ${key}`;
+			});
+			search += `\n| eval _key = mvjoin(mvdedup(mvappend(${keys.map((k) => {return `key_${k}`;}).join(', ')}, ${keys.join(', ')})), "::")`;
+			search += `\n| search _key=*`;
+			if (stats.length) search += `\n| stats values(asset) as asset, ${stats.join(', ')} by _key`;
+			search += `\n| eval asset = mvappend(${keys.join(', ')})`;
 			if (maxValues.length) search += `\n| eval ${maxValues.join(', ')}`;
 			if (coalesce.length) search += `\n| eval ${coalesce.join(', ')}`;
-			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
-			search += `\n| table _key, ${table.join(', ')}`;
-			search += '\n| outputlookup assetdb-lookupgen';
+			search += `\n| table _key, asset, ${table.join(', ')}`;
+			search += '\n| outputlookup assetdb';
+
+			console.log(stats)
+			console.log(maxValues)
+			console.log(coalesce)
 
 			return search;
 		});

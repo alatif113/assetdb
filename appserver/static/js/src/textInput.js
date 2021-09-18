@@ -42,8 +42,8 @@ define(function (require, exports, module) {
 		}
 
 		setError(error) {
-			$('.error-block', this.$input).remove();
-			let $error = $(`<div class="error-block">${error}</div>`);
+			$('.error-message', this.$input).remove();
+			let $error = $(`<div class="error-message help-block">${error}</div>`);
 			this.$input.append($error);
 		}
 	}

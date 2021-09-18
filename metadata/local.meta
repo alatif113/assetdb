@@ -12,33 +12,8 @@ version = 8.1.2
 modtime = 1616125419.445923000
 
 [transforms/asset_db]
-version = 8.1.2
-modtime = 1616641138.548446000
-
-[assetdb/nt_host]
-owner = admin
-version = 8.1.2
-modtime = 1615945911.547163000
-
-[assetdb/ip]
-owner = admin
-version = 8.1.2
-modtime = 1615946872.182281000
-
-[assetdb/mac]
-owner = admin
-version = 8.1.2
-modtime = 1615946876.228598000
-
-[assetdb/os]
-owner = admin
-version = 8.1.2
-modtime = 1616640762.095973000
-
-[assetdb/id]
-owner = admin
-version = 8.1.2
-modtime = 1615957779.703076000
+version = 8.2.2
+modtime = 1631722297.425129000
 
 [macros/append_adb_lookup%281%29]
 export = none
@@ -47,34 +22,112 @@ version = 8.1.2
 modtime = 1615959284.485158000
 
 [assetdb/general]
-version = 8.1.2
-modtime = 1616731737.825775000
+version = 8.2.2
+modtime = 1631938430.541111000
 
 [savedsearches/assetdb-lookupgen]
 export = system
 owner = admin
-version = 8.1.2
-modtime = 1616731737.854673000
-
-[assetdb/_time]
-owner = admin
-version = 8.1.2
-modtime = 1616556103.153302000
+version = 8.2.2
+modtime = 1631938430.583381000
 
 [lookups/assetdb_test1.csv]
 export = system
 owner = admin
-version = 8.1.2
-modtime = 1616640228.669516000
+version = 8.2.2
+modtime = 1631836167.680445000
 
 [lookups/assetdb_test2.csv]
 export = system
 owner = admin
-version = 8.1.2
-modtime = 1616640233.083584000
+version = 8.2.2
+modtime = 1631834143.594207000
 
 [lookups/assetdb_test3.csv]
 export = system
 owner = admin
-version = 8.1.2
-modtime = 1616640237.200577000
+version = 8.2.2
+modtime = 1631833034.251285000
+
+[assetdb/category]
+owner = admin
+version = 8.2.2
+modtime = 1631722063.414521000
+
+[assetdb/city]
+owner = admin
+version = 8.2.2
+modtime = 1631722081.791613000
+
+[assetdb/country]
+owner = admin
+version = 8.2.2
+modtime = 1631722087.395840000
+
+[assetdb/device_id]
+owner = admin
+version = 8.2.2
+modtime = 1631722094.921785000
+
+[assetdb/dns]
+owner = admin
+version = 8.2.2
+modtime = 1631903964.392899000
+
+[assetdb/group]
+owner = admin
+version = 8.2.2
+modtime = 1631722114.220097000
+
+[assetdb/ip]
+owner = admin
+version = 8.2.2
+modtime = 1631903872.765506000
+
+[assetdb/mac]
+owner = admin
+version = 8.2.2
+modtime = 1631903247.343431000
+
+[assetdb/mac_vendor]
+owner = admin
+version = 8.2.2
+modtime = 1631722279.334880000
+
+[assetdb/mac_vendor_country]
+owner = admin
+version = 8.2.2
+modtime = 1631722289.983089000
+
+[collections/assetdb]
+version = 8.2.2
+modtime = 1631855128.454587000
+
+[transforms/assetdb]
+version = 8.2.2
+modtime = 1631904777.906168000
+
+[assetdb/nt_host]
+owner = admin
+version = 8.2.2
+modtime = 1631903883.903858000
+
+[assetdb/bunit]
+owner = admin
+version = 8.2.2
+modtime = 1631906293.794289000
+
+[assetdb/owner]
+owner = admin
+version = 8.2.2
+modtime = 1631904777.898541000
+
+[macros/get_adb_asset%281%29]
+export = system
+owner = admin
+version = 8.2.2
+modtime = 1631905216.715607000
+
+[nav/default]
+version = 8.2.2
+modtime = 1631907648.972123000
