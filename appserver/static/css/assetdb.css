@@ -31,6 +31,11 @@ table {
 	margin-top: 10px;
 }
 
+.list-dotted dd {
+	width: 100%;
+	word-break: break-word;
+}
+
 .key-tag {
 	padding: 4px 6px;
 	background: #3c454d;

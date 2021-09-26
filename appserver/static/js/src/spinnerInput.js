@@ -7,6 +7,8 @@ define(function (require, exports, module) {
 			let id = _.escape(data.id);
 			let label = _.escape(data.label);
 			let value = _.escape(data.value);
+			let minimum = _.escape(data.minimum);
+			let maximum = _.escape(data.maximum);
 
 			this.$input = $(`
                 <div id="${id}" class="control-group shared-controls-controlgroup control-group-default">
@@ -26,17 +28,19 @@ define(function (require, exports, module) {
 
 			$('.increment-up', this.$input).on('click', (e) => {
 				let $text_input = $('input', this.$input);
-				let current_val = parseInt($text_input.val()) || 2;
+				let current_val = parseInt($text_input.val()) || minimum || maximum || '';
 				let target_val = (current_val += 1);
-				$text_input.val(target_val);
+				let value = this._check_range(target_val, minimum, maximum)
+				if (value) $text_input.val(value);
 				return false;
 			});
 
 			$('.increment-down', this.$input).on('click', (e) => {
 				let $text_input = $('input', this.$input);
-				let current_val = parseInt($text_input.val()) || 2;
-				let target_val = Math.max(2, (current_val -= 1));
-				$text_input.val(target_val);
+				let current_val = parseInt($text_input.val()) || minimum || maximum || '';
+				let target_val = (current_val -= 1);
+				let value = this._check_range(target_val, minimum, maximum)
+				if (value) $text_input.val(value);
 				return false;
 			});
 
@@ -44,6 +48,25 @@ define(function (require, exports, module) {
 				let $help = $(`<div class="help-block">${data.help}</div>`);
 				this.$input.append($help);
 			}
+		}
+
+		_check_range(value, minimum, maximum) {
+			if (minimum && maximum) {
+				if (value <= maximum && value >= minimum) {
+					return value;
+				}
+			} else if (minimum) {
+				if (value >= minimum) {
+					return value;
+				}
+			} else if (maximum) {
+				if (value <= maximum) {
+					return value;
+				}
+			} else {
+				return value;
+			}
+			return null;
 		}
 
 		getValue() {

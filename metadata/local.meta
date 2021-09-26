@@ -23,13 +23,13 @@ modtime = 1615959284.485158000
 
 [assetdb/general]
 version = 8.2.2
-modtime = 1631938430.541111000
+modtime = 1632600317.937020000
 
 [savedsearches/assetdb-lookupgen]
 export = system
 owner = admin
 version = 8.2.2
-modtime = 1631938430.583381000
+modtime = 1632600318.020955000
 
 [lookups/assetdb_test1.csv]
 export = system
@@ -52,17 +52,17 @@ modtime = 1631833034.251285000
 [assetdb/category]
 owner = admin
 version = 8.2.2
-modtime = 1631722063.414521000
+modtime = 1631984352.011923000
 
 [assetdb/city]
 owner = admin
 version = 8.2.2
-modtime = 1631722081.791613000
+modtime = 1631984453.734248000
 
 [assetdb/country]
 owner = admin
 version = 8.2.2
-modtime = 1631722087.395840000
+modtime = 1631984627.552976000
 
 [assetdb/device_id]
 owner = admin
@@ -105,7 +105,7 @@ modtime = 1631855128.454587000
 
 [transforms/assetdb]
 version = 8.2.2
-modtime = 1631904777.906168000
+modtime = 1631984780.000038000
 
 [assetdb/nt_host]
 owner = admin
@@ -131,3 +131,18 @@ modtime = 1631905216.715607000
 [nav/default]
 version = 8.2.2
 modtime = 1631907648.972123000
+
+[assetdb/_time]
+owner = admin
+version = 8.2.2
+modtime = 1631984650.904861000
+
+[assetdb/os]
+owner = admin
+version = 8.2.2
+modtime = 1631984671.011888000
+
+[assetdb/priority]
+owner = admin
+version = 8.2.2
+modtime = 1632599061.161253000

@@ -1,4 +1,4 @@
-define(['/static/app/assetdb/js/src/prism.js', 'jquery'], function (Prism, $) {
+define(['/static/app/assetdb/js/prism.min.js', 'jquery'], function (Prism, $) {
 	return function (str, multiline, highlight) {
 		var hlight = highlight ? ' highlight' : '';
 		var indentlevel = 0;

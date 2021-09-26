@@ -4,8 +4,7 @@
 	"description": "",
 	"main": "assetdb.js",
 	"scripts": {
-		"build": "babel appserver/static/js/src -d appserver/static/js --source-maps inline",
-		"minify": "cd appserver/static/js; rm *.min.js > /dev/null; for f in *.js; do short=${f%.js}; terser $short.js --compress --mangle --output $short.min.js; rm $short.js; done;"
+		"build": "babel appserver/static/js/src -d appserver/static/js; cd appserver/static/js; rm *.min.js > /dev/null; for f in *.js; do short=${f%.js}; terser $short.js --compress --mangle --output $short.min.js; rm $short.js; done;"
 	},
 	"repository": {
 		"type": "git",
@@ -19,7 +18,8 @@
 	"homepage": "https://github.com/alatif113/assetdb#readme",
 	"dependencies": {
 		"babel-cli": "^6.26.0",
-		"terser": "^5.8.0"
+		"terser": "^5.8.0",
+		"uglify-js": "^3.14.2"
 	},
 	"devDependencies": {
 		"@babel/cli": "^7.15.4",

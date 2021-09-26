@@ -5,12 +5,12 @@ require([
 	'jquery',
 	'splunkjs/mvc',
 	'splunkjs/mvc/searchmanager',
-	'/static/app/assetdb/js/src/modal.js',
-	'/static/app/assetdb/js/src/textInput.js',
-	'/static/app/assetdb/js/src/radioInput.js',
-	'/static/app/assetdb/js/src/spinnerInput.js',
-	'/static/app/assetdb/js/src/multiselectInput.js',
-	'/static/app/assetdb/js/src/format.js',
+	'/static/app/assetdb/js/modal.min.js',
+	'/static/app/assetdb/js/textInput.min.js',
+	'/static/app/assetdb/js/radioInput.min.js',
+	'/static/app/assetdb/js/spinnerInput.min.js',
+	'/static/app/assetdb/js/multiselectInput.min.js',
+	'/static/app/assetdb/js/format.min.js',
 	'splunkjs/mvc/simpleform/input/dropdown',
 	'splunkjs/mvc/simplexml/ready!',
 ], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, DropdownInput) {
@@ -237,10 +237,13 @@ require([
 			label: 'Merge Method',
 			choices: [
 				{ label: 'Latest', value: 'latest' },
+				{ label: 'Min', value: 'min' },
+				{ label: 'Max', value: 'max' },
+				{ label: 'Avg', value: 'avg' },
 				{ label: 'Coalesce', value: 'coalesce' },
 			],
 			value: field?.content?.merge_method || 'latest',
-			help: 'Either take the most recent value or define a precedence based on the source data',
+			help: 'Either take the most recent value, minimum value, maximum value, average value, or define a precedence based on the source data',
 		});
 
 		let mergeOrderInput = new MultiSelectInput({
@@ -249,7 +252,7 @@ require([
 			choices: lookupArray.map((lookup) => {
 				return { label: lookup, value: lookup };
 			}),
-			value: [],
+			value: (field?.content?.merge_order) ? field?.content?.merge_order.split(',') : [],
 			help: '[Optional] Define the precedence of the source data; if no precendence is provided, a random order is used',
 		});
 
@@ -257,6 +260,7 @@ require([
 			id: 'inputMaxValues',
 			label: 'Max Values',
 			value: field?.content?.max_values || 10,
+			minimum: 2,
 			help: 'The maximum number of values to store as a multivalue',
 		});
 
@@ -293,7 +297,7 @@ require([
 
 		let mergeMethod = mergeMethodInput.getValue();
 		let $input = mergeOrderInput.getInput();
-		mergeMethod == 'latest' ? $input.hide() : $input.show();
+		mergeMethod == 'coalesce' ? $input.show() : $input.hide();
 
 		fieldTypeInput.getInput().on('change', function (e, data) {
 			$('.input-group-toggle', $form).hide();
@@ -302,7 +306,7 @@ require([
 
 		mergeMethodInput.getInput().on('change', function (e, data) {
 			let $input = mergeOrderInput.getInput();
-			data.value == 'latest' ? $input.hide() : $input.show();
+			data.value == 'coalesce' ? $input.show() : $input.hide();
 		});
 
 		let editAddModal = new Modal({
@@ -594,7 +598,8 @@ require([
 			let general = fieldArray.find((obj) => {
 				return obj.name === 'general';
 			});
-			let lookupArray = general?.content?.lookups ? general.content.lookups.split(',') : [];
+
+			let lookupArray = (general?.content?.lookups || '').split(',');
 
 			if (!lookupArray.length) {
 				let error =
@@ -644,7 +649,7 @@ require([
 								</dl>
 							</div>
 						</td>
-						<td>${field.content.field_type}</td>
+						<td>${field.content.field_type}${(field?.content?.field_type == 'multivalue') ? '' : ' - ' + field?.content?.merge_method}</td>
 						<td><a class="adb-field-edit" href="#">Edit</a> | <a class="adb-field-delete" href="#">Delete</a></td>'}
 					</tr>`);
 
@@ -691,6 +696,7 @@ require([
 
 		return $.when(promise).then((data) => {
 			if (!fieldArray.length) fieldArray = JSON.parse(data).entry;
+			
 			let fieldSplit = [];
 			let coalesce = [];
 			let multivalue = [];
@@ -700,7 +706,7 @@ require([
 			let table = [];
 			let fillnull = [];
 			let ignoreValues = [];
-			let caseSensitive = [];
+			let caseInsensitive = [];
 			let maxValues = [];
 			let lookups = [];
 
@@ -717,10 +723,7 @@ require([
 
 					if (field.content.ignore_values) {
 						let ignoreValuesArray = field.content.ignore_values.split(',');
-						let ignoreValuesMerge = ignoreValuesArray.map((value) => {
-							return `"${value}"`;
-						});
-						ignoreValues.push(`${field.name} = if(in(${field.name}, ${ignoreValuesMerge.join(', ')}), null(), ${field.name})`);
+						ignoreValues.push(`${field.name} = if(in(${field.name}, "${ignoreValuesArray.join('"", "')}"), null(), ${field.name})`);
 					}
 
 					if (field?.content?.fillnull) {
@@ -728,13 +731,13 @@ require([
 					}
 
 					if (!parseInt(field.content.case_sensitive)) {
-						caseSensitive.push(`${field.name} = lower(${field.name})`);
+						caseInsensitive.push(field.name);
 					}
 
-					if (field.content.field_type == 'single') {
+					if (field?.content?.field_type == 'single') {
 						if (field.content.merge_method == 'latest') {
 							stats.push(`latest(${field.name}) as ${field.name}`);
-						} else if (field.content.merge_method == 'coalesce') {
+						} else if (field?.content?.merge_method == 'coalesce') {
 							fieldSplit.push(`{adb_source}_${field.name} = ${field.name}`);
 
 							let mergeOrderArray = field.content.merge_order.split(',');
@@ -748,6 +751,8 @@ require([
 								return `'${lookup}_${field.name}'`;
 							});
 							coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
+						} else {
+							stats.push(`${field.content.merge_method}(${field.name}) as ${field.name}`);
 						}
 					} else if (field.content.field_type == 'multivalue') {
 						multivalue.push(field.name);
@@ -763,31 +768,23 @@ require([
 
 			let search = '| makeresults';
 			if (lookups.length) search += lookups.join('');
-			search += `\n| foreach ${table.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
-			if (caseSensitive.length) search += `\n| eval ${caseSensitive.join(', ')}`;
+			search += `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
+			if (caseInsensitive.length) search += `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
 			if (ignoreValues.length) search += `\n| eval ${ignoreValues.join(', ')}`;
 			if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
 			if (fieldSplit.length) search += `\n| eval ${fieldSplit.join(', ')}`;
 			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
-			keys.forEach(function(key) {
-				let eventstats = [];
-				keys.forEach(function(key2) {
-					if (key != key2) eventstats.push(`values(${key2}) as key_${key2}`)
-				})
-				search += `\n| eventstats ${eventstats.join(', ')} by ${key}`;
-			});
-			search += `\n| eval _key = mvjoin(mvdedup(mvappend(${keys.map((k) => {return `key_${k}`;}).join(', ')}, ${keys.join(', ')})), "::")`;
+			if (keys.length) search += `\n| eval _key = mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`;
 			search += `\n| search _key=*`;
+			if (stats.length) search += `\n| stats, ${stats.join(', ')} by _key`;
+			if (keys.length) search += `\n| eval _key = mvappend(${keys.join(', ')})`;
+			search += `\n| adbentitymerge max_keys=25`
+			search += `\n| eval _key = md5(mvjoin(asset, "::"))`;
 			if (stats.length) search += `\n| stats values(asset) as asset, ${stats.join(', ')} by _key`;
-			search += `\n| eval asset = mvappend(${keys.join(', ')})`;
 			if (maxValues.length) search += `\n| eval ${maxValues.join(', ')}`;
 			if (coalesce.length) search += `\n| eval ${coalesce.join(', ')}`;
-			search += `\n| table _key, asset, ${table.join(', ')}`;
+			if (table.length) search += `\n| table _key, asset, ${table.join(', ')}`;
 			search += '\n| outputlookup assetdb';
-
-			console.log(stats)
-			console.log(maxValues)
-			console.log(coalesce)
 
 			return search;
 		});
