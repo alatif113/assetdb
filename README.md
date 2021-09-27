@@ -20,12 +20,17 @@ Create fields to be stored within the *Asset Database* and merged between all in
 
 - **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for further details on field properties. 
 
-- **Edit field**: Click the *Edit Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for further details on field properties. 
+- **Edit field**: Click the *Edit Field* button to edit an existing field into the *Asset Database*. See the **Field Properties** section below for further details on field properties. 
 
 - **Delete field**: Click the *Delete Field* button to delete an existing field from the *Asset Database*. Deleting a field, does not remove that field from any underlying lookup files. 
 
 ### Field Properties
 
+The following field properties can be set when adding a new field or editing an existing field. 
 
+| Property | Description |
+| ----------- | ----------- |
+| Header | Title |
+| Paragraph | Text |
 
 ### How AssetDB Merges Assets
