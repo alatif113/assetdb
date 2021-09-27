@@ -6,7 +6,7 @@ AssetDB is a Splunk application that allows merging distinct data sources into a
 
 Navigate to the "Configure" tab to configure AssetDB
 
-### Lookups
+### Asset Lookups
 
 Create lookup files and corresponding lookup generation searches for each unqiue data source that provides asset information. 
 
@@ -14,7 +14,7 @@ Create lookup files and corresponding lookup generation searches for each unqiue
 
  - **Delete lookup file**: Click the *Delete* link next to an existing lookup file in the *Lookups Table* to remove the lookup and prevent its contents from being merged into the *Asset Database*.
 
-### Fields
+### Asset Fields
 
 Create fields to be stored within the *Asset Database* and merged between all input lookup files. 
 
@@ -66,7 +66,7 @@ AssetDB uses *Key Fields* to merge assets together into a single *Asset Database
 
 Note how although, the Asset from source `lookup_A` and Asset from source `lookup_C` do not share any keys, they end up being merged due to both sharing keys with the Asset from source `lookup_B`.
 
-### Merge Search
+### Asset Merge Search
 
 Merging is done via a saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store. 
 
