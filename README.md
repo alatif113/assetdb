@@ -54,13 +54,13 @@ AssetDB uses *Key Fields* to merge assets together into a single *Asset Database
 3. Asset from source `lookup_A` and Asset from source `lookup_B` share a key `mac_A`
 ![merge_3.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_3.png)
 
-4. Asset from source `lookup_A` and Asset from source `lookup_B` are merged using the merged logic defined for each field
+4. Asset from source `lookup_A` and Asset from source `lookup_B` are merged using the properties defined defined for each field
 ![merge_4.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_4.png)
 
 5. The newly merged Asset and Asset from source `lookup_C` share a key `host_B`
 ![merge_5.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_5.png)
 
-6. The newly merged Asset and Asset from source `lookup_C` are merged using the merged logic defined for each field. The Asset from source `lookup_D` does not share keys with any other asset. It is not merged. 
+6. The newly merged Asset and Asset from source `lookup_C` are merged using the properties defined for each field. The Asset from source `lookup_D` does not share keys with any other asset. It is not merged. 
 ![merge_6.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_6.png)
 
 
