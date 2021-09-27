@@ -80,3 +80,10 @@ AssetDB uses *Key Fields* to merge assets together into a single *Asset Database
 
 **Rows 2 is not merged because it does not share a Key with any other asset**
 
+```
+| row | mac | nt_host | source | _key |
+| ----------- | ----------- | ----------- | ----------- | ----------- |
+| 1 | mac_1<br>mac_2 | nt_host_1<br>nt_host_2<br>nt_host_3<br>nt_host_4 | lookup_1<br>lookup_2<br>lookup_3 | mac_1<br>nt_host_1<br>**mac_2**<br>nt_host_2<br>nt_host_3<br>nt_host_4 |
+| 2 | mac_5 | nt_host_5 | lookup_5 | mac_5<br>nt_host_5 |
+```
+
