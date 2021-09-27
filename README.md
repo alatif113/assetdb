@@ -43,7 +43,7 @@ The following field properties can be set when adding a new field or editing an 
 
 ### How AssetDB Merges Assets
 
-AssetDB uses *Key Fields* to merge assets together into a single *Asset Database*. The below is an example of how the merge process operates, across 3 input lookup files, where *mac* and *nt_host* are defined as key fields. All fields are of Field Type *Mutivalue*.
+AssetDB uses *Key Fields* to merge assets together into a single *Asset Database*. The below is an example of how the merge process operates, across 4 input lookup files, where *mac* and *nt_host* are defined as key fields. All fields are of Field Type *Mutivalue*.
 
 1. Lookup files are concatenated together
 ![merge_1.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_1.png)
