@@ -326,6 +326,9 @@ require([
 					} else if (fieldNameInput.getValue() == 'asset') {
 						fieldNameInput.setError('"asset" is a default field and cannot be replaced, choose another field name');
 						return;
+					} else if (fieldNameInput.getValue() == '_key') {
+						fieldNameInput.setError('"_key" is a default field and cannot be replaced, choose another field name');
+						return;
 					}
 				}
 

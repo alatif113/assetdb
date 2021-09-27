@@ -18,9 +18,9 @@ Create lookup files and corresponding lookup generation searches for each unqiue
 
 Create fields to be stored within the *Asset Database* and merged between all input lookup files. 
 
-- **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for further details on field properties. 
+- **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
 
-- **Edit field**: Click the *Edit Field* button to edit an existing field into the *Asset Database*. See the **Field Properties** section below for further details on field properties. 
+- **Edit field**: Click the *Edit Field* button to edit an existing field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
 
 - **Delete field**: Click the *Delete Field* button to delete an existing field from the *Asset Database*. Deleting a field, does not remove that field from any underlying lookup files. 
 
@@ -28,9 +28,17 @@ Create fields to be stored within the *Asset Database* and merged between all in
 
 The following field properties can be set when adding a new field or editing an existing field. 
 
-| Property | Description |
-| ----------- | ----------- |
-| Header | Title |
-| Paragraph | Text |
+| Property | Type | Description |
+| ----------- | ----------- | ----------- |
+| Field Name | String | The name of the field. Must consist of alphanumeric characters or underscores. Field names *_key* and *asset* are automatically created during the asset merge process and cannot be overwritten. |
+| Key Field | Boolean | Whether the field is a key field or not. Key fields are fields that define a unqiue asset and are used during the asset merge process. See **How AssetDB Merges Assets** for more information on.
+| Case Sensitive | Boolean | Wether the field is case sensitive or not. A value of *No* will set all field values to lower case. 
+| Ignore Values | String | (Optional) A comma seperated list of field values to ignore (e.g. null,none,unknown). 
+| Fill Null | String | (Optional) A static value to fill null entries of a field with (e.g. a default asset priority). 
+| Field Type | [Single|Multivalue|Eval] | Defines the type of field. Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field.
+
+#### Field Type Specific Options
+
+| Merge Method | 
 
 ### How AssetDB Merges Assets
