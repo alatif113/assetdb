@@ -66,6 +66,9 @@ AssetDB uses *Key Fields* to merge assets together into a single *Asset Database
 
 Note how although, the Asset from source `lookup_A` and Asset from source `lookup_C` do not share any keys, they end up being merged due to both sharing keys with the Asset from source `lookup_B`.
 
+### Merge Search
+
+Merging is done via a saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store. 
 
 
 
