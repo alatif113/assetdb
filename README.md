@@ -37,6 +37,6 @@ The following field properties can be set when adding a new field or editing an 
 | Fill Null | (Optional) A static value to fill null entries of a field with (e.g. a default asset priority). | 
 | Field Type | Defines the type of field. Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field. |
 | Merge Method | (Only applicable when Field Type is *Single*) Defines how a single value is derived across the input lookup table files.<br>- **Latest**: the most recent value<br>- **Min**: minimum value, only applicable to numeric field values<br>- **Max**: maximum value, only applicable to numeric field values<br>- **Avg**: average value, only applicable to numeric field values<br>- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
-| Coalesce | Multiselect | (Only applicable when Merge Method is *Coalesce*) Defines the precedence of source data to be used for this field. |
+| Coalesce | (Only applicable when Merge Method is *Coalesce*) Defines the precedence of source data to be used for this field. |
 
 ### How AssetDB Merges Assets
