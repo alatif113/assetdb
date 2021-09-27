@@ -45,29 +45,24 @@ The following field properties can be set when adding a new field or editing an 
 
 AssetDB uses *Key Fields* to merge assets together into a single *Asset Database*. The below is an example of how the merge process operates, across 3 input lookup files, where *mac* and *nt_host* are defined as key fields. All fields are of Field Type *Mutivalue*.
 
+1. Lookup files are concatenated together
 ![merge_1.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_1.png)
 
-Lookup files are concatenated together
-
+2. A key is generated, composed of all *Key Field* values
 ![merge_2.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_2.png)
 
-A key is generated, composed of all *Key Field* values
-
+3. Asset from source `lookup_A` and Asset from source `lookup_B` share a key `mac_A`
 ![merge_3.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_3.png)
 
-Asset from source `lookup_A` and Asset from source `lookup_B` share a key `mac_A`
-
+4. Asset from source `lookup_A` and Asset from source `lookup_B` are merged using the merged logic defined for each field
 ![merge_4.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_4.png)
 
-Asset from source `lookup_A` and Asset from source `lookup_B` are merged using the merged logic defined for each field
-
+5. The newly merged Asset and Asset from source `lookup_C` share a key `host_B`
 ![merge_5.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_5.png)
 
-The newly merged Asset and Asset from source `lookup_C` share a key `host_B`
-
+6. The newly merged Asset and Asset from source `lookup_C` are merged using the merged logic defined for each field. The Asset from source `lookup_D` does not share keys with any other asset. It is not merged. 
 ![merge_6.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_6.png)
 
-The newly merged Asset and Asset from source `lookup_C` are merged using the merged logic defined for each field. The Asset from source `lookup_D` does not share keys with any other asset. It is not merged. 
 
 Note how although, the Asset from source `lookup_A` and Asset from source `lookup_C` do not share any keys, they end up being merged due to both sharing keys with the Asset from source `lookup_B`.
 
