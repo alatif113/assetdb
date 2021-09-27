@@ -31,11 +31,11 @@ The following field properties can be set when adding a new field or editing an 
 | Property | Description |
 | ----------- | ----------- | ----------- |
 | Field Name | The name of the field. Must consist of alphanumeric characters or underscores. Field names *_key* and *asset* are automatically created during the asset merge process and cannot be overwritten. |
-| Key Field | Whether the field is a key field or not. Key fields are fields that define a unqiue asset and are used during the asset merge process. See **How AssetDB Merges Assets** for more information on.
-| Case Sensitive | Wether the field is case sensitive or not. A value of *No* will set all field values to lower case. 
-| Ignore Values | (Optional) A comma seperated list of field values to ignore (e.g. null,none,unknown). 
-| Fill Null | (Optional) A static value to fill null entries of a field with (e.g. a default asset priority). 
-| Field Type | Defines the type of field. Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field.
+| Key Field | Whether the field is a key field or not. Key fields are fields that define a unqiue asset and are used during the asset merge process. See **How AssetDB Merges Assets** for more information on. |
+| Case Sensitive | Wether the field is case sensitive or not. A value of *No* will set all field values to lower case. |
+| Ignore Values | (Optional) A comma seperated list of field values to ignore (e.g. null,none,unknown). |
+| Fill Null | (Optional) A static value to fill null entries of a field with (e.g. a default asset priority). | 
+| Field Type | Defines the type of field. Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field. |
 | Merge Method | (Only applicable when Field Type is *Single*) Defines how a single value is derived across the input lookup table files.<br>- **Latest**: the most recent value<br>- **Min**: minimum value, only applicable to numeric field values<br>- **Max**: maximum value, only applicable to numeric field values<br>- **Avg**: average value, only applicable to numeric field values<br>- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
 | Coalesce | Multiselect | (Only applicable when Merge Method is *Coalesce*) Defines the precedence of source data to be used for this field. |
 
