@@ -35,10 +35,22 @@ The following field properties can be set when adding a new field or editing an 
 | Case Sensitive | Boolean | Wether the field is case sensitive or not. A value of *No* will set all field values to lower case. 
 | Ignore Values | String | (Optional) A comma seperated list of field values to ignore (e.g. null,none,unknown). 
 | Fill Null | String | (Optional) A static value to fill null entries of a field with (e.g. a default asset priority). 
-| Field Type | [Single|Multivalue|Eval] | Defines the type of field. Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field.
+| Field Type | Single|Multivalue|Eval | Defines the type of field. Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field.
 
 #### Field Type Specific Options
 
-| Merge Method | 
+**Single**
+| Property | Type | Description |
+| ----------- | ----------- | ----------- |
+| Merge Method | Latest|Min|Max|Avg|Coalesce | Defines how a single value is derived across the input lookup table files.
+- **Latest**: the most recent value
+- **Min**: minimum value, only applicable to numeric field values
+- **Max**: maximum value, 
+- **Avg**: average value
+- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
+
+| Property | Type | Description |
+| ----------- | ----------- | ----------- |
+| Coalesce | Multiselect | Defines the precedence of source data to be used for this field. |
 
 ### How AssetDB Merges Assets
