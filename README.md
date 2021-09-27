@@ -42,7 +42,8 @@ The following field properties can be set when adding a new field or editing an 
 **Single**
 | Property | Type | Description |
 | ----------- | ----------- | ----------- |
-| Merge Method | Latest|Min|Max|Avg|Coalesce | Defines how a single value is derived across the input lookup table files.<br>- **Latest**: the most recent value<br>- **Min**: minimum value, only applicable to numeric field values<br>- **Max**: maximum value, <br>- **Avg**: average value<br>- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
+| Merge Method | Latest\|Min\|Max\|Avg\|Coalesce | Defines how a single value is derived across the input lookup table files.<br>- **Latest**: the most recent value<br>- **Min**: minimum value, only applicable to numeric field values<br>- **Max**: maximum value, <br>- **Avg**: average value<br>- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
+
 | Property | Type | Description |
 | ----------- | ----------- | ----------- |
 | Coalesce | Multiselect | Defines the precedence of source data to be used for this field. |
