@@ -29,7 +29,7 @@ Create fields to be stored within the *Asset Database* and merged between all in
 The following field properties can be set when adding a new field or editing an existing field. 
 
 | Property | Description |
-| ----------- | ----------- | ----------- |
+| ----------- | ----------- |
 | Field Name | The name of the field. Must consist of alphanumeric characters or underscores. Field names *_key* and *asset* are automatically created during the asset merge process and cannot be overwritten. |
 | Key Field | Whether the field is a key field or not. Key fields are fields that define a unqiue asset and are used during the asset merge process. See **How AssetDB Merges Assets** for more information on. |
 | Case Sensitive | Wether the field is case sensitive or not. A value of *No* will set all field values to lower case. |
