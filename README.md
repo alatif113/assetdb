@@ -45,27 +45,27 @@ The following field properties can be set when adding a new field or editing an 
 
 AssetDB uses *Key Fields* to merge assets together into a single *Asset Database*. The below is an example of how the merge process operates, across 3 input lookup files, where *mac* and *nt_host* are defined as key fields. All fields are of Field Type *Mutivalue*.
 
-![merge_1.png](https://github.com/alatif113/assetdb/blob/main/static/merge_1.png?raw=true)
+![merge_1.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_1.png)
 
 Lookup files are concatenated together
 
-![merge_2.png](https://github.com/alatif113/assetdb/blob/main/static/merge_2.png?raw=true)
+![merge_2.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_2.png)
 
 A key is generated, composed of all *Key Field* values
 
-![merge_3.png](https://github.com/alatif113/assetdb/blob/main/static/merge_3.png?raw=true)
+![merge_3.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_3.png)
 
 Asset from source `lookup_A` and Asset from source `lookup_B` share a key `mac_A`
 
-![merge_4.png](https://github.com/alatif113/assetdb/blob/main/static/merge_4.png?raw=true)
+![merge_4.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_4.png)
 
 Asset from source `lookup_A` and Asset from source `lookup_B` are merged using the merged logic defined for each field
 
-![merge_5.png](https://github.com/alatif113/assetdb/blob/main/static/merge_5.png?raw=true)
+![merge_5.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_5.png)
 
 The newly merged Asset and Asset from source `lookup_C` share a key `host_B`
 
-![merge_6.png](https://github.com/alatif113/assetdb/blob/main/static/merge_6.png?raw=true)
+![merge_6.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_6.png)
 
 The newly merged Asset and Asset from source `lookup_C` are merged using the merged logic defined for each field. The Asset from source `lookup_D` does not share keys with any other asset. It is not merged. 
 
