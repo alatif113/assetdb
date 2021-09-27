@@ -45,40 +45,33 @@ The following field properties can be set when adding a new field or editing an 
 
 AssetDB uses *Key Fields* to merge assets together into a single *Asset Database*. The below is an example of how the merge process operates, across 3 input lookup files, where *mac* and *nt_host* are defined as key fields. All fields are of Field Type *Mutivalue*.
 
-**Input lookup files are concatenated together**
+![merge_1.png](https://github.com/alatif113/assetdb/blob/master/static/merge_1.png?raw=true)
 
-| row | mac | nt_host | source |
-| ----------- | ----------- | ----------- | ----------- |
-| 1 | mac_1 | nt_host_1 | lookup_1 |
-| 2 | mac_1<br>mac_2 | nt_host_2 | lookup_2 |
-| 3 | mac_2 | nt_host_3<br>nt_host_4 | lookup_3 |
-| 4 | mac_5 | nt_host_5 | lookup_5 |
+Lookup files are concatenated together
 
-**A multivalue _key field is generated consisting of values from the configured Key Fields**
+![merge_2.png](https://github.com/alatif113/assetdb/blob/master/static/merge_2.png?raw=true)
 
-| row | mac | nt_host | source | _key |
-| ----------- | ----------- | ----------- | ----------- | ----------- |
-| 1 | mac_1 | nt_host_1 | lookup_1 | mac_1<br>nt_host_1 |
-| 2 | mac_1<br>mac_2 | nt_host_2 | lookup_2 | mac_1<br>mac_2<br>nt_host_2 |
-| 3 | mac_2 | nt_host_3<br>nt_host_4 | lookup_3 | mac_2<br>nt_host_3<br>nt_host_4 |
-| 4 | mac_5 | nt_host_5 | lookup_5 | mac_5<br>nt_host_5 |
+A key is generated, composed of all *Key Field* values
 
-**Rows 1 and 2 are merged because they share a Key** ***mac_1***
+![merge_3.png](https://github.com/alatif113/assetdb/blob/master/static/merge_3.png?raw=true)
 
-| row | mac | nt_host | source | _key |
-| ----------- | ----------- | ----------- | ----------- | ----------- |
-| 1 | mac_1<br>mac_2 | nt_host_1<br>nt_host_2 | lookup_1<br>lookup_2 | **mac_1**<br>nt_host_1<br>mac_2<br>nt_host_2 |
-| 2 | mac_2 | nt_host_3<br>nt_host_4 | lookup_3 | mac_2<br>nt_host_3<br>nt_host_4 |
-| 3 | mac_5 | nt_host_5 | lookup_5 | mac_5<br>nt_host_5 |
+Asset from source `lookup_A` and Asset from source `lookup_B` share a key `mac_A`
 
-**Rows 1 and 2 are merged because they share a Key** ***mac_2***
+![merge_4.png](https://github.com/alatif113/assetdb/blob/master/static/merge_4.png?raw=true)
 
-| row | mac | nt_host | source | _key |
-| ----------- | ----------- | ----------- | ----------- | ----------- |
-| 1 | mac_1<br>mac_2 | nt_host_1<br>nt_host_2<br>nt_host_3<br>nt_host_4 | lookup_1<br>lookup_2<br>lookup_3 | mac_1<br>nt_host_1<br>**mac_2**<br>nt_host_2<br>nt_host_3<br>nt_host_4 |
-| 2 | mac_5 | nt_host_5 | lookup_5 | mac_5<br>nt_host_5 |
+Asset from source `lookup_A` and Asset from source `lookup_B` are merged using the merged logic defined for each field
 
-**Rows 2 is not merged because it does not share a Key with any other asset**
+![merge_5.png](https://github.com/alatif113/assetdb/blob/master/static/merge_5.png?raw=true)
+
+The newly merged Asset and Asset from source `lookup_C` share a key `host_B`
+
+![merge_6.png](https://github.com/alatif113/assetdb/blob/master/static/merge_6.png?raw=true)
+
+The newly merged Asset and Asset from source `lookup_C` are merged using the merged logic defined for each field. The Asset from source `lookup_D` does not share keys with any other asset. It is not merged. 
+
+Note how although, the Asset from source `lookup_A` and Asset from source `lookup_C` do not share any keys, they end up being merged due to both sharing keys with the Asset from source `lookup_B`.
+
+
 
 
 
