@@ -47,43 +47,38 @@ AssetDB uses *Key Fields* to merge assets together into a single *Asset Database
 
 **Input lookup files are concatenated together**
 
-| `row` | `mac` | `nt_host` | `source` |
+| row | mac | nt_host | source |
 | ----------- | ----------- | ----------- | ----------- |
-| `1` | `mac_1` | `nt_host_1` | `lookup_1` |
-| `2` | `mac_1<br>mac_2` | `nt_host_2` | `lookup_2` |
-| `3` | `mac_2` | `nt_host_3`<br>`nt_host_4` | `lookup_3` |
-| `4` | `mac_5` | `nt_host_5` | `lookup_5` |
+| 1 | mac_1 | nt_host_1 | lookup_1 |
+| 2 | mac_1<br>mac_2 | nt_host_2 | lookup_2 |
+| 3 | mac_2 | nt_host_3<br>nt_host_4 | lookup_3 |
+| 4 | mac_5 | nt_host_5 | lookup_5 |
 
 **A multivalue _key field is generated consisting of values from the configured Key Fields**
 
-| `row` | `mac` | `nt_host` | `source` | `_key` |
+| row | mac | nt_host | source | _key |
 | ----------- | ----------- | ----------- | ----------- | ----------- |
-| `1` | `mac_1` | `nt_host_1` | `lookup_1` | `mac_1<br>nt_host_1` |
-| `2` | `mac_1<br>mac_2` | `nt_host_2` | `lookup_2` | `mac_1`<br>`mac_2`<br>`nt_host_2` |
-| `3` | `mac_2` | `nt_host_3`<br>`nt_host_4` | `lookup_3` | `mac_2`<br>`nt_host_3`<br>`nt_host_4` |
-| `4` | `mac_5` | `nt_host_5` | `lookup_5` | `mac_5`<br>`nt_host_5` |
+| 1 | mac_1 | nt_host_1 | lookup_1 | mac_1<br>nt_host_1 |
+| 2 | mac_1<br>mac_2 | nt_host_2 | lookup_2 | mac_1<br>mac_2<br>nt_host_2 |
+| 3 | mac_2 | nt_host_3<br>nt_host_4 | lookup_3 | mac_2<br>nt_host_3<br>nt_host_4 |
+| 4 | mac_5 | nt_host_5 | lookup_5 | mac_5<br>nt_host_5 |
 
-**Rows 1 and 2 are merged because they share a Key** ***`mac_1`***
+**Rows 1 and 2 are merged because they share a Key** ***mac_1***
 
-| `row` | `mac` | `nt_host` | `source` | `_key` |
+| row | mac | nt_host | source | _key |
 | ----------- | ----------- | ----------- | ----------- | ----------- |
-| `1` | `mac_1<br>mac_2` | `nt_host_1`<br>`nt_host_2` | `lookup_1`<br>`lookup_2` | **`mac_1`**<br>`nt_host_1`<br>`mac_2`<br>`nt_host_2` |
-| `2` | `mac_2` | `nt_host_3`<br>`nt_host_4` | `lookup_3` | `mac_2`<br>`nt_host_3`<br>`nt_host_4` |
-| `3` | `mac_5` | `nt_host_5` | `lookup_5` | `mac_5`<br>`nt_host_5` |
+| 1 | mac_1<br>mac_2 | nt_host_1<br>nt_host_2 | lookup_1<br>lookup_2 | **mac_1**<br>nt_host_1<br>mac_2<br>nt_host_2 |
+| 2 | mac_2 | nt_host_3<br>nt_host_4 | lookup_3 | mac_2<br>nt_host_3<br>nt_host_4 |
+| 3 | mac_5 | nt_host_5 | lookup_5 | mac_5<br>nt_host_5 |
 
-**Rows 1 and 2 are merged because they share a Key** ***`mac_2`***
+**Rows 1 and 2 are merged because they share a Key** ***mac_2***
 
-| `row` | `mac` | `nt_host` | `source` | `_key` |
-| ----------- | ----------- | ----------- | ----------- | ----------- |
-| `1` | `mac_1<br>mac_2` | `nt_host_1`<br>`nt_host_2`<br>`nt_host_3`<br>`nt_host_4` | `lookup_1`<br>`lookup_2`<br>`lookup_3` | `mac_1`<br>`nt_host_1`<br>**`mac_2`**<br>`nt_host_2`<br>`nt_host_3`<br>`nt_host_4` |
-| `2` | `mac_5` | `nt_host_5` | `lookup_5` | `mac_5`<br>`nt_host_5` |
-
-**Rows 2 is not merged because it does not share a Key with any other asset**
-
-```
 | row | mac | nt_host | source | _key |
 | ----------- | ----------- | ----------- | ----------- | ----------- |
 | 1 | mac_1<br>mac_2 | nt_host_1<br>nt_host_2<br>nt_host_3<br>nt_host_4 | lookup_1<br>lookup_2<br>lookup_3 | mac_1<br>nt_host_1<br>**mac_2**<br>nt_host_2<br>nt_host_3<br>nt_host_4 |
 | 2 | mac_5 | nt_host_5 | lookup_5 | mac_5<br>nt_host_5 |
-```
+
+**Rows 2 is not merged because it does not share a Key with any other asset**
+
+
 
