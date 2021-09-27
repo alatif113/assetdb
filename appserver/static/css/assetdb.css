@@ -132,9 +132,9 @@ section.active {
 }
 
 .formatted-query .code {
-	padding-left: 10px;
+	padding-left: 1.5em;
 	padding-right: 10px;
-	text-indent: 0px;
+	text-indent: -1em;
 	box-sizing: border-box;
 	display: table-cell;
 	line-height: 20px;

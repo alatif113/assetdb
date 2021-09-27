@@ -1,148 +1,15 @@
-[app/ui]
-version = 8.1.2
-modtime = 1613343869.016185000
-
-[app/launcher]
-version = 8.1.2
-modtime = 1613343869.017681000
-
-[views/configure]
-owner = admin
-version = 8.1.2
-modtime = 1616125419.445923000
-
-[transforms/asset_db]
+[assetdb/bunit]
 version = 8.2.2
-modtime = 1631722297.425129000
-
-[macros/append_adb_lookup%281%29]
-export = none
-owner = admin
-version = 8.1.2
-modtime = 1615959284.485158000
-
-[assetdb/general]
-version = 8.2.2
-modtime = 1632600317.937020000
+modtime = 1632630180.551157000
 
 [savedsearches/assetdb-lookupgen]
-export = system
-owner = admin
 version = 8.2.2
-modtime = 1632600318.020955000
-
-[lookups/assetdb_test1.csv]
-export = system
-owner = admin
-version = 8.2.2
-modtime = 1631836167.680445000
-
-[lookups/assetdb_test2.csv]
-export = system
-owner = admin
-version = 8.2.2
-modtime = 1631834143.594207000
-
-[lookups/assetdb_test3.csv]
-export = system
-owner = admin
-version = 8.2.2
-modtime = 1631833034.251285000
-
-[assetdb/category]
-owner = admin
-version = 8.2.2
-modtime = 1631984352.011923000
+modtime = 1632630203.837815000
 
 [assetdb/city]
-owner = admin
 version = 8.2.2
-modtime = 1631984453.734248000
+modtime = 1632630192.954821000
 
 [assetdb/country]
-owner = admin
 version = 8.2.2
-modtime = 1631984627.552976000
-
-[assetdb/device_id]
-owner = admin
-version = 8.2.2
-modtime = 1631722094.921785000
-
-[assetdb/dns]
-owner = admin
-version = 8.2.2
-modtime = 1631903964.392899000
-
-[assetdb/group]
-owner = admin
-version = 8.2.2
-modtime = 1631722114.220097000
-
-[assetdb/ip]
-owner = admin
-version = 8.2.2
-modtime = 1631903872.765506000
-
-[assetdb/mac]
-owner = admin
-version = 8.2.2
-modtime = 1631903247.343431000
-
-[assetdb/mac_vendor]
-owner = admin
-version = 8.2.2
-modtime = 1631722279.334880000
-
-[assetdb/mac_vendor_country]
-owner = admin
-version = 8.2.2
-modtime = 1631722289.983089000
-
-[collections/assetdb]
-version = 8.2.2
-modtime = 1631855128.454587000
-
-[transforms/assetdb]
-version = 8.2.2
-modtime = 1631984780.000038000
-
-[assetdb/nt_host]
-owner = admin
-version = 8.2.2
-modtime = 1631903883.903858000
-
-[assetdb/bunit]
-owner = admin
-version = 8.2.2
-modtime = 1631906293.794289000
-
-[assetdb/owner]
-owner = admin
-version = 8.2.2
-modtime = 1631904777.898541000
-
-[macros/get_adb_asset%281%29]
-export = system
-owner = admin
-version = 8.2.2
-modtime = 1631905216.715607000
-
-[nav/default]
-version = 8.2.2
-modtime = 1631907648.972123000
-
-[assetdb/_time]
-owner = admin
-version = 8.2.2
-modtime = 1631984650.904861000
-
-[assetdb/os]
-owner = admin
-version = 8.2.2
-modtime = 1631984671.011888000
-
-[assetdb/priority]
-owner = admin
-version = 8.2.2
-modtime = 1632599061.161253000
+modtime = 1632630203.789458000

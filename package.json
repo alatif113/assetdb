@@ -16,14 +16,11 @@
 		"url": "https://github.com/alatif113/assetdb/issues"
 	},
 	"homepage": "https://github.com/alatif113/assetdb#readme",
-	"dependencies": {
-		"babel-cli": "^6.26.0",
-		"terser": "^5.8.0",
-		"uglify-js": "^3.14.2"
-	},
+	"dependencies": {},
 	"devDependencies": {
 		"@babel/cli": "^7.15.4",
 		"@babel/core": "^7.15.5",
-		"@babel/preset-env": "^7.15.6"
+		"@babel/preset-env": "^7.15.6",
+		"terser": "^5.8.0"
 	}
 }
