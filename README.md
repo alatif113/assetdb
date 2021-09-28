@@ -45,24 +45,15 @@ The following field properties can be set when adding a new field or editing an 
 
 AssetDB uses *Key Fields* to merge assets together into a single *Asset Database*. The below is an example of how the merge process operates, across 4 input lookup files, where *mac* and *nt_host* are defined as key fields. All fields are of Field Type *Mutivalue*.
 
+![slides.gif](https://raw.githubusercontent.com/alatif113/assetdb/main/static/slides.gif)
+
 1. Lookup files are concatenated together
-![merge_1.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_1.png)
-
 2. A key is generated, composed of all *Key Field* values
-![merge_2.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_2.png)
-
 3. Asset from `lookup_A` and Asset from `lookup_B` share a key `mac_A`
-![merge_3.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_3.png)
-
 4. Asset from `lookup_A` and Asset from `lookup_B` are merged
-![merge_4.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_4.png)
-
 5. The newly merged Asset and Asset from `lookup_C` share a key `host_B`
-![merge_5.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_5.png)
-
-6. The newly merged Asset and Asset from `lookup_C` are merged. The Asset from `lookup_D` does not share keys with any other asset. It is not merged. 
-![merge_6.png](https://raw.githubusercontent.com/alatif113/assetdb/main/static/merge_6.png)
-
+6. The newly merged Asset and Asset from `lookup_C` are merged. 
+7. The Asset from `lookup_D` does not share keys with any other asset. It is not merged. 
 
 Note how although, the Asset from `lookup_A` and Asset from `lookup_C` do not share any keys, they end up being merged due to both sharing keys with the Asset from `lookup_B`.
 
