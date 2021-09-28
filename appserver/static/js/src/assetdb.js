@@ -415,7 +415,7 @@ require([
 				id: 'searchApp',
 				preview: true,
 				cache: true,
-				search: '| rest /services/apps/local | search disabled=0 | fields title label | sort title',
+				search: '| rest /services/apps/local | search disabled=0 | fields title label | sort label',
 			},
 			{ tokens: true }
 		);
