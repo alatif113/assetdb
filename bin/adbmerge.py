@@ -11,7 +11,7 @@ from splunklib.searchcommands import \
 from splunklib.searchcommands.validators import Integer
 
 @Configuration()
-class ADBEntityMergeCommand(ReportingCommand):
+class ADBMergeCommand(ReportingCommand):
 
     max_keys = Option(doc='''
         **Syntax:** **max_keys=***<number>*
@@ -78,4 +78,4 @@ class ADBEntityMergeCommand(ReportingCommand):
         self.logger.warning('Ignored {}/{} assets with null keys'.format(null_keys, total))
         self.logger.warning('Ignored {}/{} assets which share more than {} unique keys.'.format(large_keys, total, self.max_keys))
         
-dispatch(ADBEntityMergeCommand, sys.argv, sys.stdin, sys.stdout, __name__)
+dispatch(ADBMergeCommand, sys.argv, sys.stdin, sys.stdout, __name__)

@@ -781,7 +781,7 @@ require([
 			search += `\n| search _key=*`;
 			if (stats.length) search += `\n| stats, ${stats.join(', ')} by _key`;
 			if (keys.length) search += `\n| eval _key = mvappend(${keys.join(', ')})`;
-			search += `\n| adbentitymerge max_keys=25`
+			search += `\n| adbmerge max_keys=25`
 			search += `\n| eval _key = md5(mvjoin(asset, "::"))`;
 			if (stats.length) search += `\n| stats values(asset) as asset, ${stats.join(', ')} by _key`;
 			if (maxValues.length) search += `\n| eval ${maxValues.join(', ')}`;
