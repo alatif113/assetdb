@@ -105,7 +105,8 @@ class Script(six.with_metaclass(ABCMeta, object)):
                 return 1
 
         except Exception as e:
-            event_writer.log(EventWriter.ERROR, str(e))
+            err_string = EventWriter.ERROR + str(e)
+            event_writer._err.write(err_string)
             return 1
 
     @property

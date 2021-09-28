@@ -35,7 +35,6 @@ import gzip
 import os
 import re
 import sys
-import warnings
 
 from . import environment
 
@@ -75,7 +74,7 @@ def set_binary_mode(fh):
 
 
 class CommandLineParser(object):
-    r""" Parses the arguments to a search command.
+    """ Parses the arguments to a search command.
 
     A search command line is described by the following syntax.
 
@@ -233,7 +232,7 @@ class CommandLineParser(object):
 
     _escaped_character_re = re.compile(r'(\\.|""|[\\"])')
 
-    _fieldnames_re = re.compile(r"""("(?:\\.|""|[^"\\])+"|(?:\\.|[^\s"])+)""")
+    _fieldnames_re = re.compile(r"""("(?:\\.|""|[^"])+"|(?:\\.|[^\s"])+)""")
 
     _options_re = re.compile(r"""
         # Captures a set of name/value pairs when used with re.finditer
@@ -506,8 +505,8 @@ class RecordWriter(object):
 
         self._inspector = OrderedDict()
         self._chunk_count = 0
-        self._pending_record_count = 0
-        self._committed_record_count = 0
+        self._record_count = 0
+        self._total_record_count = 0
 
     @property
     def is_flushed(self):
@@ -524,30 +523,6 @@ class RecordWriter(object):
     @ofile.setter
     def ofile(self, value):
         self._ofile = set_binary_mode(value)
-
-    @property
-    def pending_record_count(self):
-        return self._pending_record_count
-
-    @property
-    def _record_count(self):
-        warnings.warn(
-            "_record_count will be deprecated soon. Use pending_record_count instead.",
-             PendingDeprecationWarning
-        )
-        return self.pending_record_count
-
-    @property
-    def committed_record_count(self):
-        return self._committed_record_count
-
-    @property
-    def _total_record_count(self):
-        warnings.warn(
-            "_total_record_count will be deprecated soon. Use committed_record_count instead.",
-             PendingDeprecationWarning
-        )
-        return self.committed_record_count
 
     def write(self, data):
         bytes_type = bytes if sys.version_info >= (3, 0) else str
@@ -580,7 +555,8 @@ class RecordWriter(object):
         self._buffer.seek(0)
         self._buffer.truncate()
         self._inspector.clear()
-        self._pending_record_count = 0
+        self._record_count = 0
+        self._flushed = False
 
     def _ensure_validity(self):
         if self._finished is True:
@@ -675,9 +651,9 @@ class RecordWriter(object):
             values += (repr(value), None)
 
         self._writerow(values)
-        self._pending_record_count += 1
+        self._record_count += 1
 
-        if self.pending_record_count >= self._maxresultrows:
+        if self._record_count >= self._maxresultrows:
             self.flush(partial=True)
 
     try:
@@ -714,7 +690,7 @@ class RecordWriterV1(RecordWriter):
 
         RecordWriter.flush(self, finished, partial)  # validates arguments and the state of this instance
 
-        if self.pending_record_count > 0 or (self._chunk_count == 0 and 'messages' in self._inspector):
+        if self._record_count > 0 or (self._chunk_count == 0 and 'messages' in self._inspector):
 
             messages = self._inspector.get('messages')
 
@@ -752,9 +728,9 @@ class RecordWriterV1(RecordWriter):
                     print(level, text, file=stderr)
 
             self.write(self._buffer.getvalue())
-            self._chunk_count += 1
-            self._committed_record_count += self.pending_record_count
             self._clear()
+            self._chunk_count += 1
+            self._total_record_count += self._record_count
 
         self._finished = finished is True
 
@@ -772,36 +748,37 @@ class RecordWriterV2(RecordWriter):
     def flush(self, finished=None, partial=None):
 
         RecordWriter.flush(self, finished, partial)  # validates arguments and the state of this instance
-
-        if partial or not finished:
-            # Don't flush partial chunks, since the SCP v2 protocol does not
-            # provide a way to send partial chunks yet.
-            return
-
-        if not self.is_flushed:
-            self.write_chunk(finished=True)
-
-    def write_chunk(self, finished=None):
         inspector = self._inspector
-        self._committed_record_count += self.pending_record_count
-        self._chunk_count += 1
 
-        # TODO: DVPL-6448: splunklib.searchcommands | Add support for partial: true when it is implemented in
-        # ChunkedExternProcessor (See SPL-103525)
-        #
-        # We will need to replace the following block of code with this block:
-        #
-        # metadata = [item for item in (('inspector', inspector), ('finished', finished), ('partial', partial))]
-        #
-        # if partial is True:
-        #     finished = False
+        if self._flushed is False:
 
-        if len(inspector) == 0:
-            inspector = None
+            self._total_record_count += self._record_count
+            self._chunk_count += 1
 
-        metadata = [item for item in (('inspector', inspector), ('finished', finished))]
-        self._write_chunk(metadata, self._buffer.getvalue())
-        self._clear()
+            # TODO: DVPL-6448: splunklib.searchcommands | Add support for partial: true when it is implemented in
+            # ChunkedExternProcessor (See SPL-103525)
+            #
+            # We will need to replace the following block of code with this block:
+            #
+            # metadata = [
+            #     ('inspector', self._inspector if len(self._inspector) else None),
+            #     ('finished', finished),
+            #     ('partial', partial)]
+
+            if len(inspector) == 0:
+                inspector = None
+
+            if partial is True:
+                finished = False
+
+            metadata = [item for item in (('inspector', inspector), ('finished', finished))]
+            self._write_chunk(metadata, self._buffer.getvalue())
+            self._clear()
+
+        elif finished is True:
+            self._write_chunk((('finished', True),), '')
+
+        self._finished = finished is True
 
     def write_metadata(self, configuration):
         self._ensure_validity()
@@ -816,7 +793,7 @@ class RecordWriterV2(RecordWriter):
         self._inspector['metric.' + name] = value
 
     def _clear(self):
-        super(RecordWriterV2, self)._clear()
+        RecordWriter._clear(self)
         self._fieldnames = None
 
     def _write_chunk(self, metadata, body):
@@ -841,4 +818,4 @@ class RecordWriterV2(RecordWriter):
         self.write(metadata)
         self.write(body)
         self._ofile.flush()
-        self._flushed = True
+        self._flushed = False
