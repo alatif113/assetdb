@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.7
 
 import sys
 import os
@@ -16,16 +16,14 @@ class ADBMergeCommand(ReportingCommand):
     max_keys = Option(doc='''
         **Syntax:** **max_keys=***<number>*
         **Description:** The maximum number of keys an asset can have before it is ignored. Large number of keys can reduce merge performance.
-
         ''', require=True, validate=Integer(1))
      
     @Configuration()
     def map(self, events):
-        return events
-        pass
+        for event in events:
+            yield event
     
     def reduce(self, events):
-        self.logger.info(self.max_keys)
         key_map = {}
         event_map = {}
         null_keys = 0
