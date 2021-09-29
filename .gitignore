@@ -2,3 +2,5 @@ node_modules
 .git
 package-lock.json
 __pycache__
+local
+local.meta
