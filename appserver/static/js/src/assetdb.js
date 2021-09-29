@@ -726,7 +726,7 @@ require([
 
 					if (field.content.ignore_values) {
 						let ignoreValuesArray = field.content.ignore_values.split(',');
-						ignoreValues.push(`${field.name} = if(in(${field.name}, "${ignoreValuesArray.join('"", "')}"), null(), ${field.name})`);
+						ignoreValues.push(`${field.name} IN ("${ignoreValuesArray.join('", "')}")`);
 					}
 
 					if (field?.content?.fillnull) {
@@ -773,7 +773,7 @@ require([
 			if (lookups.length) search += lookups.join('');
 			search += `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
 			if (caseInsensitive.length) search += `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
-			if (ignoreValues.length) search += `\n| eval ${ignoreValues.join(', ')}`;
+			if (ignoreValues.length) search += `\n| search NOT (${ignoreValues.join(' ')})`;
 			if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
 			if (fieldSplit.length) search += `\n| eval ${fieldSplit.join(', ')}`;
 			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
