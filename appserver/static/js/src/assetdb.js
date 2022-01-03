@@ -117,6 +117,7 @@ require([
 
 			fieldNames.push('_key');
 			fieldNames.push('asset');
+			fieldNames.push('adb_source');
 
 			let fields_list = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, fields_list));
@@ -243,7 +244,7 @@ require([
 				{ label: 'Coalesce', value: 'coalesce' },
 			],
 			value: field?.content?.merge_method || 'latest',
-			help: 'Either take the most recent value, minimum value, maximum value, average value, or define a precedence based on the source data',
+			help: 'Use the most recent value, minimum value, maximum value, average value, or define a precedence based on the source data',
 		});
 
 		let mergeOrderInput = new MultiSelectInput({
@@ -325,6 +326,9 @@ require([
 						return;
 					} else if (fieldNameInput.getValue() == 'asset') {
 						fieldNameInput.setError('"asset" is a default field and cannot be replaced, choose another field name');
+						return;
+					} else if (fieldNameInput.getValue() == 'adb_source') {
+						fieldNameInput.setError('"adb_source" is a default field and cannot be replaced, choose another field name');
 						return;
 					} else if (fieldNameInput.getValue() == '_key') {
 						fieldNameInput.setError('"_key" is a default field and cannot be replaced, choose another field name');
@@ -779,14 +783,14 @@ require([
 			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
 			if (keys.length) search += `\n| eval _key = mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`;
 			search += `\n| search _key=*`;
-			if (stats.length) search += `\n| stats, ${stats.join(', ')} by _key`;
+			if (stats.length) search += `\n| stats values(adb_source) as adb_source ${stats.join(', ')} by _key`;
 			if (keys.length) search += `\n| eval _key = mvappend(${keys.join(', ')})`;
 			search += `\n| adbmerge max_keys=25`
 			search += `\n| eval _key = md5(mvjoin(asset, "::"))`;
-			if (stats.length) search += `\n| stats values(asset) as asset, ${stats.join(', ')} by _key`;
+			if (stats.length) search += `\n| stats values(asset) as asset, values(adb_source) as adb_source, ${stats.join(', ')} by _key`;
 			if (maxValues.length) search += `\n| eval ${maxValues.join(', ')}`;
 			if (coalesce.length) search += `\n| eval ${coalesce.join(', ')}`;
-			if (table.length) search += `\n| table _key, asset, ${table.join(', ')}`;
+			if (table.length) search += `\n| table _key, asset, adb_source, ${table.join(', ')}`;
 			search += '\n| outputlookup assetdb';
 
 			return search;

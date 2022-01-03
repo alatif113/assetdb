@@ -1,5 +1,6 @@
 node_modules
 .git
+.DS_STORE
 package-lock.json
 __pycache__
 local
