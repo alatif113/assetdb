@@ -27,7 +27,7 @@ require([
 	 */
 	function getConf(endpoint) {
 		let path = ENDPOINT_BASE + endpoint;
-		let deferred = SERVICE.get(path, {});
+		let deferred = SERVICE.get(path, {count: 0});
 		return deferred.promise();
 	}
 
@@ -117,7 +117,7 @@ require([
 
 			fieldNames.push('_key');
 			fieldNames.push('asset');
-			fieldNames.push('adb_source');
+			fieldNames.push('source');
 
 			let fields_list = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, fields_list));
@@ -327,8 +327,8 @@ require([
 					} else if (fieldNameInput.getValue() == 'asset') {
 						fieldNameInput.setError('"asset" is a default field and cannot be replaced, choose another field name');
 						return;
-					} else if (fieldNameInput.getValue() == 'adb_source') {
-						fieldNameInput.setError('"adb_source" is a default field and cannot be replaced, choose another field name');
+					} else if (fieldNameInput.getValue() == 'source') {
+						fieldNameInput.setError('"source" is a default field and cannot be replaced, choose another field name');
 						return;
 					} else if (fieldNameInput.getValue() == '_key') {
 						fieldNameInput.setError('"_key" is a default field and cannot be replaced, choose another field name');
@@ -539,6 +539,7 @@ require([
 
 		$.when(promise).done((data) => {
 			let fieldArray = JSON.parse(data).entry;
+			console.log(data);
 			let $container = $(`
 				<div class="container">
 					<ul class="nav nav-tabs main-tabs shared-tabcontrols-tabbar">
@@ -775,22 +776,23 @@ require([
 
 			let search = '| makeresults';
 			if (lookups.length) search += lookups.join('');
-			search += `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
+			search += `\n| eval source=replace(source, "\\.csv$", "")`;
+			if (multivalue.length) search += `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
 			if (caseInsensitive.length) search += `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
 			if (ignoreValues.length) search += `\n| search NOT (${ignoreValues.join(' ')})`;
 			if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
 			if (fieldSplit.length) search += `\n| eval ${fieldSplit.join(', ')}`;
 			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
-			if (keys.length) search += `\n| eval _key = mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`;
+			if (keys.length) search += '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`);
 			search += `\n| search _key=*`;
-			if (stats.length) search += `\n| stats values(adb_source) as adb_source ${stats.join(', ')} by _key`;
-			if (keys.length) search += `\n| eval _key = mvappend(${keys.join(', ')})`;
+			if (stats.length) search += `\n| stats values(source) as source ${stats.join(', ')} by _key`;
+			if (keys.length) search += '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`);
 			search += `\n| adbmerge max_keys=25`
 			search += `\n| eval _key = md5(mvjoin(asset, "::"))`;
-			if (stats.length) search += `\n| stats values(asset) as asset, values(adb_source) as adb_source, ${stats.join(', ')} by _key`;
+			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, ${stats.join(', ')} by _key`;
 			if (maxValues.length) search += `\n| eval ${maxValues.join(', ')}`;
 			if (coalesce.length) search += `\n| eval ${coalesce.join(', ')}`;
-			if (table.length) search += `\n| table _key, asset, adb_source, ${table.join(', ')}`;
+			if (table.length) search += `\n| table _key, asset, source, ${table.join(', ')}`;
 			search += '\n| outputlookup assetdb';
 
 			return search;
