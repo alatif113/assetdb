@@ -748,7 +748,7 @@ require([
 						if (field.content.merge_method == 'latest') {
 							stats.push(`latest(${field.name}) as ${field.name}`);
 						} else if (field?.content?.merge_method == 'coalesce') {
-							fieldSplit.push(`{adb_source}_${field.name} = ${field.name}`);
+							fieldSplit.push(`{source}_${field.name} = ${field.name}`);
 
 							let mergeOrderArray = field.content.merge_order.split(',');
 
