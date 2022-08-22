@@ -145,6 +145,8 @@ require([
 			}
 
 			fieldNames.push('_key');
+			fieldNames.push('asset');
+			fieldNames.push('source');
 
 			let data = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, data));
