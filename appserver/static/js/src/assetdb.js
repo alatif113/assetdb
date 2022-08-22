@@ -722,7 +722,7 @@ require([
 				if (field.name == 'general' && field?.content?.lookups) {
 					let lookupsArray = field.content.lookups.split(',');
 					lookups = lookupsArray.map((lookup) => {
-						return `\n| \`append_adb_lookup(${lookup})\``;
+						return `\n| \`input_adb_lookup(${lookup})\``;
 					});
 				} else {
 					if (parseInt(field.content.key_field)) {
@@ -774,9 +774,8 @@ require([
 				}
 			});
 
-			let search = '| makeresults';
+			let search = '';
 			if (lookups.length) search += lookups.join('');
-			search += `\n| eval source=replace(source, "\\.csv$", "")`;
 			if (multivalue.length) search += `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
 			if (caseInsensitive.length) search += `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
 			if (ignoreValues.length) search += `\n| search NOT (${ignoreValues.join(' ')})`;
@@ -794,6 +793,7 @@ require([
 			if (coalesce.length) search += `\n| eval ${coalesce.join(', ')}`;
 			if (table.length) search += `\n| table _key, asset, source, ${table.join(', ')}`;
 			search += '\n| outputlookup assetdb';
+			search = search.substring(1);
 
 			return search;
 		});
