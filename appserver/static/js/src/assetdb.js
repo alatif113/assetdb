@@ -274,7 +274,7 @@ require([
 			help: 'An SPL eval expression, example: replace(field1, "[^w]", "")',
 		});
 
-		$form = $(`
+		let $form = $(`
             <div class="form-horizontal">
                 <div class="input-group-base"></div>
                 <div class="input-group-toggle input-group-single"></div>
@@ -400,7 +400,7 @@ require([
 	 *
 	 */
 	function addLookup(lookupArray) {
-		$form = $(`
+		let $form = $(`
             <div class="form">
 				<div class="control-group shared-controls-controlgroup control-group-default">                
 					<label class="control-label" for="control-app">App</label>                
