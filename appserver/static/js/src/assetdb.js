@@ -213,7 +213,7 @@ require([
 			id: 'inputIgnoreValues',
 			label: 'Ignore Values',
 			value: field?.content?.ignore_values || '',
-			help: '[Optional] A comma separated list of values to ignore',
+			help: '[Optional] A pipe delimited list of values to ignore',
 		});
 
 		let fillnullInput = new TextInput({
@@ -221,6 +221,13 @@ require([
 			label: 'Fill Null',
 			value: field?.content?.fillnull || '',
 			help: '[Optional] Fill null entries with a static value',
+		});
+
+		let validationInput = new TextInput({
+			id: 'inputvalidation',
+			label: 'Validation',
+			value: field?.content?.validation || '',
+			help: '[Optional] Use a regular expression to validate field values. Values that do not match are ignored',
 		});
 
 		let fieldTypeInput = new RadioInput({
@@ -288,6 +295,7 @@ require([
 			.append(caseSensitiveInput.getInput())
 			.append(ignoreValuesInput.getInput())
 			.append(fillnullInput.getInput())
+			.append(validationInput.getInput())
 			.append(fieldTypeInput.getInput());
 
 		$('.input-group-single', $form).append(mergeMethodInput.getInput()).append(mergeOrderInput.getInput());
@@ -321,22 +329,55 @@ require([
 			},
 			onPrimaryBtnClick: function () {
 				let self = this;
+				let error = false;
 				if (fieldNameInput.isEditable()) {
-					let pattern = /^\w+$/;
+					let pattern = /^[a-zA-Z0-9_]+$/;
 					if (!pattern.test(fieldNameInput.getValue())) {
 						fieldNameInput.setError('Field name can only use alphanumeric characters and underscores');
-						return;
+						error = true;
 					} else if (fieldNameInput.getValue() == 'asset') {
 						fieldNameInput.setError('"asset" is a default field and cannot be replaced, choose another field name');
-						return;
+						error = true;
 					} else if (fieldNameInput.getValue() == 'source') {
 						fieldNameInput.setError('"source" is a default field and cannot be replaced, choose another field name');
-						return;
+						error = true;
 					} else if (fieldNameInput.getValue() == '_key') {
 						fieldNameInput.setError('"_key" is a default field and cannot be replaced, choose another field name');
-						return;
+						error = true;
+					} else {
+						fieldNameInput.clearError();
 					}
 				}
+
+				let pattern1 = /^[a-zA-Z0-9-_ ,!@#$%^&*()]$/;
+				if (ignoreValuesInput.isEmpty() || pattern1.test(ignoreValuesInput.getValue())) {
+					ignoreValuesInput.clearError();
+				} else {
+					ignoreValuesInput.setError('One more characters within the list of values to ignore is not supported');
+					error = true;
+				}
+
+				let pattern2 = /^[a-zA-Z0-9-_]$/;
+				if (fillnullInput.isEmpty() || pattern2.test(fillnullInput.getValue())) {
+					fillnullInput.clearError();
+				} else {
+					fillnullInput.setError('Fillnull value can only use alphanumeric characters and underscores');
+					error = true;
+				}
+
+				if (!validationInput.isEmpty()) {
+					try {
+						new RegExp(validationInput.getValue());
+						validationInput.clearError();
+					} catch {
+						validationInput.setError("Invalid regular expression");
+						error = true;
+					}
+				} else {
+					validationInput.clearError();
+				}
+
+				if (error) return;
 
 				let operation = fieldNameInput.isEditable() ? 'add' : 'edit';
 				let fieldData = {
@@ -344,6 +385,7 @@ require([
 					case_sensitive: caseSensitiveInput.getValue(),
 					ignore_values: ignoreValuesInput.getValue(),
 					fillnull: fillnullInput.getValue(),
+					validation: validationInput.getValue(),
 					field_type: fieldTypeInput.getValue(),
 					merge_method: mergeMethodInput.getValue(),
 					merge_order: mergeOrderInput.getValue(),
@@ -642,8 +684,8 @@ require([
 			fieldArray.forEach(function (field) {
 				if (field.name == 'general') return;
 
-				let isKey = parseInt(field.content.key_field);
-				let caseSensitive = parseInt(field.content.case_sensitive);
+				let isKey = parseInt(field.content?.key_field);
+				let caseSensitive = parseInt(field.content?.case_sensitive);
 
 				let $tr = $(`
 					<tr data-name="${field.name}">
@@ -654,12 +696,13 @@ require([
 								<dl class="list-dotted">
 									<dt>Key Field</dt><dd>${isKey ? 'Yes' : 'No'}</dd>
 									<dt>Case Sensitive</dt><dd>${caseSensitive ? 'Yes' : 'No'}</dd>
-									<dt>Ignore Values</dt><dd>${field.content.ignore_values || 'N/A'}</dd>
-									<dt>Fill Null</dt><dd>${field.content.fillnull || 'N/A'}</dd>
+									<dt>Ignore Values</dt><dd>${field.content?.ignore_values || 'N/A'}</dd>
+									<dt>Fill Null</dt><dd>${field.content?.fillnull || 'N/A'}</dd>
+									<dt>Filter Values</dt><dd>${field.content?.validation || 'N/A'}</dd>
 								</dl>
 							</div>
 						</td>
-						<td>${field.content.field_type}${(field?.content?.field_type == 'multivalue') ? '' : ' - ' + field?.content?.merge_method}</td>
+						<td>${field.content?.field_type}</td>
 						<td><a class="adb-field-edit" href="#">Edit</a> | <a class="adb-field-delete" href="#">Delete</a></td>'}
 					</tr>`);
 
@@ -715,6 +758,7 @@ require([
 			let keys = [];
 			let table = [];
 			let fillnull = [];
+			let validation = [];
 			let ignoreValues = [];
 			let caseInsensitive = [];
 			let maxValues = [];
@@ -732,12 +776,16 @@ require([
 					}
 
 					if (field.content.ignore_values) {
-						let ignoreValuesArray = field.content.ignore_values.split(',');
+						let ignoreValuesArray = field.content.ignore_values.split('|');
 						ignoreValues.push(`${field.name} IN ("${ignoreValuesArray.join('", "')}")`);
 					}
 
 					if (field?.content?.fillnull) {
 						fillnull.push(`${field.name} = if(isnull(${field.name}), "${field.content.fillnull}", ${field.name})`);
+					}
+
+					if (field?.content?.validation) {
+						validation.push(`${field.name}=mvfilter(match(${field.name}, "${field.content.validation}"))`);
 					}
 
 					if (!parseInt(field.content.case_sensitive)) {
@@ -780,6 +828,7 @@ require([
 			if (lookups.length) search += lookups.join('');
 			if (multivalue.length) search += `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
 			if (caseInsensitive.length) search += `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
+			if (validation.length) search += `\n| eval ${validation.join(', ')}`;
 			if (ignoreValues.length) search += `\n| search NOT (${ignoreValues.join(' ')})`;
 			if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
 			if (fieldSplit.length) search += `\n| eval ${fieldSplit.join(', ')}`;

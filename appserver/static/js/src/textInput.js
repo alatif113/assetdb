@@ -41,10 +41,18 @@ define(function (require, exports, module) {
 			return this.editable;
 		}
 
+		isEmpty() {
+			return this.getValue() == '' || this.getValue() == null;
+		}
+
 		setError(error) {
 			$('.error-message', this.$input).remove();
 			let $error = $(`<div class="error-message help-block">${error}</div>`);
 			this.$input.append($error);
+		}
+
+		clearError() {
+			$('.error-message', this.$input).remove();
 		}
 	}
 
