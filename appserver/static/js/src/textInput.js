@@ -41,6 +41,10 @@ define(function (require, exports, module) {
 			return this.editable;
 		}
 
+		validate(pattern) {
+			return pattern.test(this.getValue());
+		}
+
 		isEmpty() {
 			return this.getValue() == '' || this.getValue() == null;
 		}

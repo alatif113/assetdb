@@ -328,11 +328,10 @@ require([
 				mvc.Components.getInstance(mergeOrderInput.getId()).dispose();
 			},
 			onPrimaryBtnClick: function () {
-				let self = this;
 				let error = false;
 				if (fieldNameInput.isEditable()) {
 					let pattern = /^[a-zA-Z0-9_]+$/;
-					if (!pattern.test(fieldNameInput.getValue())) {
+					if (!fieldNameInput.validate(/^[a-zA-Z0-9_]+$/)) {
 						fieldNameInput.setError('Field name can only use alphanumeric characters and underscores');
 						error = true;
 					} else if (fieldNameInput.getValue() == 'asset') {
@@ -349,16 +348,14 @@ require([
 					}
 				}
 
-				let pattern1 = /^[a-zA-Z0-9-_ ,!@#$%^&*()]$/;
-				if (ignoreValuesInput.isEmpty() || pattern1.test(ignoreValuesInput.getValue())) {
+				if (ignoreValuesInput.isEmpty() || ignoreValuesInput.validate(/^[a-zA-Z0-9-_ ,!@#$%^&*()]$/)) {
 					ignoreValuesInput.clearError();
 				} else {
 					ignoreValuesInput.setError('One more characters within the list of values to ignore is not supported');
 					error = true;
 				}
 
-				let pattern2 = /^[a-zA-Z0-9-_]$/;
-				if (fillnullInput.isEmpty() || pattern2.test(fillnullInput.getValue())) {
+				if (fillnullInput.isEmpty() || fillnullInput.validate(/^[a-zA-Z0-9-_]$/)) {
 					fillnullInput.clearError();
 				} else {
 					fillnullInput.setError('Fillnull value can only use alphanumeric characters and underscores');
@@ -564,7 +561,7 @@ require([
 		});
 
 		let $body = $(
-			`<div>Are you sure you want to remove asset lookup <i>${lookupName}</i> from the merge process? Note: The lookup will still exist within Splunk.</div>`
+			`<div>Are you sure you want to remove asset lookup <i>${lookupName}</i> from the merge process? The lookup will still exist within Splunk.</div>`
 		);
 		deleteModal.setBody($body);
 		deleteModal.show();
