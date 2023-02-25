@@ -7,6 +7,8 @@ define(function (require, exports, module) {
 			let id = _.escape(data.id);
 			let label = _.escape(data.label);
 
+			if (!data.value) data.value = '';
+
 			this.$input = $(`
                 <div id="${id}" class="control-group shared-controls-controlgroup control-group-default">
                     <label class="control-label" for="${id}">${label}</label>

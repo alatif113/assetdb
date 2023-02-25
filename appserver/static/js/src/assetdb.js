@@ -65,19 +65,19 @@ require([
 	 *
 	 * @return {Promise} 				Jquery promise
 	 */
-	function updateLookups(lookupArray, lookupName, operation) {
+	function updateLookups(lookupArray, lookupName, lookupFile, operation) {
 		let endpoint = 'conf-assetdb/general/';
 
 		if (operation == 'add') {
-			lookupArray.push(lookupName);
+			lookupArray.push({name: lookupName, lookup: lookupFile});
 		} else if (operation == 'delete') {
-			let index = lookupArray.indexOf(lookupName);
+			let index = lookupArray.findIndex(item => item.name === lookupName);
 			if (index > -1) lookupArray.splice(index, 1);
 		} else {
 			return;
 		}
 
-		let data = { lookups: lookupArray.join(',') };
+		let data = { lookups: JSON.stringify(lookupArray) };
 		let promise = setConf(endpoint, data);
 		return promise;
 	}
@@ -260,7 +260,7 @@ require([
 			id: 'inputMergeOrder',
 			label: 'Merge Order',
 			choices: lookupArray.map((lookup) => {
-				return { label: lookup, value: lookup };
+				return { label: lookup.name, value: lookup.name };
 			}),
 			value: (field?.content?.merge_order) ? field?.content?.merge_order.split(',') : [],
 			help: '[Optional] Define the precedence of the source data; if no precendence is provided, a random order is used',
@@ -348,14 +348,14 @@ require([
 					}
 				}
 
-				if (ignoreValuesInput.isEmpty() || ignoreValuesInput.validate(/^[a-zA-Z0-9-_ ,!@#$%^&*()]$/)) {
+				if (ignoreValuesInput.isEmpty() || ignoreValuesInput.validate(/^[a-zA-Z0-9-_ ,!@#$%^&*()|]+$/)) {
 					ignoreValuesInput.clearError();
 				} else {
 					ignoreValuesInput.setError('One more characters within the list of values to ignore is not supported');
 					error = true;
 				}
 
-				if (fillnullInput.isEmpty() || fillnullInput.validate(/^[a-zA-Z0-9-_]$/)) {
+				if (fillnullInput.isEmpty() || fillnullInput.validate(/^[a-zA-Z0-9-_]+$/)) {
 					fillnullInput.clearError();
 				} else {
 					fillnullInput.setError('Fillnull value can only use alphanumeric characters and underscores');
@@ -476,6 +476,13 @@ require([
 			{ tokens: true }
 		);
 
+		let lookupNameInput = new TextInput({
+			id: 'inputLookupName',
+			label: 'Name',
+		});
+		
+		lookupNameInput.getInput().prependTo($form);
+
 		let appInput = new DropdownInput(
 			{
 				id: 'inputApp',
@@ -516,13 +523,26 @@ require([
 				mvc.Components.getInstance('searchLookup').dispose();
 			},
 			onPrimaryBtnClick: function () {
-				let value = lookupInput.val();
-				if (!value) {
+				let lookupFile = lookupInput.val();
+				let lookupName = lookupNameInput.getValue();
+
+				if (!lookupName || lookupName == undefined) {
+					lookupNameInput.setError('An input name is required')
 					return;
-				} else if (lookupArray.indexOf(value) > -1) {
-					$('.input-lookup .splunk-choice-input-message div').text(`The lookup file ${value} has already been added.`);
+				} else if (!lookupNameInput.validate(/^[a-zA-Z0-9_]+$/)) {
+					lookupNameInput.setError('The input name can only contain alphanumeric characters or underscores')
+					return;
+				} else if (!lookupFile) {
+					lookupNameInput.setError('A lookup is required')
+					return;
+				}
+		
+				if (lookupArray.findIndex(item => item.name === lookupName) > -1) {
+					lookupNameInput.setError(`An input with name ${lookupName} already exists`);
+				} else if (lookupArray.findIndex(item => item.lookup === lookupFile) > -1) {
+					lookupNameInput.setError(`An input with lookup ${lookupFile} already exists`);
 				} else {
-					let promise = updateLookups(lookupArray, value, 'add');
+					let promise = updateLookups(lookupArray, lookupName, lookupFile, 'add');
 					$.when(promise).done(() => {
 						updateSearch();
 						buildContent('section-lookups');
@@ -540,18 +560,18 @@ require([
 	 * Create and show the DeleteLookup modal to delete an existing lookup within the asset lookup list.
 	 *
 	 * @param {Array}	lookupArray		Array of lookup names currently within the asset lookup list.
-	 * @param {String}	lookupName			Lookup name to be deleted.
+	 * @param {String}	lookupName		Lookup name to be deleted.
 	 *
 	 */
 	function deleteLookup(lookupArray, lookupName) {
-		const index = lookupArray.indexOf(lookupName);
+		const index = lookupArray.findIndex(item => item.name === lookupName);
 		if (index > -1) lookupArray.splice(index, 1);
 		let deleteModal = new Modal({
 			wide: false,
 			title: 'Remove Lookup',
 			primaryButton: 'Remove',
 			onPrimaryBtnClick: function () {
-				let promise = updateLookups(lookupArray, lookupName, 'delete');
+				let promise = updateLookups(lookupArray, lookupName, null, 'delete');
 				$.when(promise).done(() => {
 					updateSearch();
 					buildContent('section-lookups');
@@ -580,7 +600,6 @@ require([
 
 		$.when(promise).done((data) => {
 			let fieldArray = JSON.parse(data).entry;
-			console.log(data);
 			let $container = $(`
 				<div class="container">
 					<ul class="nav nav-tabs main-tabs shared-tabcontrols-tabbar">
@@ -600,6 +619,7 @@ require([
 						<table class="lookups-table table table-striped table-chrome table-row-expanding table-hover">
 							<thead>
 								<tr>
+									<th>Name</th>
 									<th>Lookup</th>
 									<th>Action</th>
 								</tr>
@@ -648,7 +668,7 @@ require([
 				return obj.name === 'general';
 			});
 
-			let lookupArray = (general?.content?.lookups || '').split(',');
+			let lookupArray = JSON.parse(general?.content?.lookups || '[]');
 
 			if (!lookupArray.length) {
 				let error =
@@ -669,8 +689,9 @@ require([
 
 			lookupArray.forEach(function (lookup) {
 				let $tr = $(`
-					<tr data-name="${lookup}">
-						<td>${lookup}</td>
+					<tr data-name="${lookup.name}">
+						<td>${lookup.name}</td>
+						<td>${lookup.lookup}</td>
 						<td><a class="adb-lookup-delete" href="#">Delete</a></td>'}
 					</tr>
 				`);
@@ -759,13 +780,17 @@ require([
 			let ignoreValues = [];
 			let caseInsensitive = [];
 			let maxValues = [];
-			let lookups = [];
+			let lookupFiles = [];
+			let lookupNames = [];
 
 			fieldArray.forEach(function (field) {
 				if (field.name == 'general' && field?.content?.lookups) {
-					let lookupsArray = field.content.lookups.split(',');
-					lookups = lookupsArray.map((lookup) => {
-						return `\n| \`input_adb_lookup(${lookup})\``;
+					let lookupsArray = JSON.parse(field.content.lookups || '[]');
+					lookupFiles = lookupsArray.map((lookup) => {
+						return `\n| \`input_adb_lookup(${lookup.lookup})\``;
+					});
+					lookupNames = lookupsArray.map((lookup) => {
+						return `source_lookup=="${lookup.lookup}", "${lookup.name}"`;
 					});
 				} else {
 					if (parseInt(field.content.key_field)) {
@@ -822,11 +847,12 @@ require([
 			});
 
 			let search = '';
-			if (lookups.length) search += lookups.join('');
+			if (lookupFiles.length) search += lookupFiles.join('');
 			if (multivalue.length) search += `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
 			if (caseInsensitive.length) search += `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
 			if (validation.length) search += `\n| eval ${validation.join(', ')}`;
 			if (ignoreValues.length) search += `\n| search NOT (${ignoreValues.join(' ')})`;
+			if (lookupNames.length) search += `\n| eval source=case(${lookupNames.join(', ')})`
 			if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
 			if (fieldSplit.length) search += `\n| eval ${fieldSplit.join(', ')}`;
 			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
