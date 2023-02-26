@@ -330,7 +330,6 @@ require([
 			onPrimaryBtnClick: function () {
 				let error = false;
 				if (fieldNameInput.isEditable()) {
-					let pattern = /^[a-zA-Z0-9_]+$/;
 					if (!fieldNameInput.validate(/^[a-zA-Z0-9_]+$/)) {
 						fieldNameInput.setError('Field name can only use alphanumeric characters and underscores');
 						error = true;
@@ -339,6 +338,9 @@ require([
 						error = true;
 					} else if (fieldNameInput.getValue() == 'source') {
 						fieldNameInput.setError('"source" is a default field and cannot be replaced, choose another field name');
+						error = true;
+					} else if (fieldNameInput.getValue() == 'source_lookup') {
+						fieldNameInput.setError('"source_lookup" is a default field and cannot be replaced, choose another field name');
 						error = true;
 					} else if (fieldNameInput.getValue() == '_key') {
 						fieldNameInput.setError('"_key" is a default field and cannot be replaced, choose another field name');
@@ -695,7 +697,7 @@ require([
 						<td><a class="adb-lookup-delete" href="#">Delete</a></td>'}
 					</tr>
 				`);
-				$('.adb-lookup-delete', $tr).on('click', () => deleteLookup(lookupArray, lookup));
+				$('.adb-lookup-delete', $tr).on('click', () => deleteLookup(lookupArray, lookup.name));
 				$('.lookups-table tbody', $container).append($tr);
 			});
 
@@ -784,13 +786,13 @@ require([
 			let lookupNames = [];
 
 			fieldArray.forEach(function (field) {
-				if (field.name == 'general' && field?.content?.lookups) {
-					let lookupsArray = JSON.parse(field.content.lookups || '[]');
+				if (field.name == 'general') {
+					let lookupsArray = JSON.parse(field?.content?.lookups || '[]');
 					lookupFiles = lookupsArray.map((lookup) => {
 						return `\n| \`input_adb_lookup(${lookup.lookup})\``;
 					});
 					lookupNames = lookupsArray.map((lookup) => {
-						return `source_lookup=="${lookup.lookup}", "${lookup.name}"`;
+						return `source_lookup="${lookup.lookup}", "${lookup.name}"`;
 					});
 				} else {
 					if (parseInt(field.content.key_field)) {
@@ -872,5 +874,6 @@ require([
 			return search;
 		});
 	}
+	
 	buildContent();
 });
