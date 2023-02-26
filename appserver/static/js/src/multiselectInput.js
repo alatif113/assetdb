@@ -18,8 +18,6 @@ define(function (require, exports, module) {
 
 			this.id = data.id;
 
-			console.log(data.value)
-
 			this.splunkInput = new _MultiSelectInput({
 				id: data.id,
 				el: $('.control', this.$input),

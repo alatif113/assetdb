@@ -16,7 +16,20 @@ require([
 ], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, DropdownInput) {
 	const $el = $('#ab_config');
 	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
+	const VALIDATION_ENDPOINT = '/services/search/parser';
 	const SERVICE = mvc.createService();
+
+	/**
+	 * Validate Splunk Query
+	 *
+	 * @param {String}		query 	Splunk query to validate.
+	 *
+	 * @return {Promise} 			Jquery promise with retrieved validation data.
+	*/
+	function validateQuery(query) {
+		let deferred = SERVICE.get(VALIDATION_ENDPOINT, {q: query});
+		return deferred.promise();
+	}
 
 	/**
 	 * GET request against a Splunk REST API
@@ -302,13 +315,11 @@ require([
 		$('.input-group-multivalue', $form).append(spinnerInput.getInput());
 		$('.input-group-eval', $form).append(evalExpInput.getInput());
 
-		let field_type = fieldTypeInput.getValue();
 		$('.input-group-toggle', $form).hide();
-		$(`.input-group-${field_type}`, $form).show();
+		$(`.input-group-${fieldTypeInput.getValue()}`, $form).show();
 
-		let mergeMethod = mergeMethodInput.getValue();
 		let $input = mergeOrderInput.getInput();
-		mergeMethod == 'coalesce' ? $input.show() : $input.hide();
+		mergeMethodInput.getValue() == 'coalesce' ? $input.show() : $input.hide();
 
 		fieldTypeInput.getInput().on('change', function (e, data) {
 			$('.input-group-toggle', $form).hide();
@@ -329,75 +340,89 @@ require([
 			},
 			onPrimaryBtnClick: function () {
 				let error = false;
-				if (fieldNameInput.isEditable()) {
-					if (!fieldNameInput.validate(/^[a-zA-Z0-9_]+$/)) {
-						fieldNameInput.setError('Field name can only use alphanumeric characters and underscores');
+				let eval_promise = undefined;
+
+				if (fieldTypeInput.getValue() == 'eval') {
+					eval_promise = validateQuery(`| makeresults | eval a=${evalExpInput.getValue()}`);
+				}
+
+				$.when(eval_promise).always((data) => {
+					if (data?.status == 400) {
+						let error_msg = JSON.parse(data.responseText).messages;
+						evalExpInput.setError(error_msg.length ? error_msg[0].text : 'Invalid eval expression')
 						error = true;
-					} else if (fieldNameInput.getValue() == 'asset') {
-						fieldNameInput.setError('"asset" is a default field and cannot be replaced, choose another field name');
-						error = true;
-					} else if (fieldNameInput.getValue() == 'source') {
-						fieldNameInput.setError('"source" is a default field and cannot be replaced, choose another field name');
-						error = true;
-					} else if (fieldNameInput.getValue() == 'source_lookup') {
-						fieldNameInput.setError('"source_lookup" is a default field and cannot be replaced, choose another field name');
-						error = true;
-					} else if (fieldNameInput.getValue() == '_key') {
-						fieldNameInput.setError('"_key" is a default field and cannot be replaced, choose another field name');
-						error = true;
+					}					
+
+					if (fieldNameInput.isEditable()) {
+						if (!fieldNameInput.validate(/^[a-zA-Z0-9_]+$/)) {
+							fieldNameInput.setError('Field name can only use alphanumeric characters and underscores');
+							error = true;
+						} else if (fieldNameInput.getValue() == 'asset') {
+							fieldNameInput.setError('"asset" is a default field and cannot be replaced, choose another field name');
+							error = true;
+						} else if (fieldNameInput.getValue() == 'source') {
+							fieldNameInput.setError('"source" is a default field and cannot be replaced, choose another field name');
+							error = true;
+						} else if (fieldNameInput.getValue() == 'source_lookup') {
+							fieldNameInput.setError('"source_lookup" is a default field and cannot be replaced, choose another field name');
+							error = true;
+						} else if (fieldNameInput.getValue() == '_key') {
+							fieldNameInput.setError('"_key" is a default field and cannot be replaced, choose another field name');
+							error = true;
+						} else {
+							fieldNameInput.clearError();
+						}
+					}
+	
+					if (ignoreValuesInput.isEmpty() || ignoreValuesInput.validate(/^[a-zA-Z0-9-_ ,!@#$%^&*()|]+$/)) {
+						ignoreValuesInput.clearError();
 					} else {
-						fieldNameInput.clearError();
-					}
-				}
-
-				if (ignoreValuesInput.isEmpty() || ignoreValuesInput.validate(/^[a-zA-Z0-9-_ ,!@#$%^&*()|]+$/)) {
-					ignoreValuesInput.clearError();
-				} else {
-					ignoreValuesInput.setError('One more characters within the list of values to ignore is not supported');
-					error = true;
-				}
-
-				if (fillnullInput.isEmpty() || fillnullInput.validate(/^[a-zA-Z0-9-_]+$/)) {
-					fillnullInput.clearError();
-				} else {
-					fillnullInput.setError('Fillnull value can only use alphanumeric characters and underscores');
-					error = true;
-				}
-
-				if (!validationInput.isEmpty()) {
-					try {
-						new RegExp(validationInput.getValue());
-						validationInput.clearError();
-					} catch {
-						validationInput.setError("Invalid regular expression");
+						ignoreValuesInput.setError('One more characters within the list of values to ignore is not supported');
 						error = true;
 					}
-				} else {
-					validationInput.clearError();
-				}
-
-				if (error) return;
-
-				let operation = fieldNameInput.isEditable() ? 'add' : 'edit';
-				let fieldData = {
-					key_field: keyFieldInput.getValue(),
-					case_sensitive: caseSensitiveInput.getValue(),
-					ignore_values: ignoreValuesInput.getValue(),
-					fillnull: fillnullInput.getValue(),
-					validation: validationInput.getValue(),
-					field_type: fieldTypeInput.getValue(),
-					merge_method: mergeMethodInput.getValue(),
-					merge_order: mergeOrderInput.getValue(),
-					max_values: spinnerInput.getValue() || 2,
-					eval_expression: evalExpInput.getValue(),
-				};
-
-				let promise = updateField(fieldArray, fieldData, fieldNameInput.getValue(), operation);
-
-				$.when(promise).done(() => {
-					updateSearch();
-					buildContent('section-fields');
-					this.hide();
+	
+					if (fillnullInput.isEmpty() || fillnullInput.validate(/^[a-zA-Z0-9-_]+$/)) {
+						fillnullInput.clearError();
+					} else {
+						fillnullInput.setError('Fillnull value can only use alphanumeric characters and underscores');
+						error = true;
+					}
+	
+					if (!validationInput.isEmpty()) {
+						try {
+							new RegExp(validationInput.getValue());
+							validationInput.clearError();
+						} catch {
+							validationInput.setError('Invalid regular expression');
+							error = true;
+						}
+					} else {
+						validationInput.clearError();
+					}
+	
+					if (error) return;
+	
+					let operation = fieldNameInput.isEditable() ? 'add' : 'edit';
+					let fieldData = {
+						key_field: keyFieldInput.getValue(),
+						case_sensitive: caseSensitiveInput.getValue(),
+						ignore_values: ignoreValuesInput.getValue(),
+						fillnull: fillnullInput.getValue(),
+						validation: validationInput.getValue(),
+						field_type: fieldTypeInput.getValue(),
+						merge_method: mergeMethodInput.getValue(),
+						merge_order: mergeOrderInput.getValue(),
+						max_values: spinnerInput.getValue() || 2,
+						eval_expression: evalExpInput.getValue(),
+					};
+	
+					let promise = updateField(fieldArray, fieldData, fieldNameInput.getValue(), operation);
+	
+					$.when(promise).done(() => {
+						updateSearch();
+						buildContent('section-fields');
+						this.hide();
+					});
 				});
 			},
 		});
@@ -874,6 +899,6 @@ require([
 			return search;
 		});
 	}
-	
+
 	buildContent();
 });
