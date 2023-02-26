@@ -1,6 +1,5 @@
 define(['/static/app/assetdb/js/prism.min.js', 'jquery'], function (Prism, $) {
-	return function (str, multiline, highlight) {
-		var hlight = highlight ? ' highlight' : '';
+	return function (str) {
 		var indentlevel = 0;
 		var linePrefix = '<span class="row"><span class="gutter"></span><div class="code">';
 		var lineSuffix = '</div></span>';
@@ -26,31 +25,32 @@ define(['/static/app/assetdb/js/prism.min.js', 'jquery'], function (Prism, $) {
 				type = 'argument';
 			}
 
-			if (multiline) {
-				newLine = false;
-				if (content === '|' && i != 0 && prevTok !== '[') {
-					newLine = true;
-				}
-				if (content === '[' && i != 0) {
-					indentlevel++;
-					newLine = true;
-				}
-				if (content === ']') {
-					indentlevel--;
-					indentlevel = Math.max(indentlevel, 0);
-				}
-				if (newLine) {
-					result += lineSuffix + linePrefix + '&nbsp;'.repeat(indentlevel * 4);
-				}
-				if (content !== ' ') {
-					prevTok = content;
-				}
+			newLine = false;
+			if (content === '|' && i != 0 && prevTok !== '[') {
+				newLine = true;
+			}
+			if (type == 'comment' &&  i != 0) {
+				newLine = true;
+			}
+			if (content === '[' && i != 0) {
+				indentlevel++;
+				newLine = true;
+			}
+			if (content === ']') {
+				indentlevel--;
+				indentlevel = Math.max(indentlevel, 0);
+			}
+			if (newLine) {
+				result += lineSuffix + linePrefix + '&nbsp;'.repeat(indentlevel * 4);
+			}
+			if (content !== ' ') {
+				prevTok = content;
 			}
 
 			if (type == 'default') {
 				result += content;
 			} else {
-				result += `<span class="${type} ${hlight}">${content}</span>`;
+				result += `<span class="${type}">${content}</span>`;
 			}
 		}
 

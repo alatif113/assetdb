@@ -327,7 +327,7 @@ define(function () {
 		})(_self);
 	'undefined' != typeof module && module.exports && (module.exports = Prism), 'undefined' != typeof global && (global.Prism = Prism);
 	Prism.languages['splunk-spl'] = {
-		comment: /`comment\("(?:\\.|[^\\"])*"\)`/,
+		comment: /```.*?```/,
 		string: {
 			pattern: /"(?:\\.|[^\\"])*"/,
 			greedy: !0,

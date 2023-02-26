@@ -777,7 +777,7 @@ require([
 
 			let promise = makeMergeSearch(fieldArray);
 			$.when(promise).done((data) => {
-				let $formatted_query = format(data, true, true);
+				let $formatted_query = format(data);
 				$('.formatted-query', $container).append($formatted_query);
 			});
 			$el.append($container);
@@ -874,27 +874,26 @@ require([
 			});
 
 			let search = '';
-			if (lookupFiles.length) search += lookupFiles.join('');
-			if (multivalue.length) search += `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
-			if (caseInsensitive.length) search += `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
-			if (validation.length) search += `\n| eval ${validation.join(', ')}`;
-			if (ignoreValues.length) search += `\n| search NOT (${ignoreValues.join(' ')})`;
-			if (lookupNames.length) search += `\n| eval source=case(${lookupNames.join(', ')})`
-			if (fillnull.length) search += `\n| eval ${fillnull.join(', ')}`;
-			if (fieldSplit.length) search += `\n| eval ${fieldSplit.join(', ')}`;
-			if (evalExp.length) search += `\n| eval ${evalExp.join(', ')}`;
-			if (keys.length) search += '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`);
+			if (lookupFiles.length) search += '```### Append lookups ###```' + lookupFiles.join('');
+			if (multivalue.length) search += '\n```### Split multivalue fields ###```' + `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
+			if (caseInsensitive.length) search += '\n```### Convert case insensitive fields to lowercase ###```' + `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
+			if (validation.length) search += '\n```### Validate field values ###```' + `\n| eval ${validation.join(', ')}`;
+			if (ignoreValues.length) search += '\n```### Ignore values ###```' + `\n| search NOT (${ignoreValues.join(' ')})`;
+			if (lookupNames.length) search += '\n```### Map source lookup to source name ###```' + `\n| eval source=case(${lookupNames.join(', ')})`
+			if (fillnull.length) search += '\n```### Fill null values ###```' + `\n| eval ${fillnull.join(', ')}`;
+			if (fieldSplit.length) search += '\n```### Create lookup specific fields for priority based coalesce ###```' + `\n| eval ${fieldSplit.join(', ')}`;
+			if (evalExp.length) search += '\n```### Eval expression fields ###```' + `\n| eval ${evalExp.join(', ')}`;
+			if (keys.length) search += '\n```### Shallow merge assets with matching key fields (using basic stats) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`);
 			search += `\n| search _key=*`;
 			if (stats.length) search += `\n| stats values(source) as source ${stats.join(', ')} by _key`;
-			if (keys.length) search += '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`);
+			if (keys.length) search += '\n```### Deep merge assets with matching key fields (using custom command) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`);
 			search += `\n| adbmerge max_keys=25`
 			search += `\n| eval _key = md5(mvjoin(asset, "::"))`;
 			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, ${stats.join(', ')} by _key`;
-			if (maxValues.length) search += `\n| eval ${maxValues.join(', ')}`;
-			if (coalesce.length) search += `\n| eval ${coalesce.join(', ')}`;
-			if (table.length) search += `\n| table _key, asset, source, ${table.join(', ')}`;
+			if (maxValues.length) search += '\n```### Trim multivalue fields ###```' + `\n| eval ${maxValues.join(', ')}`;
+			if (coalesce.length) search += '\n```### Define coalesce fields based on lookup priority ###```' + `\n| eval ${coalesce.join(', ')}`;
+			if (table.length) search += '\n```### Output to KV store ###```' + `\n| table _key, asset, source, ${table.join(', ')}`;
 			search += '\n| outputlookup assetdb';
-			search = search.substring(1);
 
 			return search;
 		});

@@ -145,7 +145,7 @@ section.active {
 	word-break: break-word;
 }
 
-.query.multiline .code {
+.query .code {
 	padding-left: 40px;
 	text-indent: -30px;
 	box-sizing: border-box;
@@ -163,19 +163,23 @@ section.active {
 	box-sizing: border-box;
 }
 
-span.keyword.highlight {
+span.comment {
+	opacity: 0.7;
+}
+
+span.keyword {
 	color: #2662fc;
 }
 
-span.function.highlight {
+span.function {
 	color: #cf00cf;
 }
 
-span.operator-word.highlight {
+span.operator-word {
 	color: #f58220;
 }
 
-span.argument.highlight {
+span.argument {
 	color: #5ca300;
 }
 
