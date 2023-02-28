@@ -131,6 +131,7 @@ require([
 			fieldNames.push('_key');
 			fieldNames.push('asset');
 			fieldNames.push('source');
+			fieldNames.push('source_lookup');
 
 			let fields_list = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, fields_list));
@@ -160,9 +161,10 @@ require([
 			fieldNames.push('_key');
 			fieldNames.push('asset');
 			fieldNames.push('source');
+			fieldNames.push('source_lookup');
 
-			let data = { fields_list: fieldNames.join(',') };
-			promises.push(setConf(endpoint_transforms, data));
+			let fields_list = { fields_list: fieldNames.join(',') };
+			promises.push(setConf(endpoint_transforms, fields_list));
 		}
 
 		return $.when(...promises);
@@ -790,7 +792,7 @@ require([
 	 * @return {String}		Built Splunk query
 	 */
 	function makeMergeSearch(fieldArray = []) {
-		let promise = fieldArray.length ? $.Deferred().resolve().promise() : getConf('conf-assetdb');
+		let promise = fieldArray.length ? undefined : getConf('conf-assetdb');
 
 		return $.when(promise).then((data) => {
 			if (!fieldArray.length) fieldArray = JSON.parse(data).entry;
@@ -892,7 +894,7 @@ require([
 			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, ${stats.join(', ')} by _key`;
 			if (maxValues.length) search += '\n```### Trim multivalue fields ###```' + `\n| eval ${maxValues.join(', ')}`;
 			if (coalesce.length) search += '\n```### Define coalesce fields based on lookup priority ###```' + `\n| eval ${coalesce.join(', ')}`;
-			if (table.length) search += '\n```### Output to KV store ###```' + `\n| table _key, asset, source, ${table.join(', ')}`;
+			if (table.length) search += '\n```### Output to KV store ###```' + `\n| table _key, asset, source, source_lookup, ${table.join(', ')}`;
 			search += '\n| outputlookup assetdb';
 
 			return search;
