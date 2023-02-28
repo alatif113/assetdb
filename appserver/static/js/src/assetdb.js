@@ -697,7 +697,12 @@ require([
 				return obj.name === 'general';
 			});
 
-			let lookupArray = JSON.parse(general?.content?.lookups || '[]');
+			let lookupArray = [];
+			try {
+				lookupArray = JSON.parse(general?.content?.lookups || '[]');
+			} catch {
+				lookupArray = general?.content?.lookups.split(',').map(lookup => {return {name: lookup, lookup: lookup}})
+			}
 
 			if (!lookupArray.length) {
 				let error =
