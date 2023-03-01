@@ -6,8 +6,7 @@ define(function (require, exports, module) {
 		constructor(data) {
 			let id = _.escape(data.id);
 			let label = _.escape(data.label);
-
-			if (!data.value) data.value = '';
+			let value = _.escape(data.value);
 
 			this.$input = $(`
                 <div id="${id}" class="control-group shared-controls-controlgroup control-group-default">
@@ -16,8 +15,8 @@ define(function (require, exports, module) {
                         <div class="control shared-controls-textcontrol control-default">
                             ${
 								data.editable || data.editable == undefined
-									? `<input type="text" name="${id}" aria-label="Input" class="" value="${data.value}" autocomplete="off">`
-									: `<span class="uneditable-input" data-role="uneditable-input">${data.value}</span>`
+									? `<input type="text" name="${id}" aria-label="Input" class="" value="${value}" autocomplete="off">`
+									: `<span class="uneditable-input" data-role="uneditable-input">${value}</span>`
 							}
                         </div>
                     </div>

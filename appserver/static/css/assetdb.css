@@ -3,7 +3,8 @@
 }
 
 div[data-component='splunk-core:/splunkjs/mvc/components/Dropdown'],
-.dropdown-input {
+.dropdown-input,
+div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	width: 100% !important;
 }
 

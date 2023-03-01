@@ -18,7 +18,7 @@ require([
 	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
 	const VALIDATION_ENDPOINT = '/services/search/parser';
 	const SERVICE = mvc.createService();
-
+	
 	/**
 	 * Get lookupArray from fieldArray
 	 * 
@@ -211,6 +211,7 @@ require([
 	 *
 	 */
 	function editAddField(fieldArray, field = {}) {
+		console.log(fieldArray);
 		let lookupArray = getLookupArray(fieldArray);
 
 		let fieldNameInput = new TextInput({
@@ -263,16 +264,22 @@ require([
 			help: '[Optional] Use a regular expression to validate field values. Values that do not match are ignored',
 		});
 
+		let evalExpInput = new TextInput({
+			id: 'inputEvalExp',
+			label: 'Eval Expression',
+			value: field?.content?.eval_expression || '',
+			help: '[Optional] An SPL eval expression to manipulate this field prior to merging, example: replace(field1, "[^w]", "")',
+		});
+
 		let fieldTypeInput = new RadioInput({
 			id: 'inputFieldType',
 			label: 'Field Type',
 			choices: [
 				{ label: 'Single', value: 'single' },
 				{ label: 'Multivalue', value: 'multivalue' },
-				{ label: 'Eval', value: 'eval' },
 			],
 			value: field?.content?.field_type || 'single',
-			help: 'Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field',
+			help: 'Use a single value or keep all unique entries as a multivalue to define this field',
 		});
 
 		let mergeMethodInput = new RadioInput({
@@ -307,19 +314,11 @@ require([
 			help: 'The maximum number of values to store as a multivalue',
 		});
 
-		let evalExpInput = new TextInput({
-			id: 'inputEvalExp',
-			label: 'Eval Expression',
-			value: field?.content?.eval_expression || '',
-			help: 'An SPL eval expression, example: replace(field1, "[^w]", "")',
-		});
-
 		let $form = $(`
             <div class="form-horizontal">
                 <div class="input-group-base"></div>
                 <div class="input-group-toggle input-group-single"></div>
                 <div class="input-group-toggle input-group-multivalue"></div>
-                <div class="input-group-toggle input-group-eval"></div>
             </div>`);
 
 		$('.input-group-base', $form)
@@ -329,11 +328,11 @@ require([
 			.append(ignoreValuesInput.getInput())
 			.append(fillnullInput.getInput())
 			.append(validationInput.getInput())
+			.append(evalExpInput.getInput())
 			.append(fieldTypeInput.getInput());
 
 		$('.input-group-single', $form).append(mergeMethodInput.getInput()).append(mergeOrderInput.getInput());
 		$('.input-group-multivalue', $form).append(spinnerInput.getInput());
-		$('.input-group-eval', $form).append(evalExpInput.getInput());
 
 		$('.input-group-toggle', $form).hide();
 		$(`.input-group-${fieldTypeInput.getValue()}`, $form).show();
@@ -362,7 +361,7 @@ require([
 				let error = false;
 				let eval_promise = undefined;
 
-				if (fieldTypeInput.getValue() == 'eval') {
+				if (fieldTypeInput.getValue() == 'eval' && evalExpInput.getValue()) {
 					eval_promise = validateQuery(`| makeresults | eval a=${evalExpInput.getValue()}`);
 				}
 
@@ -648,6 +647,7 @@ require([
 		$.when(promise).done((data) => {
 			let fieldArray = JSON.parse(data).entry;
 			let lookupArray = getLookupArray(fieldArray);
+
 			let $container = $(`
 				<div class="container">
 					<ul class="nav nav-tabs main-tabs shared-tabcontrols-tabbar">
@@ -853,6 +853,10 @@ require([
 					validation.push(`${field.name}=mvfilter(match(${field.name}, "${field.content.validation}"))`);
 				}
 
+				if (field?.content?.eval_expression) {
+					evalExp.push(`${field.name} = ${field.content.eval_expression}`);
+				}
+
 				if (!parseInt(field.content.case_sensitive)) {
 					caseInsensitive.push(field.name);
 				}
@@ -877,14 +881,11 @@ require([
 					} else {
 						stats.push(`${field.content.merge_method}(${field.name}) as ${field.name}`);
 					}
-				} else if (field.content.field_type == 'multivalue') {
+				} else if (field?.content?.field_type == 'multivalue') {
 					multivalue.push(field.name);
 					stats.push(`values(${field.name}) as ${field.name}`);
 					maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
-				} else if (field.content.field_type == 'eval') {
-					evalExp.push(`${field.name} = ${field.content.eval_expression}`);
 				}
-
 				table.push(field.name);
 			});
 
@@ -896,8 +897,8 @@ require([
 			if (ignoreValues.length) search += '\n```### Ignore values ###```' + `\n| search NOT (${ignoreValues.join(' ')})`;
 			if (lookupNames.length) search += '\n```### Map source lookup to source name ###```' + `\n| eval source=case(${lookupNames.join(', ')})`
 			if (fillnull.length) search += '\n```### Fill null values ###```' + `\n| eval ${fillnull.join(', ')}`;
-			if (fieldSplit.length) search += '\n```### Create lookup specific fields for priority based coalesce ###```' + `\n| eval ${fieldSplit.join(', ')}`;
 			if (evalExp.length) search += '\n```### Eval expression fields ###```' + `\n| eval ${evalExp.join(', ')}`;
+			if (fieldSplit.length) search += '\n```### Create lookup specific fields for priority based coalesce ###```' + `\n| eval ${fieldSplit.join(', ')}`;
 			if (keys.length) search += '\n```### Shallow merge assets with matching key fields (using basic stats) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`);
 			search += `\n| search _key=*`;
 			if (stats.length) search += `\n| stats values(source) as source ${stats.join(', ')} by _key`;
