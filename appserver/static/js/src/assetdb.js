@@ -648,7 +648,6 @@ require([
 		$.when(promise).done((data) => {
 			let fieldArray = JSON.parse(data).entry;
 			let lookupArray = getLookupArray(fieldArray);
-
 			let $container = $(`
 				<div class="container">
 					<ul class="nav nav-tabs main-tabs shared-tabcontrols-tabbar">
