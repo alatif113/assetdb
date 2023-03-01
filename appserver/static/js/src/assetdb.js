@@ -20,6 +20,25 @@ require([
 	const SERVICE = mvc.createService();
 
 	/**
+	 * Get lookupArray from fieldArray
+	 * 
+	 * @param {Array}	fieldArray		Array of field data from assetdb.conf
+	 */
+	function getLookupArray(fieldArray) {
+		let general = fieldArray.find((obj) => {
+			return obj.name === 'general';
+		});
+
+		if (general?.content?.lookups == undefined || general?.content?.lookups == '') return [];
+
+		try {
+			return JSON.parse(general.content.lookups);
+		} catch {
+			return general.content.lookups.split(',').map(lookup => {return {name: lookup, lookup: lookup}})
+		}
+	}
+	
+	/**
 	 * Validate Splunk Query
 	 *
 	 * @param {String}		query 	Splunk query to validate.
@@ -172,29 +191,28 @@ require([
 
 	/**
 	 * Update the 'assetdb_merge-lookupgen' search within savedsearches.conf
+	 * 
+	 * @param {Array}	fieldArray		Array of field data from assetdb.conf
 	 */
-	function updateSearch() {
+	function updateSearch(fieldArray) {
 		let endpoint = 'conf-savedsearches/assetdb-lookupgen';
-		let promise = makeMergeSearch();
-		return $.when(promise)
-			.then((query) => {
-				let data = { search: query };
-				return data;
-			})
-			.then((data) => {
-				return setConf(endpoint, data);
-			});
+		let promise = makeMergeSearch(fieldArray);
+		return $.when(promise).then((query) => {
+			let data = { search: query };
+			return setConf(endpoint, data);
+		});
 	}
 
 	/**
 	 * Create and show the EditAdd modal to add a new field or edit an existing field within the field list.
 	 *
-	 * @param {Array}	lookupArray		Array of lookup names currently within the asset lookup list.
 	 * @param {Array}	fieldArray		Array of field names currently within the asset field list.
 	 * @param {Object}	field			Field object to be edited. Empty object if a new field is being added.
 	 *
 	 */
-	function editAddField(lookupArray, fieldArray, field = {}) {
+	function editAddField(fieldArray, field = {}) {
+		let lookupArray = getLookupArray(fieldArray);
+
 		let fieldNameInput = new TextInput({
 			id: 'inputFieldName',
 			label: 'Field Name',
@@ -629,6 +647,8 @@ require([
 
 		$.when(promise).done((data) => {
 			let fieldArray = JSON.parse(data).entry;
+			let lookupArray = getLookupArray(fieldArray);
+
 			let $container = $(`
 				<div class="container">
 					<ul class="nav nav-tabs main-tabs shared-tabcontrols-tabbar">
@@ -693,17 +713,6 @@ require([
 				$(`section[data-section-id="${section_id}"]`, $container).addClass('active');
 			});
 
-			let general = fieldArray.find((obj) => {
-				return obj.name === 'general';
-			});
-
-			let lookupArray = [];
-			try {
-				lookupArray = JSON.parse(general?.content?.lookups || '[]');
-			} catch {
-				lookupArray = general?.content?.lookups.split(',').map(lookup => {return {name: lookup, lookup: lookup}})
-			}
-
 			if (!lookupArray.length) {
 				let error =
 					'<p class="error-message"><i class="icon-warning"></i> WARNING: You must add at least one lookup to merge into the asset database!</p>';
@@ -718,7 +727,7 @@ require([
 				$('section[data-section-id="section-search"] p', $container).last().after(error);
 			}
 
-			$('.btn-add-field', $container).on('click', () => editAddField(lookupArray, fieldArray));
+			$('.btn-add-field', $container).on('click', () => editAddField(fieldArray));
 			$('.btn-add-lookup', $container).on('click', () => addLookup(lookupArray));
 
 			lookupArray.forEach(function (lookup) {
@@ -776,7 +785,7 @@ require([
 					return false;
 				});
 
-				$('.adb-field-edit', $tr).on('click', () => editAddField(lookupArray, fieldArray, field));
+				$('.adb-field-edit', $tr).on('click', () => editAddField(fieldArray, field));
 				$('.adb-field-delete', $tr).on('click', () => deleteField(fieldArray, field.name));
 
 				$('.fields-table tbody', $container).append($tr);
@@ -817,67 +826,67 @@ require([
 			let lookupFiles = [];
 			let lookupNames = [];
 
+			let lookupsArray = getLookupArray(fieldArray);
+			lookupFiles = lookupsArray.map((lookup) => {
+				return `\n| \`input_adb_lookup(${lookup.lookup})\``;
+			});
+			lookupNames = lookupsArray.map((lookup) => {
+				return `source_lookup="${lookup.lookup}", "${lookup.name}"`;
+			});
+
 			fieldArray.forEach(function (field) {
-				if (field.name == 'general') {
-					let lookupsArray = JSON.parse(field?.content?.lookups || '[]');
-					lookupFiles = lookupsArray.map((lookup) => {
-						return `\n| \`input_adb_lookup(${lookup.lookup})\``;
-					});
-					lookupNames = lookupsArray.map((lookup) => {
-						return `source_lookup="${lookup.lookup}", "${lookup.name}"`;
-					});
-				} else {
-					if (parseInt(field.content.key_field)) {
-						keys.push(field.name);
-					}
+				if (field.name == 'general') return;
 
-					if (field.content.ignore_values) {
-						let ignoreValuesArray = field.content.ignore_values.split('|');
-						ignoreValues.push(`${field.name} IN ("${ignoreValuesArray.join('", "')}")`);
-					}
-
-					if (field?.content?.fillnull) {
-						fillnull.push(`${field.name} = if(isnull(${field.name}), "${field.content.fillnull}", ${field.name})`);
-					}
-
-					if (field?.content?.validation) {
-						validation.push(`${field.name}=mvfilter(match(${field.name}, "${field.content.validation}"))`);
-					}
-
-					if (!parseInt(field.content.case_sensitive)) {
-						caseInsensitive.push(field.name);
-					}
-
-					if (field?.content?.field_type == 'single') {
-						if (field.content.merge_method == 'latest') {
-							stats.push(`latest(${field.name}) as ${field.name}`);
-						} else if (field?.content?.merge_method == 'coalesce') {
-							fieldSplit.push(`{source}_${field.name} = ${field.name}`);
-
-							let mergeOrderArray = field.content.merge_order.split(',');
-
-							let statsMerge = mergeOrderArray.map((lookup) => {
-								return `latest(${lookup}_${field.name}) as ${lookup}_${field.name}`;
-							});
-							stats = stats.concat(statsMerge);
-
-							let postEvalMerge = mergeOrderArray.map((lookup) => {
-								return `'${lookup}_${field.name}'`;
-							});
-							coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
-						} else {
-							stats.push(`${field.content.merge_method}(${field.name}) as ${field.name}`);
-						}
-					} else if (field.content.field_type == 'multivalue') {
-						multivalue.push(field.name);
-						stats.push(`values(${field.name}) as ${field.name}`);
-						maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
-					} else if (field.content.field_type == 'eval') {
-						evalExp.push(`${field.name} = ${field.content.eval_expression}`);
-					}
-
-					table.push(field.name);
+				if (parseInt(field.content.key_field)) {
+					keys.push(field.name);
 				}
+
+				if (field.content.ignore_values) {
+					let ignoreValuesArray = field.content.ignore_values.split('|');
+					ignoreValues.push(`${field.name} IN ("${ignoreValuesArray.join('", "')}")`);
+				}
+
+				if (field?.content?.fillnull) {
+					fillnull.push(`${field.name} = if(isnull(${field.name}), "${field.content.fillnull}", ${field.name})`);
+				}
+
+				if (field?.content?.validation) {
+					validation.push(`${field.name}=mvfilter(match(${field.name}, "${field.content.validation}"))`);
+				}
+
+				if (!parseInt(field.content.case_sensitive)) {
+					caseInsensitive.push(field.name);
+				}
+
+				if (field?.content?.field_type == 'single') {
+					if (field.content.merge_method == 'latest') {
+						stats.push(`latest(${field.name}) as ${field.name}`);
+					} else if (field?.content?.merge_method == 'coalesce') {
+						fieldSplit.push(`{source}_${field.name} = ${field.name}`);
+
+						let mergeOrderArray = field.content.merge_order.split(',');
+
+						let statsMerge = mergeOrderArray.map((lookup) => {
+							return `latest(${lookup}_${field.name}) as ${lookup}_${field.name}`;
+						});
+						stats = stats.concat(statsMerge);
+
+						let postEvalMerge = mergeOrderArray.map((lookup) => {
+							return `'${lookup}_${field.name}'`;
+						});
+						coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
+					} else {
+						stats.push(`${field.content.merge_method}(${field.name}) as ${field.name}`);
+					}
+				} else if (field.content.field_type == 'multivalue') {
+					multivalue.push(field.name);
+					stats.push(`values(${field.name}) as ${field.name}`);
+					maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
+				} else if (field.content.field_type == 'eval') {
+					evalExp.push(`${field.name} = ${field.content.eval_expression}`);
+				}
+
+				table.push(field.name);
 			});
 
 			let search = '';
