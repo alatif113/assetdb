@@ -758,7 +758,7 @@ require([
 									<dt>Case Sensitive</dt><dd>${caseSensitive ? 'Yes' : 'No'}</dd>
 									<dt>Ignore Values</dt><dd>${field.content?.ignore_values || 'N/A'}</dd>
 									<dt>Fill Null</dt><dd>${field.content?.fillnull || 'N/A'}</dd>
-									<dt>Filter Values</dt><dd>${field.content?.validation || 'N/A'}</dd>
+									<dt>Validation</dt><dd>${field.content?.validation || 'N/A'}</dd>
 								</dl>
 							</div>
 						</td>
