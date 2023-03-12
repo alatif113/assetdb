@@ -759,6 +759,7 @@ require([
 									<dt>Ignore Values</dt><dd>${field.content?.ignore_values || 'N/A'}</dd>
 									<dt>Fill Null</dt><dd>${field.content?.fillnull || 'N/A'}</dd>
 									<dt>Validation</dt><dd>${field.content?.validation || 'N/A'}</dd>
+									<dt>Eval Expression</dt><dd>${field.content?.eval_expression || 'N/A'}</dd>
 								</dl>
 							</div>
 						</td>
@@ -805,7 +806,7 @@ require([
 	 * @return {String}		Built Splunk query
 	 */
 	function makeMergeSearch(fieldArray = []) {
-		let promise = fieldArray.length ? undefined : getConf('conf-assetdb');
+		const promise = fieldArray.length ? undefined : getConf('conf-assetdb');
 
 		return $.when(promise).then((data) => {
 			if (!fieldArray.length) fieldArray = JSON.parse(data).entry;
@@ -822,75 +823,66 @@ require([
 			let ignoreValues = [];
 			let caseInsensitive = [];
 			let maxValues = [];
-			let lookupFiles = [];
-			let lookupNames = [];
 
-			let lookupsArray = getLookupArray(fieldArray);
-			lookupFiles = lookupsArray.map((lookup) => {
-				return `\n| \`input_adb_lookup(${lookup.lookup})\``;
-			});
-			lookupNames = lookupsArray.map((lookup) => {
-				return `source_lookup="${lookup.lookup}", "${lookup.name}"`;
-			});
+			const lookupsArray = getLookupArray(fieldArray);
+			const lookupFiles = lookupsArray.map(({lookup}) => `| \`input_adb_lookup(${lookup})\``);
+			const lookupNames = lookupsArray.map(({lookup, name}) => `source_lookup="${lookup}", "${name}"`);
 
-			fieldArray.forEach(function (field) {
-				if (field.name == 'general') return;
+			for (const field of fieldArray) {
+				const {name, content} = field;
+				if (name == 'general') continue;
 
-				if (parseInt(field.content.key_field)) {
-					keys.push(field.name);
+				if (parseInt(content.key_field)) {
+					keys.push(name);
 				}
 
-				if (field.content.ignore_values) {
-					let ignoreValuesArray = field.content.ignore_values.split('|');
-					ignoreValues.push(`${field.name} IN ("${ignoreValuesArray.join('", "')}")`);
+				if (content.ignore_values) {
+					const ignoreValuesArray = content.ignore_values.split('|');
+					ignoreValues.push(`${name} IN ("${ignoreValuesArray.join('", "')}")`);
 				}
 
-				if (field?.content?.fillnull) {
-					fillnull.push(`${field.name} = if(isnull(${field.name}), "${field.content.fillnull}", ${field.name})`);
+				if (content?.fillnull) {
+					fillnull.push(`${name} = if(isnull(${name}), "${content.fillnull}", ${name})`);
 				}
 
-				if (field?.content?.validation) {
-					validation.push(`${field.name}=mvfilter(match(${field.name}, "${field.content.validation}"))`);
+				if (content.validation) {
+					validation.push(`${name}=mvfilter(match(${name}, "${content.validation}"))`);
 				}
 
-				if (field?.content?.eval_expression) {
-					evalExp.push(`${field.name} = ${field.content.eval_expression}`);
+				if (content.eval_expression) {
+					evalExp.push(`${name} = ${content.eval_expression}`);
 				}
 
-				if (!parseInt(field.content.case_sensitive)) {
-					caseInsensitive.push(field.name);
+				if (!parseInt(content.case_sensitive)) {
+					caseInsensitive.push(name);
 				}
 
-				if (field?.content?.field_type == 'single') {
-					if (field.content.merge_method == 'latest') {
-						stats.push(`latest(${field.name}) as ${field.name}`);
-					} else if (field?.content?.merge_method == 'coalesce') {
-						fieldSplit.push(`{source}_${field.name} = ${field.name}`);
+				if (content.field_type == 'single') {
+					if (content.merge_method == 'latest') {
+						stats.push(`latest(${name}) as ${name}`);
 
-						let mergeOrderArray = field.content.merge_order.split(',');
+					} else if (content.merge_method == 'coalesce') {
+						fieldSplit.push(`{source}_${name} = ${name}`);
 
-						let statsMerge = mergeOrderArray.map((lookup) => {
-							return `latest(${lookup}_${field.name}) as ${lookup}_${field.name}`;
-						});
-						stats = stats.concat(statsMerge);
+						const mergeOrderArray = content.merge_order.split(',');
+						stats = stats.concat(mergeOrderArray.map((lookup) => `latest(${lookup}_${name}) as ${lookup}_${name}`));
 
-						let postEvalMerge = mergeOrderArray.map((lookup) => {
-							return `'${lookup}_${field.name}'`;
-						});
-						coalesce.push(`${field.name} = coalesce(${postEvalMerge.join(', ')})`);
+						const postEvalMerge = mergeOrderArray.map((lookup) => `'${lookup}_${name}'`);
+						coalesce.push(`${name} = coalesce(${postEvalMerge.join(', ')})`);
+
 					} else {
-						stats.push(`${field.content.merge_method}(${field.name}) as ${field.name}`);
+						stats.push(`${content.merge_method}(${name}) as ${name}`);
 					}
-				} else if (field?.content?.field_type == 'multivalue') {
-					multivalue.push(field.name);
-					stats.push(`values(${field.name}) as ${field.name}`);
-					maxValues.push(`${field.name} = mvindex(${field.name},0,${parseInt(field.content.max_values) - 1})`);
+				} else if (content.field_type == 'multivalue') {
+					multivalue.push(name);
+					stats.push(`values(${name}) as ${name}`);
+					maxValues.push(`${name} = mvindex(${name},0,${parseInt(content.max_values) - 1})`);
 				}
-				table.push(field.name);
-			});
-
+				table.push(name);
+			};
+			
 			let search = '';
-			if (lookupFiles.length) search += lookupFiles.join('');
+			if (lookupFiles.length) search += lookupFiles.join('\n');
 			if (multivalue.length) search += '\n```### Split multivalue fields ###```' + `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
 			if (caseInsensitive.length) search += '\n```### Convert case insensitive fields to lowercase ###```' + `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
 			if (validation.length) search += '\n```### Validate field values ###```' + `\n| eval ${validation.join(', ')}`;
