@@ -16,7 +16,7 @@ require([
 ], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, DropdownInput) {
 	const $el = $('#ab_config');
 	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
-	const VALIDATION_ENDPOINT = '/services/search/parser';
+	const VALIDATION_ENDPOINT = '/services/search/v2/parser';
 	const SERVICE = mvc.createService();
 	
 	/**
@@ -101,7 +101,17 @@ require([
 		let endpoint = 'conf-assetdb/general/';
 
 		if (operation == 'add') {
-			lookupArray.push({name: lookupName, lookup: lookupFile});
+			let low = 0
+			let high = lookupArray.length;
+
+			while (low < high) {
+				let mid = (low + high) >>> 1;
+				if (lookupArray[mid].name < lookupName) low = mid + 1;
+				else high = mid;
+			}
+			
+			lookupArray.splice(low, 0, {name: lookupName, lookup: lookupFile});
+						
 		} else if (operation == 'delete') {
 			let index = lookupArray.findIndex(item => item.name === lookupName);
 			if (index > -1) lookupArray.splice(index, 1);
@@ -243,11 +253,20 @@ require([
 			help: 'If No, field values are converted to lowercase',
 		});
 
-		let ignoreValuesInput = new TextInput({
+		/*let ignoreValuesInput = new TextInput({
 			id: 'inputIgnoreValues',
 			label: 'Ignore Values',
 			value: field?.content?.ignore_values || '',
 			help: '[Optional] A pipe delimited list of values to ignore',
+		});*/
+
+		let ignoreValuesInput = new MultiSelectInput({
+			id: 'inputIgnoreValues',
+			label: 'Ignore Values',
+			allowCustomValues: true,
+			choices: [{value: "null"}, {value: "unknown"}, {value: ""}],
+			value: (field?.content?.ignore_values) ? JSON.parse(field.content.ignore_values) : [],
+			help: '[Optional] Select from a list of common values to ignore or input your own',
 		});
 
 		let fillnullInput = new TextInput({
@@ -356,6 +375,7 @@ require([
 			primaryButton: 'Save',
 			onRemove: function () {
 				mvc.Components.getInstance(mergeOrderInput.getId()).dispose();
+				mvc.Components.getInstance(ignoreValuesInput.getId()).dispose();
 			},
 			onPrimaryBtnClick: function () {
 				let error = false;
@@ -393,13 +413,6 @@ require([
 						}
 					}
 	
-					if (ignoreValuesInput.isEmpty() || ignoreValuesInput.validate(/^[a-zA-Z0-9-_ ,!@#$%^&*()|]+$/)) {
-						ignoreValuesInput.clearError();
-					} else {
-						ignoreValuesInput.setError('One more characters within the list of values to ignore is not supported');
-						error = true;
-					}
-	
 					if (fillnullInput.isEmpty() || fillnullInput.validate(/^[a-zA-Z0-9-_]+$/)) {
 						fillnullInput.clearError();
 					} else {
@@ -425,7 +438,7 @@ require([
 					let fieldData = {
 						key_field: keyFieldInput.getValue(),
 						case_sensitive: caseSensitiveInput.getValue(),
-						ignore_values: ignoreValuesInput.getValue(),
+						ignore_values: JSON.stringify(ignoreValuesInput.getValue()),
 						fillnull: fillnullInput.getValue(),
 						validation: validationInput.getValue(),
 						field_type: fieldTypeInput.getValue(),
@@ -756,7 +769,7 @@ require([
 								<dl class="list-dotted">
 									<dt>Key Field</dt><dd>${isKey ? 'Yes' : 'No'}</dd>
 									<dt>Case Sensitive</dt><dd>${caseSensitive ? 'Yes' : 'No'}</dd>
-									<dt>Ignore Values</dt><dd>${field.content?.ignore_values || 'N/A'}</dd>
+									<dt>Ignore Values</dt><dd>${JSON.stringify(field.content?.ignore_values) || 'N/A'}</dd>
 									<dt>Fill Null</dt><dd>${field.content?.fillnull || 'N/A'}</dd>
 									<dt>Validation</dt><dd>${field.content?.validation || 'N/A'}</dd>
 									<dt>Eval Expression</dt><dd>${field.content?.eval_expression || 'N/A'}</dd>
@@ -837,8 +850,7 @@ require([
 				}
 
 				if (content.ignore_values) {
-					const ignoreValuesArray = content.ignore_values.split('|');
-					ignoreValues.push(`${name} IN ("${ignoreValuesArray.join('", "')}")`);
+					ignoreValues.push(`${name} = if(in(${name}, "${JSON.parse(content.ignore_values).map(n => _.escape(n)).join('", "')}"), null(), ${name})`);
 				}
 
 				if (content?.fillnull) {
@@ -886,7 +898,7 @@ require([
 			if (multivalue.length) search += '\n```### Split multivalue fields ###```' + `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
 			if (caseInsensitive.length) search += '\n```### Convert case insensitive fields to lowercase ###```' + `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
 			if (validation.length) search += '\n```### Validate field values ###```' + `\n| eval ${validation.join(', ')}`;
-			if (ignoreValues.length) search += '\n```### Ignore values ###```' + `\n| search NOT (${ignoreValues.join(' ')})`;
+			if (ignoreValues.length) search += '\n```### Ignore values ###```' + `\n| eval ${ignoreValues.join(' ')}`;
 			if (lookupNames.length) search += '\n```### Map source lookup to source name ###```' + `\n| eval source=case(${lookupNames.join(', ')})`
 			if (fillnull.length) search += '\n```### Fill null values ###```' + `\n| eval ${fillnull.join(', ')}`;
 			if (evalExp.length) search += '\n```### Eval expression fields ###```' + `\n| eval ${evalExp.join(', ')}`;

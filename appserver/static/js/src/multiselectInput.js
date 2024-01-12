@@ -21,7 +21,9 @@ define(function (require, exports, module) {
 			this.splunkInput = new _MultiSelectInput({
 				id: data.id,
 				el: $('.control', this.$input),
-				choices: data.choices,
+				choices: data.choices || [],
+				disabled: false,
+				allowCustomValues: data.allowCustomValues || false,
 				value: data.value,
 			}).render();
 
@@ -36,7 +38,7 @@ define(function (require, exports, module) {
 		}
 
 		getValue() {
-			return this.splunkInput.val().join(',');
+			return this.splunkInput.val();
 		}
 
 		getInput() {
