@@ -905,6 +905,7 @@ require([
 			if (fieldSplit.length) search += '\n```### Create lookup specific fields for priority based coalesce ###```' + `\n| eval ${fieldSplit.join(', ')}`;
 			if (keys.length) search += '\n```### Shallow merge assets with matching key fields (using basic stats) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`);
 			search += `\n| search _key=*`;
+			if (stats.length && coalesce.length) search += '\n```### Define coalesce fields based on lookup priority ###```' + `\n| eval ${coalesce.join(', ')}`;
 			if (stats.length) search += `\n| stats values(source) as source, values(source_lookup) as source_lookup, ${stats.join(', ')} by _key`;
 			if (keys.length) search += '\n```### Deep merge assets with matching key fields (using custom command) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`);
 			search += `\n| adbmerge max_keys=25`
