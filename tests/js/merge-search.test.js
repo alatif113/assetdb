@@ -158,3 +158,9 @@ test('latest keeps _time through the first stats so the second stats can order b
 	assert.ok(!/latest\(_time\)/.test(second), spl);
 	assert.ok(!/latest\(_time\)/.test(gen([single('n', { merge_method: 'max' })])), 'no _time needed for max');
 });
+
+test('max_keys comes from the general stanza, default 25, invalid values fall back', () => {
+	const withKeys = (v) => gen([single('f')], { name: 'general', content: { lookups: general.content.lookups, max_keys: v } });
+	assert.match(withKeys('40'), /\| adbmerge max_keys=40\n/);
+	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25\n/, String(bad));
+});

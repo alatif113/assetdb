@@ -34,6 +34,7 @@ require([
 	const LOOKUP_FILE_RE = /^[A-Za-z0-9_.\-]+$/;
 	const MERGE_ORDER_RE = /^[A-Za-z0-9_]+$/;
 	const MERGE_METHODS = ['latest', 'min', 'max', 'avg', 'coalesce'];
+	const DEFAULT_MAX_KEYS = 25;
 
 	/**
 	 * Quote a value as an SPL string literal (escapes backslashes and double quotes).
@@ -127,6 +128,15 @@ require([
 				buildContent(section);
 				modal.hide();
 			});
+	}
+
+	/**
+	 * max_keys for adbmerge from the [general] stanza of assetdb.conf: a positive integer, default 25.
+	 */
+	function parseMaxKeys(fieldArray) {
+		const general = fieldArray.find((obj) => obj.name === 'general');
+		const n = parseInt(general?.content?.max_keys);
+		return isNaN(n) || n < 1 ? DEFAULT_MAX_KEYS : n;
 	}
 
 	/**
@@ -1036,7 +1046,7 @@ require([
 			// _time is carried through the first stats so that `latest` still has a timestamp in the final stats
 			if (stats.length) search += `\n| stats values(source) as source, values(source_lookup) as source_lookup, ${(usesLatest ? ['latest(_time) as _time'] : []).concat(stats).join(', ')} by _key`;
 			if (keys.length) search += '\n```### Deep merge assets with matching key fields (using custom command) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`);
-			search += `\n| adbmerge max_keys=25`
+			search += `\n| adbmerge max_keys=${parseMaxKeys(fieldArray)}`
 			search += `\n| eval _key = md5(mvjoin(mvsort(asset), "::"))`;
 			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, ${statsFinal.join(', ')} by _key`;
 			if (avgEval.length) search += '\n```### Calculate averages ###```' + `\n| eval ${avgEval.join(', ')}`;

@@ -18,6 +18,8 @@ Create lookup files and corresponding lookup generation searches for each unqiue
 
 Create fields to be stored within the *Asset Database* and merged between all input lookup files. 
 
+
+The maximum size of a merged asset is `max_keys` in the `[general]` stanza of `assetdb.conf` (default 25). Assets whose merged key set is larger are dropped and counted in `python.log`.
 Source lookups are read with the `input_adb_lookup` macro, which sets `source_lookup` to the lookup name when the lookup has no `source_lookup` column (lookups written by `output_adb_lookup` already carry it). `source` is derived from `source_lookup`.
 
 - **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. Predefined fields are provided by default, but can be edited or deleted if needed. 
