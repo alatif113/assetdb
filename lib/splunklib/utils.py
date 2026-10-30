@@ -1,4 +1,4 @@
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -44,4 +44,4 @@ def ensure_str(s, encoding="utf-8", errors="strict"):
 
 
 def assertRegex(self, *args, **kwargs):
-    return getattr(self, "assertRegex")(*args, **kwargs)
+    return self.assertRegex(*args, **kwargs)

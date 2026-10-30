@@ -1,6 +1,4 @@
-# coding=utf-8
-#
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -14,13 +12,14 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+import builtins
 import csv
 import os
 import re
-from io import open, StringIO
-from os import getcwd
-from json.encoder import encode_basestring_ascii as json_encode_string
 from collections import namedtuple
+from io import StringIO
+from json.encoder import encode_basestring_ascii as json_encode_string
+from os import getcwd
 
 
 class Validator:
@@ -144,11 +143,11 @@ class File(Validator):
 
         try:
             value = (
-                open(path, self.mode)
+                builtins.open(path, self.mode)
                 if self.buffering is None
-                else open(path, self.mode, self.buffering)
+                else builtins.open(path, self.mode, self.buffering)
             )
-        except IOError as error:
+        except OSError as error:
             raise ValueError(
                 f"Cannot open {value} with mode={self.mode} and buffering={self.buffering}: {error}"
             )
@@ -182,16 +181,12 @@ class Integer(Validator):
 
             def check_range(value):
                 if value < minimum:
-                    raise ValueError(
-                        f"Expected integer in the range [{minimum},+∞], not {value}"
-                    )
+                    raise ValueError(f"Expected integer in the range [{minimum},+∞], not {value}")
         elif maximum is not None:
 
             def check_range(value):
                 if value > maximum:
-                    raise ValueError(
-                        f"Expected integer in the range [-∞,{maximum}], not {value}"
-                    )
+                    raise ValueError(f"Expected integer in the range [-∞,{maximum}], not {value}")
 
         else:
 
@@ -230,16 +225,12 @@ class Float(Validator):
 
             def check_range(value):
                 if value < minimum:
-                    raise ValueError(
-                        f"Expected float in the range [{minimum},+∞], not {value}"
-                    )
+                    raise ValueError(f"Expected float in the range [{minimum},+∞], not {value}")
         elif maximum is not None:
 
             def check_range(value):
                 if value > maximum:
-                    raise ValueError(
-                        f"Expected float in the range [-∞,{maximum}], not {value}"
-                    )
+                    raise ValueError(f"Expected float in the range [-∞,{maximum}], not {value}")
         else:
 
             def check_range(value):
@@ -296,7 +287,7 @@ class Duration(Validator):
         m = value // 60 % 60
         h = value // (60 * 60)
 
-        return "{0:02d}:{1:02d}:{2:02d}".format(h, m, s)
+        return f"{h:02d}:{m:02d}:{s:02d}"
 
     _60 = Integer(0, 59)
     _unsigned = Integer(0)
@@ -309,17 +300,17 @@ class List(Validator):
         """Describes the properties of list option values."""
 
         strict = True
-        delimiter = str(",")
-        quotechar = str('"')
+        delimiter = ","
+        quotechar = '"'
         doublequote = True
-        lineterminator = str("\n")
+        lineterminator = "\n"
         skipinitialspace = True
         quoting = csv.QUOTE_MINIMAL
 
     def __init__(self, validator=None):
         if not (validator is None or isinstance(validator, Validator)):
             raise ValueError(
-                f"Expected a Validator instance or None for validator, not {repr(validator)}"
+                f"Expected a Validator instance or None for validator, not {validator!r}"
             )
         self._validator = validator
 
@@ -372,9 +363,7 @@ class Map(Validator):
         return (
             None
             if value is None
-            else list(self.membership.keys())[
-                list(self.membership.values()).index(value)
-            ]
+            else list(self.membership.keys())[list(self.membership.values()).index(value)]
         )
 
 
@@ -452,8 +441,8 @@ __all__ = [
     "Code",
     "Duration",
     "File",
-    "Integer",
     "Float",
+    "Integer",
     "List",
     "Map",
     "RegularExpression",

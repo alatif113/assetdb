@@ -1,4 +1,4 @@
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -35,7 +35,7 @@ class Argument:
                 validation="is_pos_int('some_name')",
                 data_type=Argument.data_type_number,
                 required_on_edit=True,
-                required_on_create=True
+                required_on_create=True,
             )
     """
 

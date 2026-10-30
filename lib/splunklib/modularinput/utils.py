@@ -1,4 +1,4 @@
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -73,6 +73,6 @@ def parse_xml_data(parent_node, child_node_tag):
                 data[child_name] = {"__app": child.get("app", None)}
                 for param in child:
                     data[child_name][param.get("name")] = parse_parameters(param)
-        elif "item" == parent_node.tag:
+        elif parent_node.tag == "item":
             data[child_name] = parse_parameters(child)
     return data

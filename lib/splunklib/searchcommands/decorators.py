@@ -1,6 +1,4 @@
-# coding=utf-8
-#
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -17,10 +15,10 @@
 
 from collections import OrderedDict
 from inspect import getmembers, isclass, isfunction
+from json.encoder import encode_basestring_ascii as json_encode_string
 
-
-from .internals import ConfigurationSettingsType, json_encode_string
-from .validators import OptionName
+from splunklib.searchcommands.internals import ConfigurationSettingsType
+from splunklib.searchcommands.validators import OptionName
 
 
 class Configuration:
@@ -79,9 +77,7 @@ class Configuration:
             o.ConfigurationSettings.fix_up(o)
             Option.fix_up(o)
         else:
-            raise TypeError(
-                f"Incorrect usage: Configuration decorator applied to {type(o)}"
-            )
+            raise TypeError(f"Incorrect usage: Configuration decorator applied to {type(o)}")
 
         return o
 
@@ -137,9 +133,7 @@ class ConfigurationSetting(property):
 
     @staticmethod
     def fix_up(cls, values):
-        is_configuration_setting = lambda attribute: isinstance(
-            attribute, ConfigurationSetting
-        )
+        is_configuration_setting = lambda attribute: isinstance(attribute, ConfigurationSetting)
         definitions = getmembers(cls, is_configuration_setting)
         i = 0
 
@@ -208,9 +202,7 @@ class ConfigurationSetting(property):
         if len(values) > 0:
             settings = sorted(list(values.items()))
             settings = [f"{n_v[0]}={n_v[1]}" for n_v in settings]
-            raise AttributeError(
-                "Inapplicable configuration settings: " + ", ".join(settings)
-            )
+            raise AttributeError("Inapplicable configuration settings: " + ", ".join(settings))
 
         cls.configuration_setting_definitions = definitions
 
@@ -226,9 +218,7 @@ class ConfigurationSetting(property):
         try:
             specification = ConfigurationSettingsType.specification_matrix[name]
         except KeyError:
-            raise AttributeError(
-                f"Unknown configuration setting: {name}={repr(self._value)}"
-            )
+            raise AttributeError(f"Unknown configuration setting: {name}={self._value!r}")
 
         return ConfigurationSettingsType.validate_configuration_setting, specification
 
@@ -252,12 +242,14 @@ class Option(property):
             doc=''' **Syntax:** **total=***<fieldname>*
             **Description:** Name of the field that will hold the computed
             sum''',
-            require=True, validate=Fieldname())
+            require=True,
+            validate=Fieldname(),
+        )
 
     **Example:**
 
     Long form. Useful when you wish to manage the option value and its deleter/getter/setter side-effects yourself. You
-    must provide a getter and a setter. If your :code:`Option` requires `destruction <https://docs.python.org/2/reference/datamodel.html#object.__del__>`_ you must
+    must provide a getter and a setter. If your :code:`Option` requires `destruction <https://docs.python.org/3/reference/datamodel.html#object.__del__>`_ you must
     also provide a deleter. You must be prepared to accept a value of :const:`None` which indicates that your
     :code:`Option` is unset.
 
@@ -443,18 +435,11 @@ class Option(property):
             item_class = Option.Item
             OrderedDict.__init__(
                 self,
-                (
-                    (option.name, item_class(command, option))
-                    for (name, option) in definitions
-                ),
+                ((option.name, item_class(command, option)) for (name, option) in definitions),
             )
 
         def __repr__(self):
-            text = (
-                "Option.View(["
-                + ",".join([repr(item) for item in self.values()])
-                + "])"
-            )
+            text = "Option.View([" + ",".join([repr(item) for item in self.values()]) + "])"
             return text
 
         def __str__(self):
@@ -464,11 +449,7 @@ class Option(property):
         # region Methods
 
         def get_missing(self):
-            missing = [
-                item.name
-                for item in self.values()
-                if item.is_required and not item.is_set
-            ]
+            missing = [item.name for item in self.values() if item.is_required and not item.is_set]
             return missing if len(missing) > 0 else None
 
         def reset(self):

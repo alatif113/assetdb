@@ -80,15 +80,15 @@ Intentional exceptions live in `.appinspect-waivers` and are listed below.
 Fixed in the app: missing `[id]` stanza in `app.conf`; `static/slides.gif` (README image) is no
 longer packaged.
 
-**No failures are waived.** `python.required = 3.13` is set in `commands.conf` (AppInspect's cloud
-check only accepts 3.13/3.14; Splunk 10.0 documents the setting as not configurable and runs the
-command on its bundled Python 3.9, so it is ignored there). The code must therefore stay
-compatible with Python 3.9 through 3.13.
+**No failures are waived and the SDK warning is gone.** `commands.conf` sets `python.required = 3.13`
+and the vendored `lib/splunklib` is splunk-sdk 3.0.1, which needs Python >= 3.13 (AppInspect's cloud
+checks require both). Consequence: `adbmerge` needs a Splunk version that can run custom commands on
+Python 3.13 (the dev server, 10.4.2, does). Splunk 10.0 documents `python.required` as not
+configurable and runs commands on its bundled Python 3.9, where this SDK will not import, so 10.0 is
+not supported by the command. The `tests/python/test_command_protocol.py` test runs the command
+with the vendored SDK.
 
 **Accepted warnings:**
-- `check_python_sdk_version` asks for splunk-sdk >= 3.0.0, which requires Python >= 3.13 and would
-  not run on Splunk 10.0/10.1 (Python 3.9). The vendored SDK is 2.1.1, the newest line that
-  supports 3.9. Revisit when the minimum supported Splunk becomes 10.2+.
 - `check_kos_are_accessible`: ACLs use the `admin` role (on-prem). Add `sc_admin` if the app is ever
   published for Splunk Cloud.
 

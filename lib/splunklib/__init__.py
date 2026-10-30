@@ -1,4 +1,4 @@
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -26,11 +26,5 @@ DEFAULT_DATE_FORMAT = "%Y-%m-%d %H:%M:%S %Z"
 # To set the logging level of splunklib
 # ex. To enable debug logs, call this method with parameter 'logging.DEBUG'
 # default logging level is set to 'WARNING'
-def setup_logging(
-    level, log_format=DEFAULT_LOG_FORMAT, date_format=DEFAULT_DATE_FORMAT
-):
+def setup_logging(level, log_format=DEFAULT_LOG_FORMAT, date_format=DEFAULT_DATE_FORMAT):
     logging.basicConfig(level=level, format=log_format, datefmt=date_format)
-
-
-__version_info__ = (2, 1, 1)
-__version__ = ".".join(map(str, __version_info__))

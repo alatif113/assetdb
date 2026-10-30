@@ -177,7 +177,7 @@ Each step is one independently committable change. A star marks steps that touch
 
 ## Implementation status
 
-Decisions taken: overflow clusters are dropped (counted in the log); writes limited to `admin`; support Splunk 10.0+ (so splunk-sdk stays on 2.1.1 and `python.required = 3.13`, which 10.0 ignores).
+Decisions taken: overflow clusters are dropped (counted in the log); writes limited to `admin`; support Splunk 10.0+, later overridden: to pass AppInspect the app uses splunk-sdk 3.0.1 and `python.required = 3.13`, so `adbmerge` needs a Splunk that runs commands on Python 3.13 (not 10.0, which uses 3.9).
 
 | Step | Status |
 | --- | --- |

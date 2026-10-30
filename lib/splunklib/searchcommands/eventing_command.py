@@ -1,6 +1,4 @@
-# coding=utf-8
-#
-# Copyright © 2011-2024 Splunk, Inc.
+# Copyright © 2011-2026 Splunk, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"): you may
 # not use this file except in compliance with the License. You may obtain
@@ -15,8 +13,8 @@
 # under the License.
 
 
-from .decorators import ConfigurationSetting
-from .search_command import SearchCommand
+from splunklib.searchcommands.decorators import ConfigurationSetting
+from splunklib.searchcommands.search_command import SearchCommand
 
 
 class EventingCommand(SearchCommand):
@@ -108,14 +106,14 @@ class EventingCommand(SearchCommand):
             doc="""
             Specifies the maximum number of events that can be passed to the command for each invocation.
 
-            This limit cannot exceed the value of `maxresultrows` as defined in limits.conf_. Under SCP 1 you must
-            specify this value in commands.conf_.
+            This limit cannot exceed the value of `maxresultrows` as defined in `limits.conf
+            <http://docs.splunk.com/Documentation/Splunk/latest/admin/Limitsconf>`_. Under SCP 1 you must
+            specify this value in `commands.conf
+            <http://docs.splunk.com/Documentation/Splunk/latest/Admin/Commandsconf>`_.
 
             Default: The value of `maxresultrows`.
 
             Supported by: SCP 2
-
-            .. _limits.conf: http://docs.splunk.com/Documentation/Splunk/latest/admin/Limitsconf
 
             """
         )
