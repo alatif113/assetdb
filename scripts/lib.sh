@@ -87,7 +87,7 @@ splunk_curl() {
   else
     cfg=$(printf 'user = "%s:%s"\n' "$SPLUNK_USER" "$SPLUNK_PASSWORD")
   fi
-  curl --silent --show-error --max-time "${CURL_TIMEOUT:-30}" "${tls[@]}" --config <(printf '%s\n' "$cfg") "$@"
+  curl --silent --show-error --max-time "${CURL_TIMEOUT:-30}" ${tls[@]+"${tls[@]}"} --config <(printf '%s\n' "$cfg") "$@"
 }
 
 # splunk_get PATH [curl args] : GET a management endpoint as JSON.
@@ -104,13 +104,11 @@ splunk_post() {
 
 # Verify TCP reachability of the management port, then authentication. Prints server facts.
 check_connectivity() {
-  if ! (exec 3<>"/dev/tcp/$SPLUNK_HOST/$SPLUNK_MGMT_PORT") 2>/dev/null; then
-    die "$EX_CONN" "Cannot reach $SPLUNK_HOST:$SPLUNK_MGMT_PORT. Verify the management port (default 8089) and network."
-  fi
   local out rc=0
   out=$(splunk_get /services/server/info) || rc=$?
   if ((rc)); then
     case $rc in
+      6|7|28) die "$EX_CONN" "Cannot reach $SPLUNK_HOST:$SPLUNK_MGMT_PORT (curl $rc). Verify the management port (default 8089) and network." ;;
       60|35|51|58|59|77|83) die "$EX_CONN" "TLS error talking to $SPLUNK_MGMT_URL (curl $rc). Set SPLUNK_CA_BUNDLE, or opt in with SPLUNK_INSECURE_TLS=1." ;;
       *) die "$EX_CONN" "Request to $SPLUNK_MGMT_URL failed (curl exit $rc)." ;;
     esac

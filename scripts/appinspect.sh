@@ -64,7 +64,7 @@ fi
 info "AppInspect on $(basename "$PKG") tags='${TAGS:-<all>}'"
 # Human-readable report on stdout (saved to report.txt); JSON via --output-file. Non-zero
 # exit from appinspect itself is evaluated below from the JSON, not here.
-"$VENV/bin/splunk-appinspect" inspect "$PKG" "${tag_args[@]}" --max-messages all \
+"$VENV/bin/splunk-appinspect" inspect "$PKG" ${tag_args[@]+"${tag_args[@]}"} --max-messages all \
   --output-file "$JSON" --data-format json >"$TXT" 2>&1 || true
 [[ -s "$JSON" ]] || { cat "$TXT" >&2; die "$EX_FAIL" "AppInspect produced no JSON report"; }
 
