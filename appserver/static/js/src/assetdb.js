@@ -1,5 +1,3 @@
-//# sourceURL=asset_base.js
-
 require([
 	'underscore',
 	'jquery',
@@ -64,6 +62,71 @@ require([
 			}
 		}
 		if (quote) throw new Error('Invalid eval expression: unterminated string');
+	}
+
+	// Field names that would collide with the [general] stanza or with Splunk's own fields.
+	const RESERVED_FIELD_NAMES = ['general', 'asset', 'source', 'source_lookup', '_key', '_time', '_raw', 'host', 'index', 'sourcetype', 'linecount', 'punct', 'splunk_server', 'timestartpos', 'timeendpos'];
+
+	function isReservedFieldName(name) {
+		return RESERVED_FIELD_NAMES.includes(String(name).toLowerCase());
+	}
+
+	/**
+	 * Display text for the ignore_values conf property (a JSON array stored as a string).
+	 */
+	function formatIgnoreValues(value) {
+		const parsed = safeParse(value, null);
+		return Array.isArray(parsed) && parsed.length ? parsed.join(', ') : 'N/A';
+	}
+
+	/**
+	 * Best-effort readable message from a failed Splunk REST call.
+	 */
+	function describeError(err) {
+		const body = err?.data || safeParse(err?.responseText, null) || safeParse(err?.response?.data, null);
+		const message = body?.messages?.[0]?.text;
+		if (message) return message;
+		const status = err?.status || err?.response?.status;
+		return status ? `request failed with HTTP status ${status}` : (err?.message || 'request failed');
+	}
+
+	/**
+	 * Show a modal with an error message (the text is escaped).
+	 */
+	function showError(message) {
+		const errorModal = new Modal({
+			wide: false,
+			title: 'Error',
+			primaryButton: 'Close',
+			onPrimaryBtnClick: function () {
+				this.hide();
+			},
+		});
+		errorModal.setBody($(`<div class="alert alert-error">${_.escape(message)}</div>`));
+		errorModal.show();
+	}
+
+	/**
+	 * Run the follow-up steps of a change in order: wait for the config writes, regenerate and
+	 * save the merge search, then refresh the page and close the modal. Any failure is shown to
+	 * the user and the page is reloaded from the server so it never displays unsaved state.
+	 *
+	 * @param {Promise}	writes		Promise for the config write(s) of this change
+	 * @param {String}	section		Section to show after the page is rebuilt
+	 * @param {Modal}	modal		Modal to close on success
+	 */
+	function finishChange(writes, section, modal) {
+		$.when(writes)
+			.then(() => updateSearch())
+			.done(() => {
+				buildContent(section);
+				modal.hide();
+			})
+			.fail((err) => {
+				showError(`The change could not be saved completely: ${describeError(err)}. The merge search may be out of date.`);
+				buildContent(section);
+				modal.hide();
+			});
 	}
 
 	/**
@@ -143,38 +206,41 @@ require([
 	}
 
 	/**
-	 * Update the 'lookups' key within the 'general' stanza of assetdb.conf
+	 * Update the 'lookups' key within the 'general' stanza of assetdb.conf. The current list is
+	 * read from the server first so concurrent edits are not overwritten with stale page state.
 	 *
-	 * @param {Array}	lookupArray		Array of lookup names currently within the lookup list
 	 * @param {String}	lookupName		Lookup name to add or delete
+	 * @param {String}	lookupFile		Lookup file or definition (add only)
+	 * @param {String}	operation		add or delete
 	 *
 	 * @return {Promise} 				Jquery promise
 	 */
-	function updateLookups(lookupArray, lookupName, lookupFile, operation) {
-		let endpoint = 'conf-assetdb/general/';
+	function updateLookups(lookupName, lookupFile, operation) {
+		const endpoint = 'conf-assetdb/general/';
 
-		if (operation == 'add') {
-			let low = 0
-			let high = lookupArray.length;
+		return $.when(getConf('conf-assetdb')).then((data) => {
+			const lookupArray = getLookupArray(safeParse(data, {}).entry || []);
 
-			while (low < high) {
-				let mid = (low + high) >>> 1;
-				if (lookupArray[mid].name < lookupName) low = mid + 1;
-				else high = mid;
+			if (operation == 'add') {
+				let low = 0
+				let high = lookupArray.length;
+
+				while (low < high) {
+					let mid = (low + high) >>> 1;
+					if (lookupArray[mid].name < lookupName) low = mid + 1;
+					else high = mid;
+				}
+
+				lookupArray.splice(low, 0, {name: lookupName, lookup: lookupFile});
+			} else if (operation == 'delete') {
+				let index = lookupArray.findIndex(item => item.name === lookupName);
+				if (index > -1) lookupArray.splice(index, 1);
+			} else {
+				return $.Deferred().reject({message: `unknown operation ${operation}`}).promise();
 			}
-			
-			lookupArray.splice(low, 0, {name: lookupName, lookup: lookupFile});
-						
-		} else if (operation == 'delete') {
-			let index = lookupArray.findIndex(item => item.name === lookupName);
-			if (index > -1) lookupArray.splice(index, 1);
-		} else {
-			return;
-		}
 
-		let data = { lookups: JSON.stringify(lookupArray) };
-		let promise = setConf(endpoint, data);
-		return promise;
+			return setConf(endpoint, { lookups: JSON.stringify(lookupArray) });
+		});
 	}
 
 	/**
@@ -274,7 +340,6 @@ require([
 	 *
 	 */
 	function editAddField(fieldArray, field = {}) {
-		console.log(fieldArray);
 		let lookupArray = getLookupArray(fieldArray);
 
 		let fieldNameInput = new TextInput({
@@ -424,7 +489,7 @@ require([
 
 		let editAddModal = new Modal({
 			wide: true,
-			title: field ? 'Edit Field' : 'Add Field',
+			title: field?.name ? 'Edit Field' : 'Add Field',
 			primaryButton: 'Save',
 			onRemove: function () {
 				mvc.Components.getInstance(mergeOrderInput.getId()).dispose();
@@ -455,17 +520,8 @@ require([
 						if (!fieldNameInput.validate(FIELD_NAME_RE)) {
 							fieldNameInput.setError('Field name must start with a letter or underscore and can only use alphanumeric characters and underscores');
 							error = true;
-						} else if (fieldNameInput.getValue() == 'asset') {
-							fieldNameInput.setError('"asset" is a default field and cannot be replaced, choose another field name');
-							error = true;
-						} else if (fieldNameInput.getValue() == 'source') {
-							fieldNameInput.setError('"source" is a default field and cannot be replaced, choose another field name');
-							error = true;
-						} else if (fieldNameInput.getValue() == 'source_lookup') {
-							fieldNameInput.setError('"source_lookup" is a default field and cannot be replaced, choose another field name');
-							error = true;
-						} else if (fieldNameInput.getValue() == '_key') {
-							fieldNameInput.setError('"_key" is a default field and cannot be replaced, choose another field name');
+						} else if (isReservedFieldName(fieldNameInput.getValue())) {
+							fieldNameInput.setError(`"${fieldNameInput.getValue()}" is a reserved field name, choose another field name`);
 							error = true;
 						} else {
 							fieldNameInput.clearError();
@@ -512,11 +568,7 @@ require([
 	
 					let promise = updateField(fieldArray, fieldData, fieldNameInput.getValue(), operation);
 	
-					$.when(promise).done(() => {
-						updateSearch();
-						buildContent('section-fields');
-						this.hide();
-					});
+					finishChange(promise, 'section-fields', this);
 				});
 			},
 		});
@@ -540,11 +592,7 @@ require([
 			onPrimaryBtnClick: function () {
 				let promise = updateField(fieldArray, {}, fieldName, 'delete');
 
-				$.when(promise).done(() => {
-					updateSearch();
-					buildContent('section-fields');
-					this.hide();
-				});
+				finishChange(promise, 'section-fields', this);
 			},
 		});
 
@@ -663,12 +711,7 @@ require([
 				} else if (lookupArray.findIndex(item => item.lookup === lookupFile) > -1) {
 					lookupNameInput.setError(`An input with lookup ${lookupFile} already exists`);
 				} else {
-					let promise = updateLookups(lookupArray, lookupName, lookupFile, 'add');
-					$.when(promise).done(() => {
-						updateSearch();
-						buildContent('section-lookups');
-						this.hide();
-					});
+					finishChange(updateLookups(lookupName, lookupFile, 'add'), 'section-lookups', this);
 				}
 			},
 		});
@@ -685,19 +728,12 @@ require([
 	 *
 	 */
 	function deleteLookup(lookupArray, lookupName) {
-		const index = lookupArray.findIndex(item => item.name === lookupName);
-		if (index > -1) lookupArray.splice(index, 1);
 		let deleteModal = new Modal({
 			wide: false,
 			title: 'Remove Lookup',
 			primaryButton: 'Remove',
 			onPrimaryBtnClick: function () {
-				let promise = updateLookups(lookupArray, lookupName, null, 'delete');
-				$.when(promise).done(() => {
-					updateSearch();
-					buildContent('section-lookups');
-					this.hide();
-				});
+				finishChange(updateLookups(lookupName, null, 'delete'), 'section-lookups', this);
 			},
 		});
 
@@ -809,7 +845,7 @@ require([
 					<tr data-name="${_.escape(lookup.name)}">
 						<td>${_.escape(lookup.name)}</td>
 						<td>${_.escape(lookup.lookup)}</td>
-						<td><a class="adb-lookup-delete" href="#">Delete</a></td>'}
+						<td><a class="adb-lookup-delete" href="#">Delete</a></td>
 					</tr>
 				`);
 				$('.adb-lookup-delete', $tr).on('click', () => deleteLookup(lookupArray, lookup.name));
@@ -831,7 +867,7 @@ require([
 								<dl class="list-dotted">
 									<dt>Key Field</dt><dd>${isKey ? 'Yes' : 'No'}</dd>
 									<dt>Case Sensitive</dt><dd>${caseSensitive ? 'Yes' : 'No'}</dd>
-									<dt>Ignore Values</dt><dd>${_.escape(JSON.stringify(field.content?.ignore_values) || 'N/A')}</dd>
+									<dt>Ignore Values</dt><dd>${_.escape(formatIgnoreValues(field.content?.ignore_values))}</dd>
 									<dt>Fill Null</dt><dd>${_.escape(field.content?.fillnull || 'N/A')}</dd>
 									<dt>Validation</dt><dd>${_.escape(field.content?.validation || 'N/A')}</dd>
 									<dt>Eval Expression</dt><dd>${_.escape(field.content?.eval_expression || 'N/A')}</dd>
@@ -839,7 +875,7 @@ require([
 							</div>
 						</td>
 						<td>${_.escape(field.content?.field_type)}</td>
-						<td><a class="adb-field-edit" href="#">Edit</a> | <a class="adb-field-delete" href="#">Delete</a></td>'}
+						<td><a class="adb-field-edit" href="#">Edit</a> | <a class="adb-field-delete" href="#">Delete</a></td>
 					</tr>`);
 
 				let $dl = $('dl', $tr);

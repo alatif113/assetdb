@@ -26,7 +26,7 @@ function load({ confEntries = [] } = {}) {
 	if (!source.includes('module.exports')) {
 		const tail = /(\n\tbuildContent\(\);\s*\n\}\);\s*)$/;
 		if (!tail.test(source)) throw new Error('assetdb.js no longer ends with buildContent(); update load-generator.js');
-		source = source.replace(tail, '\n\tmodule.exports = { makeMergeSearch, getLookupArray };$1');
+		source = source.replace(tail, '\n\tmodule.exports = { makeMergeSearch, getLookupArray, isReservedFieldName, formatIgnoreValues, describeError, checkEvalExpression };$1');
 	}
 
 	// Synchronous stand-in for jQuery deferreds: $.when(x).then(cb) => cb(x).
