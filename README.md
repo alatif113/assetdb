@@ -40,7 +40,7 @@ The following field properties can be set when adding a new field or editing an 
 | Ignore Values | (Optional) A comma separated list of field values to ignore (e.g. null,none,unknown). |
 | Fill Null | (Optional) A static value to fill null entries of a field with (e.g. a default asset priority). Not allowed on key fields. | 
 | Validation | (Optional) A regular expression to validate field values. Values that fail validation are ignored. Case insensitive fields are lowercased first, so write the regex for lowercase values. | 
-| Field Type | Defines the type of field. Use a single value, keep all unique entries as a multivalue. |
+| Field Type | Defines the type of field. Use a single value, or keep all unique entries as a multivalue. |
 | Merge Method | (Only applicable when Field Type is *Single*) Defines how a single value is derived across the input lookup table files.<br>- **Latest**: the most recent value<br>- **Min**: minimum value, only applicable to numeric field values<br>- **Max**: maximum value, only applicable to numeric field values<br>- **Avg**: average value, only applicable to numeric field values<br>- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
 | Coalesce | (Only applicable when Merge Method is *Coalesce*) Defines the precedence of source data to be used for this field. |
 | Max Values | (Only applicable when Field Type is *Multivalue*) The maximum values the multivalue field can have. Excess values are trimmed. Large multivalue fields can lead to reduced performance. 
