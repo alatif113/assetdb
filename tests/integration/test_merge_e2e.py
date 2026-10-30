@@ -105,8 +105,9 @@ def run_merge(env):
 
 def test_merge_results(env):
     rows = run_merge(env)
-    # cluster {a,b,c} (mac + case-folded host, transitive), cluster {d}, overflow cluster, no-key row dropped
-    assert len(rows) == 3, json.dumps(rows, indent=1)
+    # cluster {a,b,c} (mac + case-folded host, transitive) and cluster {d}; the overflow
+    # cluster (26 keys > max_keys) and the no-key row are dropped
+    assert len(rows) == 2, json.dumps(rows, indent=1)
 
     transitive = [r for r in rows if "host-a" in r["nt_host"]]
     assert len(transitive) == 1
@@ -118,8 +119,7 @@ def test_merge_results(env):
     d = [r for r in rows if r["nt_host"] == ["host-d"]]
     assert len(d) == 1 and d[0]["mac"] == ["bb:bb:bb:bb:bb:02"]
 
-    overflow = [r for r in rows if r["asset"] == ["MAX_KEYS_REACHED"]]
-    assert len(overflow) == 1
+    assert not any("10.3.3.3" in r["ip"] for r in rows), "overflow cluster must be dropped"
 
     assert not any("10.9.9.9" in r["ip"] for r in rows), "row without keys must be dropped"
 
@@ -127,4 +127,4 @@ def test_merge_results(env):
 def test_merge_is_idempotent(env):
     first = [r["_key"] for r in run_merge(env)]
     second = [r["_key"] for r in run_merge(env)]
-    assert first == second and len(first) == 3
+    assert first == second and len(first) == 2

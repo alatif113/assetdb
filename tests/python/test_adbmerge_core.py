@@ -99,30 +99,44 @@ def test_max_keys_boundary_exactly_at_limit_is_not_flagged():
     assert large == 0
 
 
-def test_max_keys_overflow_flagged():
-    merged, _, large, _ = run([ev("A", ["a", "b", "c"])], max_keys=2)
-    assert clusters(merged) == {"A": ["MAX_KEYS_REACHED"]}
-    assert large == 1
+def test_max_keys_overflow_is_dropped_and_counted():
+    merged, _, large, total = run([ev("A", ["a", "b", "c"])], max_keys=2)
+    assert merged == []
+    assert (large, total) == (1, 1)
 
 
-def test_max_keys_overflow_via_merge_poisons_the_whole_cluster():
+def test_max_keys_overflow_via_merge_drops_the_whole_cluster():
     events = [ev("A", ["a", "x"]), ev("B", ["x", "b"]), ev("C", ["b", "c"])]
     merged, _, large, total = run(events, max_keys=3)
-    assert clusters(merged) == {n: ["MAX_KEYS_REACHED"] for n in "ABC"}
+    assert merged == []
     assert (large, total) == (3, 3)
 
 
-def test_max_keys_flag_sticks_to_later_assets_sharing_a_key():
+def test_max_keys_overflow_sticks_to_later_assets_sharing_a_key():
     events = [ev("A", ["a", "b", "c"]), ev("B", ["c", "z"])]
     merged, _, large, _ = run(events, max_keys=2)
-    assert clusters(merged) == {"A": ["MAX_KEYS_REACHED"], "B": ["MAX_KEYS_REACHED"]}
+    assert merged == []
     assert large == 2
 
 
 def test_unrelated_cluster_unaffected_by_overflow():
     events = [ev("A", ["a", "b", "c"]), ev("B", ["q"])]
-    merged, *_ = run(events, max_keys=2)
-    assert clusters(merged) == {"A": ["MAX_KEYS_REACHED"], "B": ["q"]}
+    merged, _, large, _ = run(events, max_keys=2)
+    assert clusters(merged) == {"B": ["q"]}
+    assert large == 1
+
+
+def test_overflow_clusters_do_not_leak_into_each_other_or_survivors():
+    events = [ev("A", ["a1", "a2", "a3"]), ev("B", ["b1", "b2", "b3"]), ev("C", ["c1"])]
+    merged, _, large, _ = run(events, max_keys=2)
+    assert clusters(merged) == {"C": ["c1"]}
+    assert large == 2
+
+
+def test_a_real_key_named_like_the_old_marker_is_just_a_key():
+    merged, _, large, _ = run([ev("A", ["MAX_KEYS_REACHED"]), ev("B", ["MAX_KEYS_REACHED", "b"])])
+    assert clusters(merged) == {"A": ["MAX_KEYS_REACHED", "b"], "B": ["MAX_KEYS_REACHED", "b"]}
+    assert large == 0
 
 
 # --- empty / whitespace / None keys: pins current behavior -------------------------

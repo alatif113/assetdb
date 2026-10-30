@@ -6,12 +6,16 @@ list is sorted so the downstream md5 `_key` is stable across processes.
 """
 
 
+# Marks a cluster that grew past max_keys. A private object so no real key can collide with it.
+_OVERFLOW = object()
+
+
 def merge_assets(events, max_keys):
     """Merge assets that share any key, directly or transitively.
 
     :param events: iterable of dict-like events with a `_key` field (str or list of str)
-    :param max_keys: key sets larger than this are flagged ['MAX_KEYS_REACHED']
-    :return: (merged_events, null_keys, large_keys, total)
+    :param max_keys: clusters with more unique keys than this are dropped
+    :return: (merged_events, null_keys, large_keys, total); large_keys counts the dropped assets
     """
     key_map = {}
     event_map = {}
@@ -45,8 +49,8 @@ def merge_assets(events, max_keys):
                 key_set = key_set.union(key_map.get(key, {}))
 
         for key in key_set:
-            if len(key_set) > max_keys or 'MAX_KEYS_REACHED' in key_set:
-                key_map[key] = {'MAX_KEYS_REACHED'}
+            if len(key_set) > max_keys or _OVERFLOW in key_set:
+                key_map[key] = {_OVERFLOW}
             else:
                 key_map[key] = key_set
 
@@ -59,10 +63,11 @@ def merge_assets(events, max_keys):
 
     for key in event_map:
         for event in event_map[key]:
-            key_list = sorted(key_map[key])
-
-            if key_list[0] == 'MAX_KEYS_REACHED':
+            if _OVERFLOW in key_map[key]:
                 large_keys += 1
+                continue
+
+            key_list = sorted(key_map[key])
 
             event['asset'] = key_list
 
