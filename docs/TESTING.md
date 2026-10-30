@@ -80,14 +80,19 @@ Intentional exceptions live in `.appinspect-waivers` and are listed below.
 Fixed in the app: missing `[id]` stanza in `app.conf`; `static/slides.gif` (README image) is no
 longer packaged.
 
-**Waived failures (cloud tag) - need your decision:**
-- `check_commands_conf_python_required`: `commands.conf` sets `python.version = python3` but not
-  `python.required`. The right value depends on the Splunk version of the target (and Cloud),
-  which has not been confirmed; changing it alters runtime behavior.
-- `check_python_sdk_version`: vendored `lib/splunklib` is 1.7.3; AppInspect wants >= 2.0.2.
-  Upgrading is a separate change that must be tested on the live server.
+**No failures are waived.** `python.required = 3.13` is set in `commands.conf` (AppInspect's cloud
+check only accepts 3.13/3.14; Splunk 10.0 documents the setting as not configurable and runs the
+command on its bundled Python 3.9, so it is ignored there). The code must therefore stay
+compatible with Python 3.9 through 3.13.
 
-**Accepted warnings:** `check_for_splunk_js` (informational telemetry note),
+**Accepted warnings:**
+- `check_python_sdk_version` asks for splunk-sdk >= 3.0.0, which requires Python >= 3.13 and would
+  not run on Splunk 10.0/10.1 (Python 3.9). The vendored SDK is 2.1.1, the newest line that
+  supports 3.9. Revisit when the minimum supported Splunk becomes 10.2+.
+- `check_kos_are_accessible`: ACLs use the `admin` role (on-prem). Add `sc_admin` if the app is ever
+  published for Splunk Cloud.
+
+Other accepted warnings: `check_for_splunk_js` (informational telemetry note),
 `check_for_python_script_existence` (generic py2/3 notice), `check_custom_conf_replication`
 (search-head clustering only; this dev box is a single instance), `check_collections_conf`
 (informational), `check_kos_are_accessible` (`admin` role vs `sc_admin`; Cloud only),

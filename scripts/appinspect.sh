@@ -71,7 +71,7 @@ info "AppInspect on $(basename "$PKG") tags='${TAGS:-<all>}'"
 waived_checks() { # lines "name<TAB>justification"
   local f="$ROOT_DIR/.appinspect-waivers"
   [[ -f "$f" ]] || return 0
-  grep -vE '^\s*(#|$)' "$f" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$1); j=$2; sub(/^[ \t]+/,"",j); print $1 "\t" j}'
+  { grep -vE '^\s*(#|$)' "$f" || true; } | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$1); j=$2; sub(/^[ \t]+/,"",j); print $1 "\t" j}'
 }
 WAIVERS=$(waived_checks | jq -R -s 'split("\n") | map(select(length>0) | split("\t") | {(.[0]): .[1]}) | add // {}')
 
