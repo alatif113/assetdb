@@ -1,4 +1,6 @@
 """The deployed app has the right version and registers its search command, collection and lookup."""
+import json
+
 from conftest import APP
 
 
@@ -35,10 +37,15 @@ def test_adbmerge_runs_and_merges_a_trivial_search(splunk):
 
 
 def test_adbmerge_requires_max_keys(splunk):
-    r = splunk.s.post(
-        splunk.mgmt + "/servicesNS/nobody/%s/search/v2/jobs/export" % APP,
-        data={"search": "| makeresults | eval _key=\"a\" | adbmerge", "output_mode": "json"}, timeout=60)
-    assert "max_keys" in r.text or r.status_code >= 400
+    # /export swallows search errors, so run a normal job and read its messages
+    base = splunk.mgmt + "/servicesNS/nobody/%s/search/jobs" % APP
+    r = splunk.s.post(base, data={"search": "| makeresults | eval _key=\"a\" | adbmerge",
+                                  "exec_mode": "blocking", "output_mode": "json"}, timeout=120)
+    sid = r.json().get("sid") if r.status_code < 300 else None
+    assert sid, r.text[:300]
+    content = splunk.s.get("%s/%s" % (base, sid), params={"output_mode": "json"}, timeout=60).json()["entry"][0]["content"]
+    messages = json.dumps(content.get("messages", {})) + " " + json.dumps(content.get("isFailed"))
+    assert "max_keys" in messages, messages
 
 
 def test_kv_collection_and_lookup_definition_exist(splunk):

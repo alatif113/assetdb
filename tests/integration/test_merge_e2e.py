@@ -25,7 +25,7 @@ def _field(name, **kw):
 
 def _csv_search(path, rows):
     # source_lookup mirrors what the app's output_adb_lookup macro adds to real source lookups
-    data = "\\n".join([",".join(FIELDS + ["source_lookup"])] + [",".join(tuple(r) + (path,)) for r in rows])
+    data = "\n".join([",".join(FIELDS + ["source_lookup"])] + [",".join(tuple(r) + (path,)) for r in rows])
     return '| makeresults format=csv data="%s" | fields - _time | outputlookup %s' % (data, path)
 
 

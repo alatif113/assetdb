@@ -158,7 +158,7 @@ verify() {
   ok "KV store ready"
   local app; app=$(splunk_get "/services/apps/local/$ID")
   local ver dis
-  ver=$(jq -r '.entry[0].content.version // empty' <<< "$app"); dis=$(jq -r '.entry[0].content.disabled // empty' <<< "$app")
+  ver=$(jq -r '.entry[0].content.version // empty' <<< "$app"); dis=$(jq -r '.entry[0].content.disabled | tostring' <<< "$app")
   [[ "$ver" == "$VERSION" ]] || die "$EX_FAIL" "App version on server is '$ver', expected '$VERSION'"
   [[ "$dis" == "0" || "$dis" == "false" ]] || die "$EX_FAIL" "App $ID is disabled on the server"
   ok "App $ID $ver is installed and enabled"
