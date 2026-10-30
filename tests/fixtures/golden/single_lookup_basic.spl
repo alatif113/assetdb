@@ -3,8 +3,6 @@
 | foreach nt_host [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Convert case insensitive fields to lowercase ###```
 | foreach nt_host [eval <<FIELD>>=lower(<<FIELD>>)]
-```### Ignore values ###```
-| eval nt_host = if(in(nt_host, ""), null(), nt_host) owner = if(in(owner, ""), null(), owner)
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="demo.csv", "demo")
 ```### Shallow merge assets with matching key fields (using basic stats) ###```

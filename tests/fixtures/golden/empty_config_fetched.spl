@@ -1,8 +1,6 @@
 | `input_adb_lookup(fetched.csv)`
 ```### Split multivalue fields ###```
 | foreach nt_host [eval <<FIELD>>=split(<<FIELD>>, "|")]
-```### Ignore values ###```
-| eval nt_host = if(in(nt_host, ""), null(), nt_host)
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="fetched.csv", "fetched")
 ```### Shallow merge assets with matching key fields (using basic stats) ###```

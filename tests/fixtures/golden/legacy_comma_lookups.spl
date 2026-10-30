@@ -2,8 +2,6 @@
 | `input_adb_lookup(two.csv)`
 ```### Split multivalue fields ###```
 | foreach ip [eval <<FIELD>>=split(<<FIELD>>, "|")]
-```### Ignore values ###```
-| eval ip = if(in(ip, ""), null(), ip)
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="one.csv", "one.csv", source_lookup="two.csv", "two.csv")
 | search _key=*

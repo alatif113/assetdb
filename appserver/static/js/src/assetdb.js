@@ -31,6 +31,41 @@ require([
 		}
 	}
 
+	const FIELD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+	const SOURCE_NAME_RE = /^[A-Za-z0-9_.\-]+$/;
+	const LOOKUP_FILE_RE = /^[A-Za-z0-9_.\-]+$/;
+	const MERGE_ORDER_RE = /^[A-Za-z0-9_]+$/;
+	const MERGE_METHODS = ['latest', 'min', 'max', 'avg', 'coalesce'];
+
+	/**
+	 * Quote a value as an SPL string literal (escapes backslashes and double quotes).
+	 */
+	function splQuote(value) {
+		return '"' + String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/[\r\n]+/g, ' ') + '"';
+	}
+
+	/**
+	 * Throw unless an eval expression stays inside one eval: outside of string literals it
+	 * may not contain pipes, backticks or square brackets (which would start a new command,
+	 * macro or subsearch).
+	 */
+	function checkEvalExpression(expression) {
+		let quote = null;
+		const text = String(expression);
+		for (let i = 0; i < text.length; i++) {
+			const c = text[i];
+			if (quote) {
+				if (c === '\\') i++;
+				else if (c === quote) quote = null;
+			} else if (c === '"' || c === "'") {
+				quote = c;
+			} else if ('|`[]'.includes(c)) {
+				throw new Error(`Invalid eval expression: "${c}" is only allowed inside quotes`);
+			}
+		}
+		if (quote) throw new Error('Invalid eval expression: unterminated string');
+	}
+
 	/**
 	 * Number of values to keep for a multivalue field: a positive integer, default 10.
 	 */
@@ -298,7 +333,7 @@ require([
 			id: 'inputvalidation',
 			label: 'Validation',
 			value: field?.content?.validation || '',
-			help: '[Optional] Use a regular expression to validate field values. Values that do not match are ignored',
+			help: '[Optional] Use a regular expression to validate field values. Values that do not match are ignored. Case insensitive fields are lowercased before validation',
 		});
 
 		let evalExpInput = new TextInput({
@@ -400,6 +435,12 @@ require([
 				let eval_promise = undefined;
 
 				if (fieldTypeInput.getValue() == 'eval' && evalExpInput.getValue()) {
+					try {
+						checkEvalExpression(evalExpInput.getValue());
+					} catch (e) {
+						evalExpInput.setError(e.message);
+						return;
+					}
 					eval_promise = validateQuery(`| makeresults | eval a=${evalExpInput.getValue()}`);
 				}
 
@@ -411,8 +452,8 @@ require([
 					}					
 
 					if (fieldNameInput.isEditable()) {
-						if (!fieldNameInput.validate(/^[a-zA-Z0-9_]+$/)) {
-							fieldNameInput.setError('Field name can only use alphanumeric characters and underscores');
+						if (!fieldNameInput.validate(FIELD_NAME_RE)) {
+							fieldNameInput.setError('Field name must start with a letter or underscore and can only use alphanumeric characters and underscores');
 							error = true;
 						} else if (fieldNameInput.getValue() == 'asset') {
 							fieldNameInput.setError('"asset" is a default field and cannot be replaced, choose another field name');
@@ -431,7 +472,10 @@ require([
 						}
 					}
 	
-					if (fillnullInput.isEmpty() || fillnullInput.validate(/^[a-zA-Z0-9-_]+$/)) {
+					if (!fillnullInput.isEmpty() && parseInt(keyFieldInput.getValue())) {
+						fillnullInput.setError('Fill null cannot be used on a key field, it would merge unrelated assets');
+						error = true;
+					} else if (fillnullInput.isEmpty() || fillnullInput.validate(/^[a-zA-Z0-9-_]+$/)) {
 						fillnullInput.clearError();
 					} else {
 						fillnullInput.setError('Fillnull value can only use alphanumeric characters and underscores');
@@ -856,12 +900,18 @@ require([
 			let maxValues = [];
 
 			const lookupsArray = getLookupArray(fieldArray);
+			for (const {lookup, name} of lookupsArray) {
+				if (!LOOKUP_FILE_RE.test(lookup)) throw new Error(`Invalid lookup "${lookup}"`);
+				if (!SOURCE_NAME_RE.test(name)) throw new Error(`Invalid lookup input name "${name}"`);
+			}
 			const lookupFiles = lookupsArray.map(({lookup}) => `| \`input_adb_lookup(${lookup})\``);
-			const lookupNames = lookupsArray.map(({lookup, name}) => `source_lookup="${lookup}", "${name}"`);
+			const lookupNames = lookupsArray.map(({lookup, name}) => `source_lookup=${splQuote(lookup)}, ${splQuote(name)}`);
 
 			for (const field of fieldArray) {
 				const {name, content} = field;
 				if (name == 'general') continue;
+				if (!FIELD_NAME_RE.test(name)) throw new Error(`Invalid field name "${name}"`);
+				if (content.merge_method && !MERGE_METHODS.includes(content.merge_method)) throw new Error(`Invalid merge method "${content.merge_method}" for field ${name}`);
 
 				if (parseInt(content.key_field)) {
 					keys.push(name);
@@ -869,18 +919,23 @@ require([
 
 				const ignored = content.ignore_values ? safeParse(content.ignore_values, null) : null;
 				if (Array.isArray(ignored)) {
-					ignoreValues.push(`${name} = if(in(${name}, "${ignored.map(n => _.escape(n)).join('", "')}"), null(), ${name})`);
+					if (ignored.length) {
+						const lower = !parseInt(content.case_sensitive);
+						const quoted = ignored.map(n => splQuote(lower ? String(n).toLowerCase() : n));
+						ignoreValues.push(`${name} = if(in(${name}, ${quoted.join(', ')}), null(), ${name})`);
+					}
 				}
 
-				if (content?.fillnull) {
-					fillnull.push(`${name} = if(isnull(${name}), "${content.fillnull}", ${name})`);
+				if (content?.fillnull && !parseInt(content.key_field)) {
+					fillnull.push(`${name} = if(isnull(${name}), ${splQuote(content.fillnull)}, ${name})`);
 				}
 
 				if (content.validation) {
-					validation.push(`${name}=mvfilter(match(${name}, "${content.validation}"))`);
+					validation.push(`${name}=mvfilter(match(${name}, ${splQuote(content.validation)}))`);
 				}
 
 				if (content.eval_expression) {
+					checkEvalExpression(content.eval_expression);
 					evalExp.push(`${name} = ${content.eval_expression}`);
 				}
 
@@ -896,6 +951,9 @@ require([
 						fieldSplit.push(`{source}_${name} = ${name}`);
 
 						const mergeOrderArray = content.merge_order.split(',');
+						for (const lookup of mergeOrderArray) {
+							if (!MERGE_ORDER_RE.test(lookup)) throw new Error(`Invalid merge order entry "${lookup}" for field ${name}`);
+						}
 						stats = stats.concat(mergeOrderArray.map((lookup) => `latest(${lookup}_${name}) as ${lookup}_${name}`));
 
 						const postEvalMerge = mergeOrderArray.map((lookup) => `'${lookup}_${name}'`);

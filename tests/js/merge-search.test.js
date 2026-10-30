@@ -80,3 +80,62 @@ test('non-JSON conf response does not throw', () => {
 	const { makeMergeSearch } = load({ confEntries: [] });
 	assert.doesNotThrow(() => makeMergeSearch([]));
 });
+
+// --- escaping / validation of config values (F-03, F-10, F-11, F-12, F-14) ----------
+
+function single(name, extra) {
+	return mvField(name, Object.assign({ field_type: 'single' }, extra));
+}
+const gen = (fields, lookups) => load().makeMergeSearch([lookups || general].concat(fields));
+
+test('field names that are not plain identifiers are rejected', () => {
+	for (const bad of ['src.ip', 'dest-host', '9lives', 'naïve', 'a b', 'a"b', "a'b", 'a]']) {
+		assert.throws(() => gen([single(bad)]), /field name/i, bad);
+	}
+	assert.doesNotThrow(() => gen([single('_ok1'), single('Ab_9')]));
+});
+
+test('fillnull and validation are SPL-quoted; input names are restricted', () => {
+	const spl = gen([single('f', { fillnull: 'a"b\\c', validation: '^\\d+"$' })]);
+	assert.ok(spl.includes('"a\\"b\\\\c"'), spl);
+	assert.ok(spl.includes('match(f, "^\\\\d+\\"$")'), spl);
+	assert.ok(spl.includes('source_lookup="a.csv", "a"'), spl);
+	assert.throws(() => gen([single('f')], { name: 'general', content: { lookups: '[{"name":"n\\"x","lookup":"a.csv"}]' } }), /input name/i);
+});
+
+test('lookup files must look like lookup names', () => {
+	for (const bad of ['a.csv) | delete', 'a`b', 'a b.csv', 'a"b']) {
+		assert.throws(() => gen([single('f')], { name: 'general', content: { lookups: JSON.stringify([{ name: 'n', lookup: bad }]) } }), /lookup/i, bad);
+	}
+});
+
+test('eval_expression cannot start a new command but may use brackets inside strings', () => {
+	for (const bad of ['1 | delete', 'a `macro`', 'x [search index=*]', 'replace(f, "a", "b") ] ', 'f + "unterminated']) {
+		assert.throws(() => gen([single('f', { field_type: 'eval', eval_expression: bad })]), /eval/i, bad);
+	}
+	const spl = gen([single('f', { field_type: 'eval', eval_expression: 'replace(g, "[^w|]", "")' })]);
+	assert.ok(spl.includes('f = replace(g, "[^w|]", "")'), spl);
+});
+
+test('merge_order entries and merge_method are restricted', () => {
+	assert.throws(() => gen([single('f', { merge_method: 'coalesce', merge_order: 'a,b) | delete' })]), /merge order/i);
+	assert.throws(() => gen([single('f', { merge_method: 'median(x) as y, evil' })]), /merge method/i);
+});
+
+test('ignore values are SPL-escaped, lowercased for case-insensitive fields, and skipped when empty', () => {
+	const spl = gen([
+		single('ci', { case_sensitive: '0', ignore_values: JSON.stringify(['Unknown', 'say "hi"']) }),
+		single('cs', { case_sensitive: '1', ignore_values: JSON.stringify(['Unknown']) }),
+		single('none', { ignore_values: '[]' }),
+	]);
+	assert.ok(spl.includes('ci = if(in(ci, "unknown", "say \\"hi\\""), null(), ci)'), spl);
+	assert.ok(spl.includes('cs = if(in(cs, "Unknown"), null(), cs)'), spl);
+	assert.ok(!/in\(none/.test(spl), spl);
+	assert.ok(!spl.includes('&quot;'), spl);
+});
+
+test('fillnull is not applied to key fields', () => {
+	const spl = gen([single('k', { key_field: '1', fillnull: 'x' }), single('v', { fillnull: 'y' })]);
+	assert.ok(!/isnull\(k\)/.test(spl), spl);
+	assert.ok(/isnull\(v\)/.test(spl), spl);
+});

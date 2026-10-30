@@ -3,8 +3,6 @@
 | foreach sensitive, insensitive, insensitive2 [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Convert case insensitive fields to lowercase ###```
 | foreach insensitive, insensitive2 [eval <<FIELD>>=lower(<<FIELD>>)]
-```### Ignore values ###```
-| eval sensitive = if(in(sensitive, ""), null(), sensitive) insensitive = if(in(insensitive, ""), null(), insensitive) insensitive2 = if(in(insensitive2, ""), null(), insensitive2)
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="a.csv", "a")
 | search _key=*

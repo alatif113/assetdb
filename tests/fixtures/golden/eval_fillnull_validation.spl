@@ -3,8 +3,6 @@
 | foreach mac [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Validate field values ###```
 | eval mac=mvfilter(match(mac, "^([0-9a-f]{2}:){5}[0-9a-f]{2}$"))
-```### Ignore values ###```
-| eval priority = if(in(priority, ""), null(), priority) mac = if(in(mac, ""), null(), mac) label = if(in(label, ""), null(), label)
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="a.csv", "a")
 ```### Fill null values ###```

@@ -1,7 +1,5 @@
 | `input_adb_lookup(lookupA.csv)`
 | `input_adb_lookup(lookupB.csv)`
-```### Ignore values ###```
-| eval priority = if(in(priority, ""), null(), priority) risk = if(in(risk, ""), null(), risk) score = if(in(score, ""), null(), score) owner = if(in(owner, ""), null(), owner) os = if(in(os, ""), null(), os)
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="lookupA.csv", "lookupA", source_lookup="lookupB.csv", "lookupB")
 ```### Create lookup specific fields for priority based coalesce ###```

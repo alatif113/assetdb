@@ -4,8 +4,6 @@
 | foreach mac, nt_host, ip [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Convert case insensitive fields to lowercase ###```
 | foreach mac, nt_host [eval <<FIELD>>=lower(<<FIELD>>)]
-```### Ignore values ###```
-| eval mac = if(in(mac, ""), null(), mac) nt_host = if(in(nt_host, ""), null(), nt_host) ip = if(in(ip, ""), null(), ip)
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="crowdstrike.csv", "crowdstrike", source_lookup="nessus.csv", "nessus")
 ```### Shallow merge assets with matching key fields (using basic stats) ###```
