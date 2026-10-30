@@ -1,0 +1,3 @@
+# <check_name> | <justification>   -- each entry must also be explained in docs/TESTING.md
+check_commands_conf_python_required | Needs a decision on the target Splunk version before choosing python.required; commands.conf currently uses python.version = python3.
+check_python_sdk_version | Vendored splunklib is 1.7.3; upgrading to 2.x is a separate change that must be verified on the live server.
