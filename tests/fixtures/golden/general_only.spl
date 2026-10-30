@@ -1,0 +1,8 @@
+| `input_adb_lookup(a.csv)`
+| `input_adb_lookup(b.csv)`
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="a.csv", "a", source_lookup="b.csv", "b")
+| search _key=*
+| adbmerge max_keys=25
+| eval _key = md5(mvjoin(asset, "::"))
+| outputlookup assetdb

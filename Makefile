@@ -20,7 +20,7 @@ test-py: $(PY)
 	$(PY) -m pytest
 
 test-js:
-	node --test tests/js/
+	node --test "tests/js/*.test.js"
 
 check-minjs:
 	scripts/check-minjs.sh

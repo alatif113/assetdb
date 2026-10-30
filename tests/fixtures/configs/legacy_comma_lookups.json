@@ -1,0 +1,27 @@
+{
+  "name": "legacy_comma_lookups",
+  "description": "non-JSON comma separated lookups value",
+  "fieldArray": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "one.csv,two.csv"
+      }
+    },
+    {
+      "name": "ip",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    }
+  ]
+}

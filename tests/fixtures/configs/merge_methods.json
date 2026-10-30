@@ -1,0 +1,87 @@
+{
+  "name": "merge_methods",
+  "description": "latest/min/max/avg/coalesce single-value merges",
+  "fieldArray": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "[{\"name\":\"lookupA\",\"lookup\":\"lookupA.csv\"},{\"name\":\"lookupB\",\"lookup\":\"lookupB.csv\"}]"
+      }
+    },
+    {
+      "name": "priority",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "single",
+        "merge_method": "max",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "risk",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "single",
+        "merge_method": "min",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "score",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "single",
+        "merge_method": "avg",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "owner",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "single",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "os",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "single",
+        "merge_method": "coalesce",
+        "merge_order": "lookupB,lookupA",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    }
+  ]
+}

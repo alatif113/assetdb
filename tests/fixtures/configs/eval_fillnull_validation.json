@@ -1,0 +1,57 @@
+{
+  "name": "eval_fillnull_validation",
+  "description": "eval expression, fill null and validation regex",
+  "fieldArray": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "[{\"name\":\"a\",\"lookup\":\"a.csv\"}]"
+      }
+    },
+    {
+      "name": "priority",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "3",
+        "validation": "",
+        "field_type": "single",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "mac",
+      "content": {
+        "key_field": "1",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "^([0-9a-f]{2}:){5}[0-9a-f]{2}$",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "label",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "eval",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": "upper(owner) . \"-\" . priority"
+      }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+| `input_adb_lookup(crowdstrike.csv)`
+| `input_adb_lookup(nessus.csv)`
+```### Split multivalue fields ###```
+| foreach mac, nt_host, ip [eval <<FIELD>>=split(<<FIELD>>, "|")]
+```### Convert case insensitive fields to lowercase ###```
+| foreach mac, nt_host [eval <<FIELD>>=lower(<<FIELD>>)]
+```### Ignore values ###```
+| eval mac = if(in(mac, ""), null(), mac) nt_host = if(in(nt_host, ""), null(), nt_host) ip = if(in(ip, ""), null(), ip)
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="crowdstrike.csv", "crowdstrike", source_lookup="nessus.csv", "nessus")
+```### Shallow merge assets with matching key fields (using basic stats) ###```
+| eval _key = mvjoin(mvdedup(mvappend(mac, nt_host)), "::")
+| search _key=*
+| stats values(source) as source, values(source_lookup) as source_lookup, values(mac) as mac, values(nt_host) as nt_host, values(ip) as ip by _key
+```### Deep merge assets with matching key fields (using custom command) ###```
+| eval _key = mvappend(mac, nt_host)
+| adbmerge max_keys=25
+| eval _key = md5(mvjoin(asset, "::"))
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, values(mac) as mac, values(nt_host) as nt_host, values(ip) as ip by _key
+```### Trim multivalue fields ###```
+| eval mac = mvindex(mac,0,4), nt_host = mvindex(nt_host,0,4), ip = mvindex(ip,0,4)
+```### Output to KV store ###```
+| table _key, asset, source, source_lookup, mac, nt_host, ip
+| outputlookup assetdb

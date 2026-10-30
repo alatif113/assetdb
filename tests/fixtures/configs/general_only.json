@@ -1,0 +1,12 @@
+{
+  "name": "general_only",
+  "description": "only the general stanza",
+  "fieldArray": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "[{\"name\":\"a\",\"lookup\":\"a.csv\"},{\"name\":\"b\",\"lookup\":\"b.csv\"}]"
+      }
+    }
+  ]
+}

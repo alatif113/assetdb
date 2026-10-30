@@ -1,0 +1,17 @@
+| `input_adb_lookup(a.csv)`
+```### Split multivalue fields ###```
+| foreach os, owner, empty [eval <<FIELD>>=split(<<FIELD>>, "|")]
+```### Ignore values ###```
+| eval os = if(in(os, "null", "none", "unknown"), null(), os) owner = if(in(owner, "say &quot;hi&quot;", "&lt;b&gt;&amp;", "it&#x27;s"), null(), owner) empty = if(in(empty, ""), null(), empty)
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="a.csv", "a")
+| search _key=*
+| stats values(source) as source, values(source_lookup) as source_lookup, values(os) as os, values(owner) as owner, values(empty) as empty by _key
+| adbmerge max_keys=25
+| eval _key = md5(mvjoin(asset, "::"))
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, values(os) as os, values(owner) as owner, values(empty) as empty by _key
+```### Trim multivalue fields ###```
+| eval os = mvindex(os,0,4), owner = mvindex(owner,0,4), empty = mvindex(empty,0,4)
+```### Output to KV store ###```
+| table _key, asset, source, source_lookup, os, owner, empty
+| outputlookup assetdb

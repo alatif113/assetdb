@@ -1,0 +1,42 @@
+{
+  "name": "single_lookup_basic",
+  "description": "one lookup, one key multivalue field, one single latest field",
+  "fieldArray": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "[{\"name\":\"demo\",\"lookup\":\"demo.csv\"}]"
+      }
+    },
+    {
+      "name": "nt_host",
+      "content": {
+        "key_field": "1",
+        "case_sensitive": "0",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "owner",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "single",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    }
+  ]
+}

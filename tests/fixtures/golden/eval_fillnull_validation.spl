@@ -1,0 +1,27 @@
+| `input_adb_lookup(a.csv)`
+```### Split multivalue fields ###```
+| foreach mac [eval <<FIELD>>=split(<<FIELD>>, "|")]
+```### Validate field values ###```
+| eval mac=mvfilter(match(mac, "^([0-9a-f]{2}:){5}[0-9a-f]{2}$"))
+```### Ignore values ###```
+| eval priority = if(in(priority, ""), null(), priority) mac = if(in(mac, ""), null(), mac) label = if(in(label, ""), null(), label)
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="a.csv", "a")
+```### Fill null values ###```
+| eval priority = if(isnull(priority), "3", priority)
+```### Eval expression fields ###```
+| eval label = upper(owner) . "-" . priority
+```### Shallow merge assets with matching key fields (using basic stats) ###```
+| eval _key = mac
+| search _key=*
+| stats values(source) as source, values(source_lookup) as source_lookup, latest(priority) as priority, values(mac) as mac by _key
+```### Deep merge assets with matching key fields (using custom command) ###```
+| eval _key = mac
+| adbmerge max_keys=25
+| eval _key = md5(mvjoin(asset, "::"))
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, latest(priority) as priority, values(mac) as mac by _key
+```### Trim multivalue fields ###```
+| eval mac = mvindex(mac,0,4)
+```### Output to KV store ###```
+| table _key, asset, source, source_lookup, priority, mac, label
+| outputlookup assetdb

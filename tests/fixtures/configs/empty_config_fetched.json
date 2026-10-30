@@ -1,0 +1,28 @@
+{
+  "name": "empty_config_fetched",
+  "description": "empty fieldArray triggers conf fetch of these entries",
+  "fieldArray": [],
+  "confEntries": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "[{\"name\":\"fetched\",\"lookup\":\"fetched.csv\"}]"
+      }
+    },
+    {
+      "name": "nt_host",
+      "content": {
+        "key_field": "1",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    }
+  ]
+}
