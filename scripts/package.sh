@@ -37,6 +37,7 @@ EXCLUDES=(
   CLAUDE.md package.json package-lock.json babel.config.json Makefile
   pytest.ini requirements-dev.txt coverage
   appserver/static/js/src
+  static/slides.gif   # README illustration only; AppInspect allows only png in static/
 )
 
 build_assets() {
@@ -104,6 +105,8 @@ p = configparser.ConfigParser(strict=False, interpolation=None)
 p.read(sys.argv[1])
 assert p["package"]["id"] == sys.argv[2], "package id mismatch"
 assert p["launcher"]["version"] == sys.argv[3], "version mismatch"
+assert p["id"]["version"] == p["launcher"]["version"], "[id] version must match [launcher] version"
+assert p["id"]["name"] == sys.argv[2], "[id] name mismatch"
 PY
   rm -rf "$tmp"
 }
