@@ -2,9 +2,8 @@
 	"name": "assetdb",
 	"version": "1.0.0",
 	"description": "",
-	"main": "assetdb.js",
 	"scripts": {
-		"build": "babel appserver/static/js/src -d appserver/static/js; cd appserver/static/js; rm *.min.js > /dev/null; for f in *.js; do short=${f%.js}; terser $short.js --compress --mangle --output $short.min.js; rm $short.js; done;",
+		"build": "bash scripts/build-minjs.sh",
 		"test": "node --test tests/js/*.test.js"
 	},
 	"repository": {
@@ -23,5 +22,11 @@
 		"@babel/preset-env": "^7.15.6",
 		"terser": "^5.8.0",
 		"underscore": "1.13.8"
-	}
+	},
+	"browserslist": [
+		"chrome >= 100",
+		"firefox >= 100",
+		"safari >= 15.4",
+		"edge >= 100"
+	]
 }
