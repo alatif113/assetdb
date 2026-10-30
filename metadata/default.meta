@@ -4,6 +4,23 @@
 []
 access = read : [ * ], write : [ admin, power ]
 
+### CONFIGURATION: only admins change the merge configuration, the scheduled search that runs the
+### generated SPL, and the data model. Read access follows the app default; adjust in local.meta
+### (or in Splunk Web under Permissions) to restrict who can read the merged assets.
+
+[assetdb]
+access = read : [ * ], write : [ admin ]
+
+[savedsearches/assetdb-lookupgen]
+access = read : [ * ], write : [ admin ]
+
+[collections/assetdb]
+access = read : [ * ], write : [ admin ]
+
+[transforms/assetdb]
+access = read : [ * ], write : [ admin ]
+
+
 ### EVENT TYPES
 
 [eventtypes]
