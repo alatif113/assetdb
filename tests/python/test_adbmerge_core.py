@@ -1,8 +1,7 @@
 """Unit tests for bin/adbmerge_core.merge_assets (the pure merge logic of `adbmerge`).
 
-Tests marked "pins current behavior" document quirks of the original implementation
-that were deliberately preserved by the extraction; change them only with a
-conscious behavior change.
+Tests marked "pins current behavior" document quirks that are deliberately kept;
+change them only with a conscious behavior change.
 """
 import ast
 import os
@@ -133,29 +132,28 @@ def test_single_empty_string_removed_from_list_keys():
     assert clusters(merged) == {"A": ["a"]}
 
 
-def test_only_first_empty_string_is_removed_pins_current_behavior():
-    # list.remove('') drops one occurrence, so a second '' survives as a real key and
-    # would link every such asset together.
+def test_all_empty_strings_are_ignored():
     merged, nulls, *_ = run([ev("A", ["", "", "a"]), ev("B", ["", "", "b"])])
     assert nulls == 0
-    assert clusters(merged) == {"A": ["", "a", "b"], "B": ["", "a", "b"]}
+    assert clusters(merged) == {"A": ["a"], "B": ["b"]}
 
 
-def test_whitespace_key_is_a_real_key_pins_current_behavior():
-    merged, *_ = run([ev("A", [" ", "a"]), ev("B", [" ", "b"])])
-    assert clusters(merged)["A"] == [" ", "a", "b"]
+def test_whitespace_keys_are_ignored_and_keys_are_stripped():
+    merged, nulls, *_ = run([ev("A", [" ", " a "]), ev("B", ["a", "  "]), ev("C", ["   "])])
+    assert nulls == 1
+    assert clusters(merged) == {"A": ["a"], "B": ["a"]}
 
 
-def test_none_scalar_key_is_a_real_key_pins_current_behavior():
-    merged, nulls, *_ = run([ev("A", None), ev("B", None)])
-    assert nulls == 0
-    assert [e["asset"] for e in merged] == [[None], [None]]
+def test_none_keys_are_dropped():
+    merged, nulls, *_ = run([ev("A", None), ev("B", [None, "b"])])
+    assert nulls == 1
+    assert clusters(merged) == {"B": ["b"]}
 
 
-def test_input_key_list_is_mutated_pins_current_behavior():
+def test_input_key_list_is_not_mutated():
     keys = ["", "a"]
     run([ev("A", keys)])
-    assert keys == ["a"]
+    assert keys == ["", "a"]
 
 
 # --- determinism ------------------------------------------------------------------
@@ -164,6 +162,27 @@ def test_output_grouped_by_first_key_in_arrival_order():
     events = [ev("A1", ["a"]), ev("B1", ["b"]), ev("A2", ["a"]), ev("B2", ["b"])]
     merged, *_ = run(events)
     assert [e["name"] for e in merged] == ["A1", "A2", "B1", "B2"]
+
+
+def test_asset_lists_are_sorted():
+    merged, *_ = run([ev("A", ["c", "a", "b"])])
+    assert merged[0]["asset"] == ["a", "b", "c"]
+
+
+def test_asset_order_is_stable_across_hash_seeds():
+    import subprocess
+    import sys
+    code = (
+        "import sys; sys.path.insert(0, %r)\n"
+        "from adbmerge_core import merge_assets\n"
+        "evs = [{'_key': ['k%%d' %% i for i in range(8)]}, {'_key': ['k7', 'zz', 'aa']}]\n"
+        "print(merge_assets(evs, 25)[0][0]['asset'])\n"
+    ) % os.path.dirname(CORE_PATH)
+    outs = set()
+    for seed in ("1", "2", "3", "4", "5"):
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        outs.add(subprocess.check_output([sys.executable, "-c", code], env=env))
+    assert len(outs) == 1
 
 
 def test_asset_contents_are_deterministic_once_sorted():

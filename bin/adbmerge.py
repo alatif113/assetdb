@@ -32,7 +32,10 @@ class ADBMergeCommand(ReportingCommand):
         for event in merged:
             yield event
 
-        self.logger.warning('Ignored {}/{} assets with null keys'.format(null_keys, total))
-        self.logger.warning('Ignored {}/{} assets which share more than {} unique keys.'.format(large_keys, total, self.max_keys))
+        self.logger.info('adbmerge: {} assets in, {} ignored with null keys, {} ignored with more than {} unique keys'.format(
+            total, null_keys, large_keys, self.max_keys))
+        if null_keys or large_keys:
+            self.logger.warning('adbmerge: ignored {}/{} assets with null keys and {}/{} assets which share more than {} unique keys'.format(
+                null_keys, total, large_keys, total, self.max_keys))
 
 dispatch(ADBMergeCommand, sys.argv, sys.stdin, sys.stdout, __name__)

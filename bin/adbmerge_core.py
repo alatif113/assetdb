@@ -1,8 +1,8 @@
 """Pure merge logic for the adbmerge search command.
 
-Extracted verbatim from ADBMergeCommand.reduce so it can be unit tested without
-splunklib. No behavior change: only the logger calls and the generator `yield`
-were replaced by a return value.
+Extracted from ADBMergeCommand.reduce so it can be unit tested without
+splunklib. Keys are stripped, empty/None keys are ignored, and each asset's key
+list is sorted so the downstream md5 `_key` is stable across processes.
 """
 
 
@@ -22,10 +22,15 @@ def merge_assets(events, max_keys):
 
     for event in events:
         total += 1
-        key_list = event['_key'] if isinstance(event['_key'], list) else [event['_key']]
+        raw_keys = event['_key'] if isinstance(event['_key'], list) else [event['_key']]
+        key_list = []
 
-        if '' in key_list:
-            key_list.remove('')
+        for raw in raw_keys:
+            if raw is None:
+                continue
+            key = raw.strip()
+            if key and key not in key_list:
+                key_list.append(key)
 
         if len(key_list) == 0:
             null_keys += 1
@@ -54,7 +59,7 @@ def merge_assets(events, max_keys):
 
     for key in event_map:
         for event in event_map[key]:
-            key_list = list(key_map[key])
+            key_list = sorted(key_map[key])
 
             if key_list[0] == 'MAX_KEYS_REACHED':
                 large_keys += 1
