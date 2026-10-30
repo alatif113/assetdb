@@ -62,6 +62,6 @@ Note how although, the Asset from `lookup_A` and Asset from `lookup_C` do not sh
 
 Merging is done via a custom command `adbmerge` and saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store. 
 
+## Testing
 
-
-
+Unit tests, packaging, AppInspect, deployment to a dev server and integration tests are described in [docs/TESTING.md](docs/TESTING.md). Quick start: `make test`, `make package`, `make inspect`.

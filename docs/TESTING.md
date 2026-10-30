@@ -1,0 +1,137 @@
+# Testing, packaging and deployment
+
+Everything is driven by `make` (thin wrappers over `scripts/*.sh`). The target server is a
+private **dev** Splunk instance (`splunk.home`); the scripts refuse any host not listed in
+`ALLOWED_HOSTS`.
+
+## Prerequisites
+
+| Tool | Version used | Notes |
+| --- | --- | --- |
+| Python | 3.9+ (developed on 3.13) | creates `.venv`; pins in `requirements-dev.txt` (pytest, pytest-cov, requests, splunk-appinspect 4.4.0, shellcheck-py) |
+| Node / npm | 22 (any recent LTS) | `npm ci` uses `package-lock.json` (babel, terser, underscore) |
+| bash, rsync, ssh, jq, curl, tar, gzip | system | bash 3.2 (macOS) compatible |
+
+One-time setup:
+
+```sh
+cp .env.example .env.local     # then edit; .env.local is gitignored
+make venv && npm ci
+```
+
+## `.env.local` variables
+
+| Variable | Purpose |
+| --- | --- |
+| `SPLUNK_HOST`, `SPLUNK_MGMT_PORT` (8089), `SPLUNK_WEB_PORT` (8000) | where the dev server is. Verify the management port; do not assume it. |
+| `ALLOWED_HOSTS` | comma-separated allowlist; scripts exit 3 if `SPLUNK_HOST` (or the SSH host) is not in it |
+| `SPLUNK_TOKEN` (preferred) or `SPLUNK_USER` + `SPLUNK_PASSWORD` | REST auth. Secrets are never printed or passed on a command line. Web-session steps (asset bump, dashboard test, e2e) need user/password because tokens cannot log in to Splunk Web. |
+| `SPLUNK_CA_BUNDLE` | CA/self-signed cert PEM to trust |
+| `SPLUNK_INSECURE_TLS=1` | explicit opt-in to skip verification; prints a warning every time. Default off. |
+| `SSH_TARGET`, `SPLUNK_HOME_REMOTE` | `user@splunk.home` and `/opt/splunk`; the ssh user must own the Splunk install (no sudo is used) |
+| `APPINSPECT_TAGS` | AppInspect `--included-tags` (default `cloud`; empty = all checks) |
+| `SPLUNK_COM_USER` / `SPLUNK_COM_PASSWORD` | only for the optional `appinspect.sh --api` |
+
+### Creating a Splunk API token
+Splunk Web -> Settings -> Tokens -> *New Token* (enable token authentication under Tokens ->
+*Token Settings* first if needed). Use a user that can read `/services/server/info`, manage
+apps, and run searches; put the value in `SPLUNK_TOKEN`. Download the server's certificate
+(`openssl s_client -connect splunk.home:8089 -showcerts`) into a PEM and point
+`SPLUNK_CA_BUNDLE` at it.
+
+## Make targets
+
+| Target | What it does |
+| --- | --- |
+| `make test` | pytest (adbmerge), `node --test` (golden SPL), min.js freshness, deploy mock test, shellcheck |
+| `make package` | `npm ci`, `npm run build`, writes `dist/assetdb-<version>.tar.gz` (single top-level `assetdb/`, deterministic) |
+| `make inspect` | AppInspect on the tarball -> `dist/appinspect/report.{txt,json}` |
+| `make deploy` | pre-flight (REST + ssh), backup to `dist/backups/`, rsync to the server (see below) |
+| `make reload` | decide nothing / reload / restart from what changed since the last deploy |
+| `make integration` | live tests against the server |
+| `make e2e` | opt-in Playwright check (`npm i --no-save playwright && npx playwright install chromium`) |
+| `make all` | `scripts/test-all.sh`: unit -> minjs -> package -> inspect -> deploy -> reload -> integration |
+
+`scripts/test-all.sh` flags: `--skip-deploy` (local stages only), `--only <stage>`, `--dry-run`
+(deploy/reload in dry-run, no integration), `--yes`.
+Exit codes everywhere: 0 ok, 1 failure, 2 usage, 3 config/env, 4 connectivity.
+
+## Golden files (generated SPL)
+
+`tests/fixtures/configs/*.json` are field configs; `tests/fixtures/golden/*.spl` the expected
+SPL from `makeMergeSearch()`. After an intentional generator change:
+
+```sh
+UPDATE_GOLDEN=1 npm test && git diff tests/fixtures/golden
+```
+Review the diff; commit it with the code change. The tests load the unmodified
+`appserver/static/js/src/assetdb.js` in a `vm` sandbox with stubbed jQuery/Splunk MVC
+(`tests/js/load-generator.js`), so no production refactor was needed.
+
+If `npm run build` output changes (e.g. toolchain bump), `scripts/check-minjs.sh` fails until
+the rebuilt `*.min.js` are committed.
+
+## Reading AppInspect output
+
+`scripts/appinspect.sh` prints counts and, for every failure/error/warning/manual check, the
+check name, description and `file:line`. Failures/errors exit 1; warnings only with `--strict`.
+Intentional exceptions live in `.appinspect-waivers` and are listed below.
+
+Fixed in the app: missing `[id]` stanza in `app.conf`; `static/slides.gif` (README image) is no
+longer packaged.
+
+**Waived failures (cloud tag) - need your decision:**
+- `check_commands_conf_python_required`: `commands.conf` sets `python.version = python3` but not
+  `python.required`. The right value depends on the Splunk version of the target (and Cloud),
+  which has not been confirmed; changing it alters runtime behavior.
+- `check_python_sdk_version`: vendored `lib/splunklib` is 1.7.3; AppInspect wants >= 2.0.2.
+  Upgrading is a separate change that must be tested on the live server.
+
+**Accepted warnings:** `check_for_splunk_js` (informational telemetry note),
+`check_for_python_script_existence` (generic py2/3 notice), `check_custom_conf_replication`
+(search-head clustering only; this dev box is a single instance), `check_collections_conf`
+(informational), `check_kos_are_accessible` (`admin` role vs `sc_admin`; Cloud only),
+`check_hostnames_and_ips` (synthetic IPs in the demo lookup `assetdb_demo_assets.csv`).
+
+## Deployment, reload and rollback
+
+`deploy.sh` (SSH only): checks `ALLOWED_HOSTS`, REST auth (prints Splunk version, server name,
+KV store state), ssh and remote rsync; backs up the installed app to `dist/backups/`; rsyncs the
+extracted package with `--delete` while **preserving the server's `local/` and
+`metadata/local.meta`**; verifies the version afterwards; records `dist/last-deploy.manifest`.
+Options: `--dry-run` (itemized diff, writes nothing), `--yes`, `--package FILE`,
+`--purge-local` (destructive: also removes the server's `local/`, printing it first). KV store data
+is never deleted.
+
+```sh
+scripts/deploy.sh --dry-run      # always first
+scripts/deploy.sh                # asks for confirmation
+scripts/deploy.sh rollback       # restore newest dist/backups/assetdb-*-v<old>.tar.gz
+scripts/reload.sh --dry-run
+```
+
+`reload.sh` chooses: `bin/*`, `lib/*`, `commands/collections/transforms/app.conf` changed (or no
+history) -> restart (`/services/server/control/restart`, polls until `startup_time` changes, then
+KV store and app version); other conf/views/nav -> `_reload` endpoints; JS/CSS -> asset bump.
+`--restart` and `--reload-only` override. After JS changes **hard-refresh the browser**
+(Cmd/Ctrl+Shift+R); browsers cache `*.min.js`.
+
+## Integration tests
+
+They use a temporary KV collection/lookup `adbtest_<runid>` and temporary CSV lookups
+(`adbtest_<runid>_*.csv`, created in the assetdb app context because the macros are not
+exported) and delete them afterwards. The real `assetdb` collection and `assetdb.conf` are not
+touched. If a run is killed, remove leftovers matching `adbtest_*` under Settings -> Lookups.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `TLS error ... (curl 60)` / `SSLError` | set `SPLUNK_CA_BUNDLE`, or knowingly `SPLUNK_INSECURE_TLS=1` |
+| `Authentication failed` / 401 / 403 | token expired or wrong; user lacks `edit_*`/search capabilities; check `SPLUNK_MGMT_PORT` |
+| `Cannot reach host:8089` | wrong port, firewall, or splunkd down |
+| `refusing to continue ... ALLOWED_HOSTS` | host not allowlisted (by design) |
+| `splunkd did not come back within 300s` | raise `RESTART_TIMEOUT`; check `splunkd.log` |
+| `KV store not ready` | wait (it initialises after restart); `splunk show kvstore-status` on the server |
+| Old UI after deploy | run `reload.sh`, hard-refresh; the integration test compares served `assetdb.min.js` with the repo build |
+| `rsync is not installed on host` | install rsync on the server |

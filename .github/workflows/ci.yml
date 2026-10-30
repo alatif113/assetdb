@@ -1,0 +1,22 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: npm ci --no-audit --no-fund
+      - run: python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+      - name: Unit tests
+        run: .venv/bin/python -m pytest -q && npm test && tests/shell/deploy-mock-test.sh
+      - run: .venv/bin/shellcheck -x scripts/*.sh tests/shell/*.sh
+      - run: scripts/check-minjs.sh
+      - run: scripts/package.sh --skip-npm --repro-check
+      - run: scripts/appinspect.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: dist, path: dist/ }

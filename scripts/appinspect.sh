@@ -96,7 +96,8 @@ printf '  failure: %s  error: %s  warning: %s  manual_check: %s  not_applicable:
 jq -r '.[] | select(.result=="failure" or .result=="error" or .result=="warning" or .result=="manual_check" or .result=="waived")
   | "[\(.result|ascii_upcase)] \(.name)\n    \(.description|gsub("\n";" "))"
     + (if .waiver then "\n    WAIVER: \(.waiver)" else "" end)
-    + ([.messages[] | "\n      - \(.where): \(.message|gsub("\n";" "))"] | join(""))' <<< "$ROWS" >&2
+    + ([.messages[:8][] | "\n      - \(.where): \(.message|gsub("\n";" "))"] | join(""))
+    + (if (.messages|length) > 8 then "\n      ... and \((.messages|length) - 8) more (see report.json)" else "" end)' <<< "$ROWS" >&2
 
 echo "Reports: $TXT  $JSON" >&2
 
