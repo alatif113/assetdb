@@ -890,6 +890,9 @@ require([
 			let coalesce = [];
 			let multivalue = [];
 			let stats = [];
+			let statsFinal = [];
+			let avgEval = [];
+			let usesLatest = false;
 			let evalExp = [];
 			let keys = [];
 			let table = [];
@@ -945,7 +948,9 @@ require([
 
 				if (content.field_type == 'single') {
 					if (content.merge_method == 'latest') {
+						usesLatest = true;
 						stats.push(`latest(${name}) as ${name}`);
+						statsFinal.push(`latest(${name}) as ${name}`);
 
 					} else if (content.merge_method == 'coalesce') {
 						fieldSplit.push(`{source}_${name} = ${name}`);
@@ -954,17 +959,27 @@ require([
 						for (const lookup of mergeOrderArray) {
 							if (!MERGE_ORDER_RE.test(lookup)) throw new Error(`Invalid merge order entry "${lookup}" for field ${name}`);
 						}
-						stats = stats.concat(mergeOrderArray.map((lookup) => `latest(${lookup}_${name}) as ${lookup}_${name}`));
+						usesLatest = true;
+						const perLookup = mergeOrderArray.map((lookup) => `latest(${lookup}_${name}) as ${lookup}_${name}`);
+						stats = stats.concat(perLookup);
+						statsFinal = statsFinal.concat(perLookup);
 
 						const postEvalMerge = mergeOrderArray.map((lookup) => `'${lookup}_${name}'`);
 						coalesce.push(`${name} = coalesce(${postEvalMerge.join(', ')})`);
 
+					} else if (content.merge_method == 'avg') {
+						// An average of per-group averages is wrong for unequal groups: carry sum and count instead.
+						stats.push(`sum(${name}) as ${name}__sum, count(${name}) as ${name}__count`);
+						statsFinal.push(`sum(${name}__sum) as ${name}__sum, sum(${name}__count) as ${name}__count`);
+						avgEval.push(`${name} = ${name}__sum / ${name}__count`);
 					} else {
 						stats.push(`${content.merge_method}(${name}) as ${name}`);
+						statsFinal.push(`${content.merge_method}(${name}) as ${name}`);
 					}
 				} else if (content.field_type == 'multivalue') {
 					multivalue.push(name);
 					stats.push(`values(${name}) as ${name}`);
+					statsFinal.push(`values(${name}) as ${name}`);
 					maxValues.push(`${name} = mvindex(${name},0,${parseMaxValues(content.max_values) - 1})`);
 				}
 				table.push(name);
@@ -982,11 +997,13 @@ require([
 			if (fieldSplit.length) search += '\n```### Create lookup specific fields for priority based coalesce ###```' + `\n| eval ${fieldSplit.join(', ')}`;
 			if (keys.length) search += '\n```### Shallow merge assets with matching key fields (using basic stats) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`);
 			search += `\n| search _key=*`;
-			if (stats.length) search += `\n| stats values(source) as source, values(source_lookup) as source_lookup, ${stats.join(', ')} by _key`;
+			// _time is carried through the first stats so that `latest` still has a timestamp in the final stats
+			if (stats.length) search += `\n| stats values(source) as source, values(source_lookup) as source_lookup, ${(usesLatest ? ['latest(_time) as _time'] : []).concat(stats).join(', ')} by _key`;
 			if (keys.length) search += '\n```### Deep merge assets with matching key fields (using custom command) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`);
 			search += `\n| adbmerge max_keys=25`
 			search += `\n| eval _key = md5(mvjoin(mvsort(asset), "::"))`;
-			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, ${stats.join(', ')} by _key`;
+			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, ${statsFinal.join(', ')} by _key`;
+			if (avgEval.length) search += '\n```### Calculate averages ###```' + `\n| eval ${avgEval.join(', ')}`;
 			if (maxValues.length) search += '\n```### Trim multivalue fields ###```' + `\n| eval ${maxValues.join(', ')}`;
 			if (coalesce.length) search += '\n```### Define coalesce fields based on lookup priority ###```' + `\n| eval ${coalesce.join(', ')}`;
 			if (table.length) search += '\n```### Output to KV store ###```' + `\n| table _key, asset, source, source_lookup, ${table.join(', ')}`;

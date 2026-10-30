@@ -139,3 +139,22 @@ test('fillnull is not applied to key fields', () => {
 	assert.ok(!/isnull\(k\)/.test(spl), spl);
 	assert.ok(/isnull\(v\)/.test(spl), spl);
 });
+
+// --- single aggregation of merge methods (F-04) --------------------------------------
+
+test('avg is computed from sums and counts, not an average of averages', () => {
+	const spl = gen([single('score', { merge_method: 'avg' })]);
+	const [first, second] = spl.split('| adbmerge max_keys=25');
+	assert.ok(first.includes('sum(score) as score__sum, count(score) as score__count'), spl);
+	assert.ok(second.includes('sum(score__sum) as score__sum, sum(score__count) as score__count'), spl);
+	assert.ok(second.includes('| eval score = score__sum / score__count'), spl);
+	assert.ok(!/avg\(/.test(spl), spl);
+});
+
+test('latest keeps _time through the first stats so the second stats can order by it', () => {
+	const spl = gen([single('owner', { merge_method: 'latest' })]);
+	const [first, second] = spl.split('| adbmerge max_keys=25');
+	assert.ok(/latest\(_time\) as _time/.test(first), spl);
+	assert.ok(!/latest\(_time\)/.test(second), spl);
+	assert.ok(!/latest\(_time\)/.test(gen([single('n', { merge_method: 'max' })])), 'no _time needed for max');
+});

@@ -12,7 +12,7 @@
 ```### Shallow merge assets with matching key fields (using basic stats) ###```
 | eval _key = mac
 | search _key=*
-| stats values(source) as source, values(source_lookup) as source_lookup, latest(priority) as priority, values(mac) as mac by _key
+| stats values(source) as source, values(source_lookup) as source_lookup, latest(_time) as _time, latest(priority) as priority, values(mac) as mac by _key
 ```### Deep merge assets with matching key fields (using custom command) ###```
 | eval _key = mac
 | adbmerge max_keys=25

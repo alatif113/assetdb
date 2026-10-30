@@ -4,7 +4,7 @@
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="a.csv", "a")
 | search _key=*
-| stats values(source) as source, values(source_lookup) as source_lookup, values(ip) as ip, latest(owner) as owner by _key
+| stats values(source) as source, values(source_lookup) as source_lookup, latest(_time) as _time, values(ip) as ip, latest(owner) as owner by _key
 | adbmerge max_keys=25
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, values(ip) as ip, latest(owner) as owner by _key
