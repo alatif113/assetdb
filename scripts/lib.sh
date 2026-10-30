@@ -30,7 +30,7 @@ load_env() {
     key="${key//[[:space:]]/}"
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
-    [[ -z "${!key:-}" ]] && export "$key=$val"
+    [[ -z "${!key+x}" ]] && export "$key=$val"
   done < "$f"
   return 0
 }
