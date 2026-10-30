@@ -908,7 +908,7 @@ require([
 			if (stats.length) search += `\n| stats values(source) as source, values(source_lookup) as source_lookup, ${stats.join(', ')} by _key`;
 			if (keys.length) search += '\n```### Deep merge assets with matching key fields (using custom command) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`);
 			search += `\n| adbmerge max_keys=25`
-			search += `\n| eval _key = md5(mvjoin(asset, "::"))`;
+			search += `\n| eval _key = md5(mvjoin(mvsort(asset), "::"))`;
 			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, ${stats.join(', ')} by _key`;
 			if (maxValues.length) search += '\n```### Trim multivalue fields ###```' + `\n| eval ${maxValues.join(', ')}`;
 			if (coalesce.length) search += '\n```### Define coalesce fields based on lookup priority ###```' + `\n| eval ${coalesce.join(', ')}`;

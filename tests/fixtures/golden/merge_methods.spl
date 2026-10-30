@@ -9,7 +9,7 @@
 | search _key=*
 | stats values(source) as source, values(source_lookup) as source_lookup, max(priority) as priority, min(risk) as risk, avg(score) as score, latest(owner) as owner, latest(lookupB_os) as lookupB_os, latest(lookupA_os) as lookupA_os by _key
 | adbmerge max_keys=25
-| eval _key = md5(mvjoin(asset, "::"))
+| eval _key = md5(mvjoin(mvsort(asset), "::"))
 | stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(priority) as priority, min(risk) as risk, avg(score) as score, latest(owner) as owner, latest(lookupB_os) as lookupB_os, latest(lookupA_os) as lookupA_os by _key
 ```### Define coalesce fields based on lookup priority ###```
 | eval os = coalesce('lookupB_os', 'lookupA_os')

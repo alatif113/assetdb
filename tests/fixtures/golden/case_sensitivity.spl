@@ -10,7 +10,7 @@
 | search _key=*
 | stats values(source) as source, values(source_lookup) as source_lookup, values(sensitive) as sensitive, values(insensitive) as insensitive, values(insensitive2) as insensitive2 by _key
 | adbmerge max_keys=25
-| eval _key = md5(mvjoin(asset, "::"))
+| eval _key = md5(mvjoin(mvsort(asset), "::"))
 | stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, values(sensitive) as sensitive, values(insensitive) as insensitive, values(insensitive2) as insensitive2 by _key
 ```### Trim multivalue fields ###```
 | eval sensitive = mvindex(sensitive,0,4), insensitive = mvindex(insensitive,0,4), insensitive2 = mvindex(insensitive2,0,4)

@@ -15,7 +15,7 @@
 ```### Deep merge assets with matching key fields (using custom command) ###```
 | eval _key = mvappend(mac, nt_host)
 | adbmerge max_keys=25
-| eval _key = md5(mvjoin(asset, "::"))
+| eval _key = md5(mvjoin(mvsort(asset), "::"))
 | stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, values(mac) as mac, values(nt_host) as nt_host, values(ip) as ip by _key
 ```### Trim multivalue fields ###```
 | eval mac = mvindex(mac,0,4), nt_host = mvindex(nt_host,0,4), ip = mvindex(ip,0,4)
