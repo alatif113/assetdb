@@ -3,11 +3,19 @@
 Extracted from ADBMergeCommand.reduce so it can be unit tested without
 splunklib. Keys are stripped, empty/None keys are ignored, and each asset's key
 list is sorted so the downstream md5 `_key` is stable across processes.
+
+Assets are merged with a union-find over their keys, so the cost is near linear in
+the number of keys no matter how large max_keys is.
 """
 
 
-# Marks a cluster that grew past max_keys. A private object so no real key can collide with it.
-_OVERFLOW = object()
+def _find(parent, key):
+    root = key
+    while parent[root] != root:
+        root = parent[root]
+    while parent[key] != root:  # path compression
+        parent[key], key = root, parent[key]
+    return root
 
 
 def merge_assets(events, max_keys):
@@ -17,12 +25,12 @@ def merge_assets(events, max_keys):
     :param max_keys: clusters with more unique keys than this are dropped
     :return: (merged_events, null_keys, large_keys, total); large_keys counts the dropped assets
     """
-    key_map = {}
-    event_map = {}
+    parent = {}  # key -> parent key (union-find forest)
+    size = {}  # root -> number of unique keys in its cluster
+    entries = []  # (first_key, event) in arrival order
     null_keys = 0
     large_keys = 0
     total = 0
-    merged = []
 
     for event in events:
         total += 1
@@ -40,37 +48,42 @@ def merge_assets(events, max_keys):
             null_keys += 1
             continue
 
-        key_set = set(key_list)
-
+        first_root = None
         for key in key_list:
-            if key not in key_map:
-                key_map[key] = key_set
-            else:
-                key_set = key_set.union(key_map.get(key, {}))
+            if key not in parent:
+                parent[key] = key
+                size[key] = 1
+            root = _find(parent, key)
+            if first_root is None:
+                first_root = root
+            elif root != first_root:
+                if size[root] > size[first_root]:
+                    root, first_root = first_root, root
+                parent[root] = first_root
+                size[first_root] += size.pop(root)
 
-        for key in key_set:
-            if len(key_set) > max_keys or _OVERFLOW in key_set:
-                key_map[key] = {_OVERFLOW}
-            else:
-                key_map[key] = key_set
+        entries.append((key_list[0], event))
 
-        first_key = key_list[0]
+    members = {}  # root -> keys of the cluster, only for clusters within max_keys
+    for key in parent:
+        root = _find(parent, key)
+        if size[root] <= max_keys:
+            members.setdefault(root, []).append(key)
 
-        if first_key not in event_map:
-            event_map[first_key] = [event]
-        else:
-            event_map[first_key].append(event)
+    # Events are emitted grouped by their first key, in order of first appearance.
+    groups = {}
+    for first_key, event in entries:
+        groups.setdefault(first_key, []).append(event)
 
-    for key in event_map:
-        for event in event_map[key]:
-            if _OVERFLOW in key_map[key]:
-                large_keys += 1
-                continue
-
-            key_list = sorted(key_map[key])
-
-            event['asset'] = key_list
-
+    merged = []
+    for first_key, group in groups.items():
+        root = _find(parent, first_key)
+        if root not in members:
+            large_keys += len(group)
+            continue
+        keys = sorted(members[root])
+        for event in group:
+            event['asset'] = list(keys)
             merged.append(event)
 
     return merged, null_keys, large_keys, total
