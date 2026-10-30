@@ -53,3 +53,30 @@ test('every fixture has a golden file and vice versa', () => {
 	const goldens = fs.readdirSync(GOLDEN).filter((f) => f.endsWith('.spl')).map((f) => f.replace(/\.spl$/, '')).sort();
 	assert.deepEqual(goldens, cfgs);
 });
+
+function mvField(name, extra) {
+	return { name, content: Object.assign({ key_field: '0', case_sensitive: '1', ignore_values: '[]', fillnull: '', validation: '', field_type: 'multivalue', merge_method: 'latest', merge_order: '', max_values: '5', eval_expression: '' }, extra) };
+}
+const general = { name: 'general', content: { lookups: '[{"name":"a","lookup":"a.csv"}]' } };
+
+test('max_values is clamped to at least 1 and falls back to the default when invalid', () => {
+	const { makeMergeSearch } = load();
+	const spl = makeMergeSearch([general, mvField('m1', { max_values: '-5' }), mvField('m2', { max_values: '' }), mvField('m3', { max_values: 'abc' }), mvField('m4', { max_values: '0' }), mvField('m5', { max_values: '3' })]);
+	assert.match(spl, /m1 = mvindex\(m1,0,0\)/);
+	assert.match(spl, /m2 = mvindex\(m2,0,9\)/);
+	assert.match(spl, /m3 = mvindex\(m3,0,9\)/);
+	assert.match(spl, /m4 = mvindex\(m4,0,0\)/);
+	assert.match(spl, /m5 = mvindex\(m5,0,2\)/);
+	assert.ok(!/NaN|,-\d/.test(spl), spl);
+});
+
+test('malformed ignore_values is treated as empty instead of throwing', () => {
+	const { makeMergeSearch } = load();
+	const spl = makeMergeSearch([general, mvField('m1', { ignore_values: '{not json' })]);
+	assert.ok(!/Ignore values/.test(spl), spl);
+});
+
+test('non-JSON conf response does not throw', () => {
+	const { makeMergeSearch } = load({ confEntries: [] });
+	assert.doesNotThrow(() => makeMergeSearch([]));
+});

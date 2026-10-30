@@ -20,6 +20,26 @@ require([
 	const SERVICE = mvc.createService();
 	
 	/**
+	 * JSON.parse that returns `fallback` instead of throwing on malformed or non-string input.
+	 */
+	function safeParse(value, fallback) {
+		try {
+			const parsed = JSON.parse(value);
+			return parsed == null ? fallback : parsed;
+		} catch {
+			return fallback;
+		}
+	}
+
+	/**
+	 * Number of values to keep for a multivalue field: a positive integer, default 10.
+	 */
+	function parseMaxValues(value) {
+		const n = parseInt(value);
+		return isNaN(n) ? 10 : Math.max(1, n);
+	}
+
+	/**
 	 * Get lookupArray from fieldArray
 	 * 
 	 * @param {Array}	fieldArray		Array of field data from assetdb.conf
@@ -31,11 +51,9 @@ require([
 
 		if (general?.content?.lookups == undefined || general?.content?.lookups == '') return [];
 
-		try {
-			return JSON.parse(general.content.lookups);
-		} catch {
-			return general.content.lookups.split(',').map(lookup => {return {name: lookup, lookup: lookup}})
-		}
+		const parsed = safeParse(general.content.lookups, null);
+		if (Array.isArray(parsed)) return parsed;
+		return general.content.lookups.split(',').map(lookup => {return {name: lookup, lookup: lookup}});
 	}
 	
 	/**
@@ -265,7 +283,7 @@ require([
 			label: 'Ignore Values',
 			allowCustomValues: true,
 			choices: [{value: "null"}, {value: "unknown"}, {value: ""}],
-			value: (field?.content?.ignore_values) ? JSON.parse(field.content.ignore_values) : [],
+			value: (field?.content?.ignore_values) ? safeParse(field.content.ignore_values, []) : [],
 			help: '[Optional] Select from a list of common values to ignore or input your own',
 		});
 
@@ -387,7 +405,7 @@ require([
 
 				$.when(eval_promise).always((data) => {
 					if (data?.status == 400) {
-						let error_msg = JSON.parse(data.responseText).messages;
+						let error_msg = safeParse(data.responseText, {}).messages || [];
 						evalExpInput.setError(error_msg.length ? error_msg[0].text : 'Invalid eval expression')
 						error = true;
 					}					
@@ -658,7 +676,7 @@ require([
 		let promise = getConf('conf-assetdb');
 
 		$.when(promise).done((data) => {
-			let fieldArray = JSON.parse(data).entry;
+			let fieldArray = safeParse(data, {}).entry || [];
 			let lookupArray = getLookupArray(fieldArray);
 
 			let $container = $(`
@@ -822,7 +840,7 @@ require([
 		const promise = fieldArray.length ? undefined : getConf('conf-assetdb');
 
 		return $.when(promise).then((data) => {
-			if (!fieldArray.length) fieldArray = JSON.parse(data).entry;
+			if (!fieldArray.length) fieldArray = safeParse(data, {}).entry || [];
 			
 			let fieldSplit = [];
 			let coalesce = [];
@@ -849,8 +867,9 @@ require([
 					keys.push(name);
 				}
 
-				if (content.ignore_values) {
-					ignoreValues.push(`${name} = if(in(${name}, "${JSON.parse(content.ignore_values).map(n => _.escape(n)).join('", "')}"), null(), ${name})`);
+				const ignored = content.ignore_values ? safeParse(content.ignore_values, null) : null;
+				if (Array.isArray(ignored)) {
+					ignoreValues.push(`${name} = if(in(${name}, "${ignored.map(n => _.escape(n)).join('", "')}"), null(), ${name})`);
 				}
 
 				if (content?.fillnull) {
@@ -888,7 +907,7 @@ require([
 				} else if (content.field_type == 'multivalue') {
 					multivalue.push(name);
 					stats.push(`values(${name}) as ${name}`);
-					maxValues.push(`${name} = mvindex(${name},0,${parseInt(content.max_values) - 1})`);
+					maxValues.push(`${name} = mvindex(${name},0,${parseMaxValues(content.max_values) - 1})`);
 				}
 				table.push(name);
 			};
