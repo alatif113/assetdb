@@ -1,4 +1,10 @@
-define(['/static/app/assetdb/js/prism.min.js', 'jquery'], function (Prism, $) {
+define(['/static/app/assetdb/js/prism.min.js', 'jquery', 'underscore'], function (Prism, $, _) {
+	function flatten(content) {
+		if (Array.isArray(content)) return content.map(flatten).join('');
+		if (content && typeof content == 'object') return flatten(content.content);
+		return content == null ? '' : String(content);
+	}
+
 	return function (str) {
 		var indentlevel = 0;
 		var linePrefix = '<span class="row"><span class="gutter"></span><div class="code">';
@@ -47,10 +53,13 @@ define(['/static/app/assetdb/js/prism.min.js', 'jquery'], function (Prism, $) {
 				prevTok = content;
 			}
 
+			// Prism returns raw text (it may contain user supplied values), so escape it.
+			// Nested tokens can arrive as arrays/objects; flatten them to plain text first.
+			var text = _.escape(typeof content == 'string' ? content : flatten(content));
 			if (type == 'default') {
-				result += content;
+				result += text;
 			} else {
-				result += `<span class="${type}">${content}</span>`;
+				result += `<span class="${_.escape(type)}">${text}</span>`;
 			}
 		}
 

@@ -486,7 +486,7 @@ require([
 			},
 		});
 
-		let $body = $(`<div>Are you sure you want to delete field <i>${fieldName}</i>?</div>`);
+		let $body = $(`<div>Are you sure you want to delete field <i>${_.escape(fieldName)}</i>?</div>`);
 		deleteModal.setBody($body);
 		deleteModal.show();
 	}
@@ -640,7 +640,7 @@ require([
 		});
 
 		let $body = $(
-			`<div>Are you sure you want to remove asset lookup <i>${lookupName}</i> from the merge process? The lookup will still exist within Splunk.</div>`
+			`<div>Are you sure you want to remove asset lookup <i>${_.escape(lookupName)}</i> from the merge process? The lookup will still exist within Splunk.</div>`
 		);
 		deleteModal.setBody($body);
 		deleteModal.show();
@@ -744,9 +744,9 @@ require([
 
 			lookupArray.forEach(function (lookup) {
 				let $tr = $(`
-					<tr data-name="${lookup.name}">
-						<td>${lookup.name}</td>
-						<td>${lookup.lookup}</td>
+					<tr data-name="${_.escape(lookup.name)}">
+						<td>${_.escape(lookup.name)}</td>
+						<td>${_.escape(lookup.lookup)}</td>
 						<td><a class="adb-lookup-delete" href="#">Delete</a></td>'}
 					</tr>
 				`);
@@ -761,35 +761,35 @@ require([
 				let caseSensitive = parseInt(field.content?.case_sensitive);
 
 				let $tr = $(`
-					<tr data-name="${field.name}">
+					<tr data-name="${_.escape(field.name)}">
 						<td class="expands"><a href="#"><i class="icon-triangle-down-small"></i></a></td>
 						<td>
-							<span>${field.name}</span>${isKey ? '<span class="key-tag">Key</span>' : ''}
+							<span>${_.escape(field.name)}</span>${isKey ? '<span class="key-tag">Key</span>' : ''}
 							<div class="more-info" style="display: none">
 								<dl class="list-dotted">
 									<dt>Key Field</dt><dd>${isKey ? 'Yes' : 'No'}</dd>
 									<dt>Case Sensitive</dt><dd>${caseSensitive ? 'Yes' : 'No'}</dd>
-									<dt>Ignore Values</dt><dd>${JSON.stringify(field.content?.ignore_values) || 'N/A'}</dd>
-									<dt>Fill Null</dt><dd>${field.content?.fillnull || 'N/A'}</dd>
-									<dt>Validation</dt><dd>${field.content?.validation || 'N/A'}</dd>
-									<dt>Eval Expression</dt><dd>${field.content?.eval_expression || 'N/A'}</dd>
+									<dt>Ignore Values</dt><dd>${_.escape(JSON.stringify(field.content?.ignore_values) || 'N/A')}</dd>
+									<dt>Fill Null</dt><dd>${_.escape(field.content?.fillnull || 'N/A')}</dd>
+									<dt>Validation</dt><dd>${_.escape(field.content?.validation || 'N/A')}</dd>
+									<dt>Eval Expression</dt><dd>${_.escape(field.content?.eval_expression || 'N/A')}</dd>
 								</dl>
 							</div>
 						</td>
-						<td>${field.content?.field_type}</td>
+						<td>${_.escape(field.content?.field_type)}</td>
 						<td><a class="adb-field-edit" href="#">Edit</a> | <a class="adb-field-delete" href="#">Delete</a></td>'}
 					</tr>`);
 
 				let $dl = $('dl', $tr);
 				if (field.content.field_type == 'single') {
-					$dl.append(`<dt>Merge Method</dt><dd>${field.content.merge_method}</dd>`);
+					$dl.append(`<dt>Merge Method</dt><dd>${_.escape(field.content.merge_method)}</dd>`);
 					if (field.content.merge_method == 'coalesce') {
-						$dl.append(`<dt>Merge Order</dt><dd>${field.content.merge_order}</dd>`);
+						$dl.append(`<dt>Merge Order</dt><dd>${_.escape(field.content.merge_order)}</dd>`);
 					}
 				} else if (field.content.field_type == 'multivalue') {
-					$dl.append(`<dt>Max Values</dt><dd>${field.content.max_values}</dd>`);
+					$dl.append(`<dt>Max Values</dt><dd>${_.escape(field.content.max_values)}</dd>`);
 				} else if (field.content.field_type == 'eval') {
-					$dl.append(`<dt>Eval Expression</dt><dd>${field.content.eval_expression}</dd>`);
+					$dl.append(`<dt>Eval Expression</dt><dd>${_.escape(field.content.eval_expression)}</dd>`);
 				}
 
 				$('td.expands', $tr).on('click', function () {

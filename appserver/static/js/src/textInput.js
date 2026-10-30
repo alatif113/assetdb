@@ -52,7 +52,7 @@ define(function (require, exports, module) {
 
 		setError(error) {
 			$('.error-message', this.$input).remove();
-			let $error = $(`<div class="error-message help-block">${error}</div>`);
+			let $error = $(`<div class="error-message help-block">${_.escape(error)}</div>`);
 			this.$input.append($error);
 		}
 
