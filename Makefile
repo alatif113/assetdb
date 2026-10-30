@@ -44,7 +44,7 @@ reload:
 	scripts/reload.sh
 
 integration: $(PY)
-	$(PY) -m pytest tests/integration -m integration -c /dev/null --rootdir .
+	$(PY) -m pytest tests/integration -c pytest.ini --rootdir . -o testpaths=tests/integration -p no:cacheprovider
 
 e2e:
 	scripts/e2e.sh
