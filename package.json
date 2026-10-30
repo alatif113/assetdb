@@ -11,7 +11,7 @@
 		"url": "git+https://github.com/alatif113/assetdb.git"
 	},
 	"author": "Mohammed Latif",
-	"license": "ISC",
+	"license": "GPL-3.0-only",
 	"bugs": {
 		"url": "https://github.com/alatif113/assetdb/issues"
 	},

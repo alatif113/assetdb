@@ -8,7 +8,7 @@ Navigate to the "Configure" tab to configure AssetDB
 
 ### Asset Lookups
 
-Create lookup files and corresponding lookup generation searches for each unqiue data source that provides asset information. 
+Create lookup files and corresponding lookup generation searches for each unique data source that provides asset information. 
 
  - **Add lookup file**: Click the *Add Lookup* button to add a lookup file to be used to populate the merged *Asset Database*. A demo lookup file, *assetdb_demo_assets.csv* is provided by default. 
 
@@ -22,7 +22,7 @@ Create fields to be stored within the *Asset Database* and merged between all in
 The maximum size of a merged asset is `max_keys` in the `[general]` stanza of `assetdb.conf` (default 25). Assets whose merged key set is larger are dropped and counted in `python.log`.
 Source lookups are read with the `input_adb_lookup` macro, which sets `source_lookup` to the lookup name when the lookup has no `source_lookup` column (lookups written by `output_adb_lookup` already carry it). `source` is derived from `source_lookup`.
 
-- **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. Predefined fields are provided by default, but can be edited or deleted if needed. 
+- **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
 
 - **Edit field**: Click the *Edit Field* button to edit an existing field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
 
@@ -35,16 +35,15 @@ The following field properties can be set when adding a new field or editing an 
 | Property | Description |
 | ----------- | ----------- |
 | Field Name | The name of the field. Must consist of alphanumeric characters or underscores. Field names *_key* and *asset* are automatically created during the asset merge process and cannot be overwritten. |
-| Key Field | Whether the field is a key field or not. Key fields are fields that define a unqiue asset and are used during the asset merge process. See **How AssetDB Merges Assets** for more information on. |
-| Case Sensitive | Wether the field is case sensitive or not. A value of *No* will set all field values to lower case. |
-| Ignore Values | (Optional) A comma seperated list of field values to ignore (e.g. null,none,unknown). |
+| Key Field | Whether the field is a key field or not. Key fields are fields that define a unique asset and are used during the asset merge process. See **How AssetDB Merges Assets** for more information on. |
+| Case Sensitive | Whether the field is case sensitive or not. A value of *No* will set all field values to lower case. |
+| Ignore Values | (Optional) A comma separated list of field values to ignore (e.g. null,none,unknown). |
 | Fill Null | (Optional) A static value to fill null entries of a field with (e.g. a default asset priority). Not allowed on key fields. | 
 | Validation | (Optional) A regular expression to validate field values. Values that fail validation are ignored. Case insensitive fields are lowercased first, so write the regex for lowercase values. | 
-| Field Type | Defines the type of field. Use a single value, keep all unique entries as a multivalue, or use an eval expression to define this field. |
+| Field Type | Defines the type of field. Use a single value, keep all unique entries as a multivalue. |
 | Merge Method | (Only applicable when Field Type is *Single*) Defines how a single value is derived across the input lookup table files.<br>- **Latest**: the most recent value<br>- **Min**: minimum value, only applicable to numeric field values<br>- **Max**: maximum value, only applicable to numeric field values<br>- **Avg**: average value, only applicable to numeric field values<br>- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
 | Coalesce | (Only applicable when Merge Method is *Coalesce*) Defines the precedence of source data to be used for this field. |
-| Max Values | (Only applicable when Field Type is *Multivalue*) The maximum values the multivalue field can have. Excess values are trimmed. Large mutlivalue fields can lead to reduced performance. 
-| Eval Expression | (Only applicable when Field Type is *Eval*) An SPL eval expression to define the field. Pipes, backticks and square brackets are only allowed inside quoted strings. 
+| Max Values | (Only applicable when Field Type is *Multivalue*) The maximum values the multivalue field can have. Excess values are trimmed. Large multivalue fields can lead to reduced performance. 
 
 ### How AssetDB Merges Assets
 
