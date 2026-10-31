@@ -8,19 +8,19 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	width: 100% !important;
 }
 
-table {
-	background: #fff;
+#ab_config table {
+	background: transparent;
 	margin-top: 10px;
 }
 
-.container {
+#ab_config .container {
 	width: 940px;
 	margin: auto auto 40px;
 	-webkit-box-sizing: border-box;
 	box-sizing: border-box;
-	background-color: #fff;
-	-webkit-box-shadow: 0 1px 1px #e1e6eb;
-	box-shadow: 0 1px 1px #e1e6eb;
+	background-color: rgba(128, 128, 128, 0.08);
+	-webkit-box-shadow: 0 1px 1px rgba(128, 128, 128, 0.3);
+	box-shadow: 0 1px 1px rgba(128, 128, 128, 0.3);
 }
 
 .disabled .controls {
@@ -28,18 +28,18 @@ table {
 	opacity: 0.5;
 }
 
-.more-info {
+#ab_config .more-info {
 	margin-top: 10px;
 }
 
-.list-dotted dd {
+#ab_config .list-dotted dd {
 	width: 100%;
 	word-break: break-word;
 }
 
-.key-tag {
+#ab_config .key-tag {
 	padding: 4px 6px;
-	background: #3c454d;
+	background: rgba(128, 128, 128, 0.85);
 	font-size: 10px;
 	color: #fff;
 	margin-left: 5px;
@@ -49,17 +49,17 @@ table {
 	text-transform: uppercase;
 }
 
-section {
+#ab_config section {
 	display: none;
 	padding: 20px;
 }
 
-section.active {
+#ab_config section.active {
 	display: block;
 }
 
-.query-container {
-	border: 1px solid #c3cbd4;
+#ab_config .query-container {
+	border: 1px solid rgba(128, 128, 128, 0.45);
 	border-radius: 3px;
 	clear: both;
 	box-sizing: border-box;
@@ -67,11 +67,11 @@ section.active {
 	margin-top: 10px;
 }
 
-.raw-query {
+#ab_config .raw-query {
 	display: none !important;
 }
 
-.formatted-query {
+#ab_config .formatted-query {
 	display: table;
 	font-family: 'Splunk Platform Mono', Inconsolata, Consolas, 'Droid Sans Mono', Monaco, 'Courier New', Courier, monospace;
 	font-size: 14px;
@@ -81,15 +81,15 @@ section.active {
 	box-sizing: border-box;
 }
 
-.row {
+#ab_config .row {
 	display: table-row;
 	padding: 0;
 	counter-increment: line;
 	box-sizing: border-box;
 }
 
-.gutter {
-	background: #f5f5f5;
+#ab_config .gutter {
+	background: rgba(128, 128, 128, 0.14);
 	height: 20px;
 	display: table-cell;
 	padding: 0;
@@ -99,7 +99,8 @@ section.active {
 	text-align: right;
 	font-size: 12px;
 	vertical-align: top;
-	color: #6b7785;
+	color: inherit;
+	opacity: 0.65;
 	-webkit-touch-callout: none;
 	/* iOS Safari */
 	-webkit-user-select: none;
@@ -116,23 +117,23 @@ section.active {
 	box-sizing: border-box;
 }
 
-.row:nth-child(2) {
+#ab_config .row:nth-child(2) {
 	counter-reset: line;
 	box-sizing: border-box;
 }
 
-.row span.gutter:before {
+#ab_config .row span.gutter:before {
 	content: counter(line);
 	box-sizing: border-box;
 }
 
-.row:first-child span.gutter:before,
-.row:last-child span.gutter:before {
+#ab_config .row:first-child span.gutter:before,
+#ab_config .row:last-child span.gutter:before {
 	content: '';
 	box-sizing: border-box;
 }
 
-.formatted-query .code {
+#ab_config .formatted-query .code {
 	padding-left: 1.5em;
 	padding-right: 10px;
 	text-indent: -1em;
@@ -146,48 +147,48 @@ section.active {
 	word-break: break-word;
 }
 
-.query .code {
+#ab_config .query .code {
 	padding-left: 40px;
 	text-indent: -30px;
 	box-sizing: border-box;
 }
 
-.code span {
+#ab_config .code span {
 	transition: 0.25s ease;
 }
 
-.row:first-child .gutter,
-.row:last-child .gutter,
-.row:first-child .code,
-.row:last-child .code {
+#ab_config .row:first-child .gutter,
+#ab_config .row:last-child .gutter,
+#ab_config .row:first-child .code,
+#ab_config .row:last-child .code {
 	height: 9px;
 	box-sizing: border-box;
 }
 
-span.comment {
+#ab_config span.comment {
 	opacity: 0.7;
 }
 
-span.keyword {
-	color: #2662fc;
+#ab_config span.keyword {
+	color: #4d86ff;
 }
 
-span.function {
-	color: #cf00cf;
+#ab_config span.function {
+	color: #d63fd6;
 }
 
-span.operator-word {
-	color: #f58220;
+#ab_config span.operator-word {
+	color: #f08a30;
 }
 
-span.argument {
-	color: #5ca300;
+#ab_config span.argument {
+	color: #6fb21a;
 }
 
 .error-message {
-	color: red;
+	color: #e5493a;
 }
 
-.btn-edit-schedule {
+#ab_config .btn-edit-schedule {
 	margin-left: 10px;
 }
