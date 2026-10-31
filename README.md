@@ -68,6 +68,12 @@ Note how although, the Asset from `lookup_A` and Asset from `lookup_C` do not sh
 
 Merging is done via a custom command `adbmerge` and saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store. 
 
+### Operational notes
+
+- **Rewrite window.** The merge search ends with `outputlookup assetdb`, which replaces the collection. Measured on Splunk 10.4.2 with a 45,000 row collection rewritten in about 2 seconds while six readers polled it, roughly 1 in 70 reads returned no results during a rewrite. Searches that use `| lookup assetdb` during the nightly run (default `0 0 * * *`, with a 60 minute schedule window) can therefore miss matches briefly. Schedule the search outside the hours that matter.
+- **Read limit.** `| inputlookup assetdb` returns at most `max_rows_per_query` rows (50,000 by default, `limits.conf` `[kvstore]`). Raise it if you list the whole collection; `| lookup assetdb ...` is not affected.
+- **Splunk versions.** The `adbmerge` command runs on Python 3.13 (`python.required = 3.13`, splunk-sdk 3.x), so it needs a Splunk version that provides it (tested on 10.4.2); Splunk 10.0 runs commands on Python 3.9 and is not supported.
+
 ## Testing
 
 Unit tests, packaging, AppInspect, deployment to a dev server and integration tests are described in [docs/TESTING.md](docs/TESTING.md). Quick start: `make test`, `make package`, `make inspect`.

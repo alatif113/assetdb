@@ -188,3 +188,5 @@ Decisions taken: overflow clusters are dropped (counted in the log); writes limi
 | 13 | **Not done**: absolute module paths/links and dark-mode CSS can only be verified in a browser on the server |
 | 16 | **Not done**: F-21 needs live measurement of `outputlookup` |
 | 17 (rest) | Not done: F-32, F-33, F-35, F-39, F-40, lint configs |
+
+**F-21 measured (Splunk 10.4.2):** 45,000-row KV collection rewritten with `outputlookup` while 6 readers polled it, 8 rewrites of about 2s: 209 of 212 reads saw 45,000 rows and 3 returned no result rows, so a short empty window exists. Failure mid-write was not reproduced. Documented in the README instead of double-buffering the collection. Also found: `inputlookup` on a KV collection is capped at 50,000 rows by default.
