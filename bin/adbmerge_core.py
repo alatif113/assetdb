@@ -9,6 +9,11 @@ the number of keys no matter how large max_keys is.
 """
 
 
+# Upper bound for max_keys, enforced here and by the command option (and the UI/generator): every cluster's
+# key set is materialised and sorted, so very large clusters make the merge too expensive.
+HARD_MAX_KEYS = 100
+
+
 def _find(parent, key):
     root = key
     while parent[root] != root:
@@ -25,6 +30,7 @@ def merge_assets(events, max_keys):
     :param max_keys: clusters with more unique keys than this are dropped
     :return: (merged_events, null_keys, large_keys, total); large_keys counts the dropped assets
     """
+    max_keys = min(max_keys, HARD_MAX_KEYS)
     parent = {}  # key -> parent key (union-find forest)
     size = {}  # root -> number of unique keys in its cluster
     entries = []  # (first_key, event) in arrival order

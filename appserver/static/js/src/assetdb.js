@@ -692,6 +692,76 @@ require([
 	}
 
 	/**
+	 * Valid 5 field cron expression (numbers, ranges, steps, lists, names, asterisk and question mark).
+	 */
+	const CRON_RE = /^\s*([-\d*/,?A-Za-z]+\s+){4}[-\d*/,?A-Za-z]+\s*$/;
+
+	/**
+	 * Render the Settings tab: global values stored in the [general] stanza of assetdb.conf plus the schedule
+	 * of the merge saved search. Each save writes the config, then regenerates the merge search.
+	 */
+	function buildSettings($form, fieldArray) {
+		const maxKeysInput = new TextInput({
+			id: 'inputMaxKeys',
+			label: 'Max Keys',
+			value: String(Generator.parseMaxKeys(fieldArray)),
+			help: `The largest number of unique keys a merged asset may have (1 to ${Generator.HARD_MAX_KEYS}, a hard limit: the merge command holds every key set in memory). Assets in larger clusters are dropped, usually because of a shared key such as a NAT address.`,
+		});
+		const scheduleInput = new TextInput({
+			id: 'inputSchedule',
+			label: 'Schedule (cron)',
+			value: '',
+			help: 'When the merge search runs, as a cron expression, e.g. 0 0 * * * for daily at midnight',
+		});
+		const scheduledInput = new RadioInput({
+			id: 'inputScheduled',
+			label: 'Scheduled',
+			choices: [
+				{ label: 'Yes', value: 1 },
+				{ label: 'No', value: 0 },
+			],
+			value: 1,
+			help: 'Turn off to run the merge manually only',
+		});
+
+		$form.append(maxKeysInput.getInput()).append(scheduledInput.getInput()).append(scheduleInput.getInput());
+		const $save = $('<a href="#" class="btn btn-primary btn-save-settings">Save Settings</a>');
+		$form.append($('<div class="control-group"></div>').append($('<div class="controls"></div>').append($save)));
+
+		// the current schedule lives on the saved search
+		$.when(getConf('conf-savedsearches/assetdb-lookupgen')).done((data) => {
+			const entry = (safeParse(data, {}).entry || [])[0];
+			if (!entry) return;
+			$('input', scheduleInput.getInput()).val(entry.content.cron_schedule || '');
+			$('button', scheduledInput.getInput()).removeClass('active').filter(`[data-value="${parseInt(entry.content.enableSched) ? 1 : 0}"]`).addClass('active');
+		});
+
+		$save.on('click', () => {
+			let invalid = false;
+			const maxKeys = parseInt(maxKeysInput.getValue());
+			if (!/^\d+$/.test(String(maxKeysInput.getValue()).trim()) || maxKeys < 1 || maxKeys > Generator.HARD_MAX_KEYS) {
+				maxKeysInput.setError(`Enter a whole number from 1 to ${Generator.HARD_MAX_KEYS}`);
+				invalid = true;
+			} else maxKeysInput.clearError();
+			if (!CRON_RE.test(scheduleInput.getValue())) {
+				scheduleInput.setError('Enter a cron expression with 5 fields, e.g. 0 0 * * *');
+				invalid = true;
+			} else scheduleInput.clearError();
+			if (invalid) return false;
+
+			const writes = $.when(
+				setConf('conf-assetdb/general/', { max_keys: String(maxKeys) }),
+				setConf('conf-savedsearches/assetdb-lookupgen', {
+					cron_schedule: scheduleInput.getValue().trim(),
+					enableSched: String(parseInt(scheduledInput.getValue()) ? 1 : 0),
+				})
+			);
+			finishChange(writes, 'section-settings', { hide() {} });
+			return false;
+		});
+	}
+
+	/**
 	 * Build the HTML content of the page
 	 *
 	 * @param {String}	activeSection	Class name of the section that should be active once HTML is built.
@@ -717,6 +787,9 @@ require([
 						</li>
 						<li class="shared-tabcontrols-tabbase" data-section-id="section-search">            
 							<a href="#" class="tab-label">Asset Merge Search</a>        
+						</li>
+						<li class="shared-tabcontrols-tabbase" data-section-id="section-settings">
+							<a href="#" class="tab-label">Settings</a>
 						</li>
 					</ul>
 					<section data-section-id="section-lookups">
@@ -756,6 +829,10 @@ require([
 							<div class="formatted-query"></div>
 						</div>
 					</section>
+					<section data-section-id="section-settings">
+						<p><i class="icon-info-circle"></i> Global settings for the merge. Changes regenerate the merge search.</p>
+						<div class="settings-form form-horizontal"></div>
+					</section>
 				</div>
 			`);
 
@@ -783,6 +860,8 @@ require([
 				$('section[data-section-id="section-fields"] p', $container).last().after(error);
 				$('section[data-section-id="section-search"] p', $container).last().after(error);
 			}
+
+			buildSettings($('.settings-form', $container), fieldArray);
 
 			$('.btn-add-field', $container).on('click', () => editAddField(fieldArray));
 			$('.btn-add-lookup', $container).on('click', () => addLookup(lookupArray));

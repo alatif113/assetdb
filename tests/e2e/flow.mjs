@@ -37,6 +37,24 @@ try {
   await page.click('.modal:visible a.btn:has-text("Cancel")');
   check((await conf()).find((e) => e.name === 'general').content.lookups === lookupsBefore, 'cancelled lookup removal leaves the lookups config unchanged');
 
+  // Settings: max keys is validated against the hard cap, valid values are saved, and the original is restored
+  const generalConf = async () => (await conf()).find((e) => e.name === 'general').content;
+  const originalMaxKeys = (await generalConf()).max_keys;
+  await page.click('#ab_config a.tab-label:has-text("Settings")');
+  await page.fill('#inputMaxKeys input', '500');
+  await page.click('#ab_config .btn-save-settings');
+  check((await page.locator('#inputMaxKeys .error-message').count()) > 0, 'max keys above the hard cap is rejected');
+  await page.fill('#inputMaxKeys input', '30');
+  await page.click('#ab_config .btn-save-settings');
+  await page.waitForSelector('#ab_config a.tab-label:has-text("Settings")');
+  await page.waitForTimeout(1500);
+  check((await generalConf()).max_keys === '30', 'max keys saved to the [general] stanza');
+  check((await savedSearch()).includes('adbmerge max_keys=30'), 'saved search regenerated with the new max keys');
+  await page.click('#ab_config a.tab-label:has-text("Settings")');
+  await page.fill('#inputMaxKeys input', originalMaxKeys || '25');
+  await page.click('#ab_config .btn-save-settings');
+  await page.waitForTimeout(1500);
+
   // F-09: reserved field name is rejected
   await page.click('#ab_config a.tab-label:has-text("Asset Fields")');
   await page.click('#ab_config .btn-add-field');

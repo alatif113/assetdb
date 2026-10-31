@@ -19,6 +19,8 @@ define([], function () {
 	const MERGE_ORDER_RE = /^[A-Za-z0-9_]+$/;
 	const MERGE_METHODS = ['latest', 'min', 'max', 'avg', 'coalesce'];
 	const DEFAULT_MAX_KEYS = 25;
+	// The adbmerge command keeps every key set in memory; beyond this the merge is too expensive, so it is a hard limit.
+	const HARD_MAX_KEYS = 100;
 
 	/**
 	 * Quote a value as an SPL string literal (escapes backslashes and double quotes).
@@ -62,7 +64,7 @@ define([], function () {
 	function parseMaxKeys(fieldArray) {
 		const general = fieldArray.find((obj) => obj.name === 'general');
 		const n = parseInt(general?.content?.max_keys);
-		return isNaN(n) || n < 1 ? DEFAULT_MAX_KEYS : n;
+		return isNaN(n) || n < 1 ? DEFAULT_MAX_KEYS : Math.min(n, HARD_MAX_KEYS);
 	}
 
 	/**
@@ -248,5 +250,7 @@ define([], function () {
 		parseMaxKeys: parseMaxKeys,
 		parseMaxValues: parseMaxValues,
 		FIELD_NAME_RE: FIELD_NAME_RE,
+		HARD_MAX_KEYS: HARD_MAX_KEYS,
+		DEFAULT_MAX_KEYS: DEFAULT_MAX_KEYS,
 	};
 });

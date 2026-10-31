@@ -10,15 +10,15 @@ from splunklib.searchcommands import \
 from splunklib.searchcommands.validators import Integer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from adbmerge_core import merge_assets
+from adbmerge_core import HARD_MAX_KEYS, merge_assets
 
 @Configuration()
 class ADBMergeCommand(ReportingCommand):
 
     max_keys = Option(doc='''
         **Syntax:** **max_keys=***<number>*
-        **Description:** The maximum number of unique keys a merged asset can have. Assets in a larger cluster are dropped (and counted in the log). Large numbers of keys can reduce merge performance.
-        ''', require=True, validate=Integer(1))
+        **Description:** The maximum number of unique keys a merged asset can have (1-100). Assets in a larger cluster are dropped (and counted in the log). Large numbers of keys can reduce merge performance.
+        ''', require=True, validate=Integer(1, HARD_MAX_KEYS))
 
     @Configuration()
     def map(self, events):

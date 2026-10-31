@@ -246,3 +246,13 @@ def test_core_module_avoids_python3_only_syntax():
         if isinstance(node, ast.FunctionDef):
             assert node.returns is None
             assert all(a.annotation is None for a in node.args.args)
+
+
+def test_max_keys_is_capped_at_the_hard_limit():
+    from adbmerge_core import HARD_MAX_KEYS
+    assert HARD_MAX_KEYS == 100
+    big = ev("A", ["k%d" % i for i in range(HARD_MAX_KEYS + 1)])
+    ok = ev("B", ["j%d" % i for i in range(HARD_MAX_KEYS)])
+    merged, _, large, _ = run([big, ok], max_keys=10_000)
+    assert [e["name"] for e in merged] == ["B"]
+    assert large == 1
