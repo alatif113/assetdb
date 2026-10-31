@@ -130,6 +130,8 @@ try {
   check((await savedSearch()).includes(`mvmap(adbk_${name}, scope`), 'saved search prefixes the scoped key');
   const collection = async () => (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb')).entry[0].content;
   check((await collection())[`accelerated_fields.${name}`] === JSON.stringify({ [name]: 1 }), 'key field is accelerated in the KV collection');
+  const macro = async () => (await rest('/servicesNS/nobody/assetdb/data/macros/adb_enrich_outputs')).entry[0].content.definition;
+  check((await macro()).includes(`${name} AS asset_${name}`), 'adb_enrich_outputs lists the new field');
   check((await fieldsList()).split(',').includes(name) && (await fieldsList()).includes('last_seen'), 'transforms fields_list updated (incl. last_seen)');
 
   // delete it again
@@ -141,6 +143,7 @@ try {
   check(!(await conf()).some((e) => e.name === name), 'field stanza removed');
   check(!(await savedSearch()).includes(name), 'saved search no longer mentions the field');
   check(!(await collection())[`accelerated_fields.${name}`], 'acceleration removed with the field');
+  check(!(await macro()).includes(`asset_${name}`), 'adb_enrich_outputs no longer lists the field');
   check(!(await fieldsList()).split(',').includes(name), 'transforms fields_list no longer lists the field');
 } catch (e) {
   errors.push(String(e));

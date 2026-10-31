@@ -102,6 +102,25 @@ AssetDB uses *Key Fields* to merge assets together into a single *Asset Database
 
 Note how although, the Asset from `lookup_A` and Asset from `lookup_C` do not share any keys, they end up being merged due to both sharing keys with the Asset from `lookup_B`.
 
+### Using the asset database: enrichment macros
+
+Add the merged asset to any event with a macro (they are exported to all apps):
+
+```
+index=firewall | `adb_enrich(src_ip)`
+index=dhcp | `adb_enrich_mac(client_mac)`
+index=vpn | `adb_enrich_scoped(src_ip, site)`
+```
+
+| Macro | What it does |
+| --- | --- |
+| `adb_enrich(key)` | Looks up the value of the field `key` (lowercased) against the keys of every asset and adds `asset_id`, `asset_source`, `asset_source_lookup`, `asset_last_seen` and `asset_<field>` for each configured field. Fields that already exist on the event are not overwritten. |
+| `adb_enrich_mac(key)`, `adb_enrich_ip(key)`, `adb_enrich_host(key)` | The same after normalizing the value like the MAC, IP or short host name normalizer, so `AABB.CCDD.EEFF` finds `aa:bb:cc:dd:ee:ff`. The original field is left as it was. |
+| `adb_enrich_scoped(key, scope)` | For keys marked *Scoped*: looks up `<scope>|<value>`. |
+| `adb_enrich_with(key, lookup)` | The building block, for a lookup other than `assetdb` (tests, copies). |
+
+The columns come from the `adb_enrich_outputs` macro, which the Configure page keeps in line with the configured fields whenever a field is added or deleted. Matching is lowercase, so keys of fields that are *Case Sensitive* only match when they are already lowercase. Because the keys of an asset are stored in the multivalue `asset` field of the KV collection (indexed), the lookup is a plain indexed KV lookup.
+
 ### Asset Merge Search
 
 Merging is done via a custom command `adbmerge` and saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store. 

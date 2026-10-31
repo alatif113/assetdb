@@ -21,6 +21,7 @@ require([
 	const SERVICE = mvc.createService();
 	const { safeParse, checkEvalExpression, isReservedFieldName, getLookupArray, FIELD_NAME_RE } = Generator;
 	const COLLECTION_ENDPOINT = '/servicesNS/nobody/assetdb/storage/collections/config/assetdb';
+	const ENRICH_MACRO_ENDPOINT = '/servicesNS/nobody/assetdb/data/macros/adb_enrich_outputs';
 	// KV store allows 10 accelerations per collection; one is taken by `asset`.
 	const MAX_KEY_ACCELERATIONS = 9;
 	const NORMALIZER_CHOICES = [
@@ -235,9 +236,15 @@ require([
 				if (f.content.field_type === 'single' && f.content.value_type) desired[`field.${f.name}`] = f.content.value_type;
 			});
 
-			return $.when(SERVICE.get(COLLECTION_ENDPOINT, { output_mode: 'json' }).promise()).then((current) => {
+			// the enrichment macro lists the columns adb_enrich adds: the fixed ones plus every configured field
+			const outputs = ['_key AS asset_id', 'source AS asset_source', 'source_lookup AS asset_source_lookup', 'last_seen AS asset_last_seen']
+				.concat(fields.map((f) => `${f.name} AS asset_${f.name}`));
+			const macroDone = $.when(SERVICE.post(ENRICH_MACRO_ENDPOINT, { definition: outputs.join(', ') }).promise());
+
+			return $.when(macroDone, SERVICE.get(COLLECTION_ENDPOINT, { output_mode: 'json' }).promise()).then((_macro, currentArgs) => {
+				const current = Array.isArray(currentArgs) ? currentArgs[0] : currentArgs;
 				const content = ((safeParse(current, {}).entry || [])[0] || {}).content || {};
-				const protectedNames = ['asset', 'source', 'source_lookup', 'last_seen'];
+				const protectedNames = ['asset', 'source', 'source_lookup', 'last_seen', 'scope', 'conflicts'];
 				const changes = {};
 				Object.keys(desired).forEach((k) => {
 					if (content[k] !== desired[k]) changes[k] = desired[k];

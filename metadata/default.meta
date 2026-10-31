@@ -65,3 +65,8 @@ export = system
 [viewstates]
 access = read : [ * ], write : [ * ]
 export = system
+
+### MACROS: the enrichment macros are meant to be used from other apps
+
+[macros]
+export = system
