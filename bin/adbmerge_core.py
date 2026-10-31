@@ -31,6 +31,17 @@ class MergeResult(object):
         self.stats = {'total': 0, 'null_keys': 0, 'large_keys': 0, 'enrich_unmatched': 0, 'enrich_ambiguous': 0, 'junk_keys': 0, 'junk_rows': 0}
         self.junk = []  # (key, rows) of the most widely shared keys that were removed, most shared first
 
+    def annotate(self):
+        """Stamp the run counters on every merged event so the search can record the run after the final stats."""
+        for event in self.merged:
+            event['adb_total'] = self.stats['total']
+            event['adb_null_keys'] = self.stats['null_keys']
+            event['adb_large_keys'] = self.stats['large_keys']
+            event['adb_enrich_unmatched'] = self.stats['enrich_unmatched']
+            event['adb_enrich_ambiguous'] = self.stats['enrich_ambiguous']
+            event['adb_junk_keys'] = self.stats['junk_keys']
+            event['adb_junk_rows'] = self.stats['junk_rows']
+
 
 def _clean_keys(event):
     raw_keys = event['_key'] if isinstance(event['_key'], list) else [event['_key']]

@@ -26,6 +26,12 @@ define([], function () {
 	const MERGE_METHODS = ['latest', 'earliest', 'min', 'max', 'avg', 'sum', 'coalesce'];
 	const DEFAULT_MAX_KEYS = 25;
 	const DEFAULT_MAX_KEY_SHARE = 50;
+	// The run is refused (the asset database is left as it was) when it produces fewer than this fraction of the
+	// assets of the last successful run. 0 turns the check off.
+	const DEFAULT_MIN_RATIO = 0.5;
+	const DEFAULT_RUNS_TO_KEEP = 200;
+	const MAX_RUNS_TO_KEEP = 5000;
+	const RUN_COUNTERS = ['adb_total', 'adb_null_keys', 'adb_large_keys', 'adb_enrich_unmatched', 'adb_enrich_ambiguous', 'adb_junk_keys', 'adb_junk_rows'];
 	const DEFAULT_KEY_BLOCKLIST = [
 		'00:00:00:00:00:00', 'ff:ff:ff:ff:ff:ff', 're:^(00[:-]?){5}00$', 're:^(ff[:-]?){5}ff$',
 		'0.0.0.0', '::', '::1', 'localhost', 'localhost.localdomain',
@@ -167,6 +173,19 @@ define([], function () {
 		if (general.key_blocklist === undefined || general.key_blocklist === null) return DEFAULT_KEY_BLOCKLIST.slice();
 		const parsed = safeParse(general.key_blocklist, null);
 		return Array.isArray(parsed) ? parsed : DEFAULT_KEY_BLOCKLIST.slice();
+	}
+
+	/**
+	 * min_ratio (0 to 1) of the safety check against the last successful run.
+	 */
+	function parseMinRatio(general) {
+		const n = parseFloat(general.min_ratio);
+		return isNaN(n) || n < 0 || n > 1 ? DEFAULT_MIN_RATIO : n;
+	}
+
+	function parseRunsToKeep(general) {
+		const n = parseInt(general.runs_to_keep);
+		return isNaN(n) || n < 1 ? DEFAULT_RUNS_TO_KEEP : Math.min(n, MAX_RUNS_TO_KEEP);
 	}
 
 	/**
@@ -465,15 +484,32 @@ define([], function () {
 		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}${parseMaxKeyShare(general) ? ` max_key_share=${parseMaxKeyShare(general)}` : ''}`);
 		command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
 		if (recentMv) command('| sort 0 -_time');
-		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat(statsFinal).join(', ')} by _key`);
+		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat(RUN_COUNTERS.map((c) => `max(${c}) as ${c}`), statsFinal).join(', ')} by _key`);
 		if (avgEval.length) { section('Calculate averages'); command(`| eval ${avgEval.join(', ')}`); }
 		if (earliestFinal.length) { section('Pick the earliest values'); command(`| eval ${earliestFinal.join(', ')}`); }
 		if (coalesce.length) { section('Define coalesce fields based on lookup priority'); command(`| eval ${coalesce.join(', ')}`); }
 		if (fillnull.length) { section('Fill null values (after the merge, only where an asset has no value at all)'); command(`| eval ${fillnull.join(', ')}`); }
 		if (dedupMv.length) { section('De-duplicate multivalue fields (order is kept)'); command(`| eval ${dedupMv.map((n) => `${n} = mvdedup(${n})`).join(', ')}`); }
 		if (maxValues.length) { section('Trim multivalue fields'); command(`| eval ${maxValues.join(', ')}`); }
+		if (stats.length) {
+			const minRatio = parseMinRatio(general);
+			const keep = parseRunsToKeep(general);
+			section('Run safety: how many assets did the last successful run produce?');
+			command('| eventstats count as adb_assets_out');
+			// a marker row keeps the stream (and so the run record) alive when no asset is produced at all
+			command('| append [| makeresults | eval adb_is_marker=1 | table adb_is_marker]');
+			command('| append [| inputlookup assetdb_runs | where status="ok" | sort 0 -run_time | head 1 | eval adb_is_prev=1 | rename assets_out as adb_prev_out | table adb_is_prev adb_prev_out]');
+			command('| eventstats max(adb_prev_out) as adb_prev, max(adb_assets_out) as adb_assets_out');
+			command(`| eval adb_guard = if(isnotnull(adb_prev) AND adb_assets_out < adb_prev * ${minRatio}, 1, 0)`);
+			section(`Record this run in assetdb_runs (the last ${keep} runs are kept)`);
+			command('| appendpipe [| stats max(adb_assets_out) as assets_out, max(adb_prev) as assets_prev, max(adb_guard) as guard, max(adb_total) as rows_in, max(adb_null_keys) as null_keys, max(adb_large_keys) as overflow_assets, max(adb_enrich_unmatched) as enrich_unmatched, max(adb_enrich_ambiguous) as enrich_ambiguous, max(adb_junk_keys) as junk_keys, max(adb_junk_rows) as junk_rows'
+				+ ` | eval run_time=now(), min_ratio=${minRatio}, status=case(isnull(assets_out) OR assets_out=0, "empty", guard=1, "blocked_low_count", true(), "ok"), _key=run_time . "_" . substr(md5(tostring(random())), 1, 8)`
+				+ ` | fields - guard | inputlookup append=true assetdb_runs | sort 0 -run_time | head ${keep} | outputlookup assetdb_runs | where 1=0]`);
+			section('Only write the asset database when the run passed the safety check');
+			command('| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0');
+		}
 		if (table.length) { section('Output to KV store'); command(`| table _key, asset, source, source_lookup, last_seen, ${usesScope ? 'scope, ' : ''}${table.join(', ')}`); }
-		command('| outputlookup assetdb');
+		command('| outputlookup override_if_empty=false assetdb');
 
 		return lines;
 	}
@@ -486,6 +522,10 @@ define([], function () {
 		checkEvalExpression: checkEvalExpression,
 		isReservedFieldName: isReservedFieldName,
 		parseMaxKeys: parseMaxKeys,
+		parseMinRatio: parseMinRatio,
+		parseRunsToKeep: parseRunsToKeep,
+		DEFAULT_MIN_RATIO: DEFAULT_MIN_RATIO,
+		DEFAULT_RUNS_TO_KEEP: DEFAULT_RUNS_TO_KEEP,
 		getKeyBlocklist: getKeyBlocklist,
 		DEFAULT_KEY_BLOCKLIST: DEFAULT_KEY_BLOCKLIST,
 		DEFAULT_MAX_KEY_SHARE: DEFAULT_MAX_KEY_SHARE,

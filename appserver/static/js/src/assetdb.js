@@ -1155,6 +1155,18 @@ require([
 			value: blocklistValues,
 			help: 'Values that are never used to match assets, in any key field: placeholders, loopback and similar. A value that is blocked here still appears in the asset, it just cannot link two assets. Type a value, re:<regular expression> or cidr:<network>',
 		});
+		const minRatioInput = new TextInput({
+			id: 'inputMinRatio',
+			label: 'Safety Check',
+			value: String(general.min_ratio === undefined ? Generator.DEFAULT_MIN_RATIO : general.min_ratio),
+			help: 'A run that produces fewer than this fraction of the assets of the last successful run (0 to 1) is not written: the asset database stays as it was and the run is recorded as blocked_low_count. 0 turns the check off. A run that produces no assets at all never overwrites the asset database',
+		});
+		const runsToKeepInput = new TextInput({
+			id: 'inputRunsToKeep',
+			label: 'Runs to Keep',
+			value: String(general.runs_to_keep === undefined ? Generator.DEFAULT_RUNS_TO_KEEP : general.runs_to_keep),
+			help: 'How many runs the run history (assetdb_runs) keeps; older runs are removed on every run, so it cannot grow without bound',
+		});
 		const scopeFieldInput = new TextInput({
 			id: 'inputScopeField',
 			label: 'Scope Column',
@@ -1191,10 +1203,31 @@ require([
 			.append(keyBlocklistInput.getInput())
 			.append(maxKeyShareInput.getInput())
 			.append(scopeFieldInput.getInput())
+			.append(minRatioInput.getInput())
+			.append(runsToKeepInput.getInput())
 			.append(scheduledInput.getInput())
 			.append(scheduleInput.getInput());
 		const $save = $('<a href="#" class="btn btn-primary btn-save-settings">Save Settings</a>');
 		$form.append($('<div class="control-group"></div>').append($('<div class="controls"></div>').append($save)));
+
+		// recent runs (read only)
+		const $runs = $('<div class="adb-runs"><h4 class="adb-group-title">Recent runs</h4><div class="adb-runs-body help-block">Loading...</div></div>');
+		$form.append($runs);
+		$.when(SERVICE.post('/servicesNS/nobody/assetdb/search/jobs', { search: '| inputlookup assetdb_runs | sort 0 -run_time | head 10', exec_mode: 'oneshot', output_mode: 'json', count: 10 }).promise())
+			.done((data) => {
+				const rows = safeParse(data, {}).results || [];
+				const $body = $('.adb-runs-body', $runs).empty();
+				if (!rows.length) return $body.text('No runs recorded yet. The first scheduled or manual run of the merge search creates the first record.');
+				const cols = ['run_time', 'status', 'assets_out', 'assets_prev', 'rows_in', 'null_keys', 'overflow_assets', 'junk_keys', 'enrich_unmatched', 'enrich_ambiguous'];
+				const $table = $('<table class="table table-striped table-condensed"></table>');
+				$table.append($('<thead></thead>').append($('<tr></tr>').append(cols.map((c) => $('<th></th>').text(c.replace(/_/g, ' '))))));
+				$table.append($('<tbody></tbody>').append(rows.map((row) => $('<tr></tr>').append(cols.map((c) => {
+					const v = row[c];
+					return $('<td></td>').text(c === 'run_time' && v ? new Date(parseFloat(v) * 1000).toLocaleString() : (v === undefined ? '' : v));
+				})))));
+				$body.append($table);
+			})
+			.fail(() => $('.adb-runs-body', $runs).text('The run history could not be read.'));
 
 		// the current schedule lives on the saved search
 		$.when(getConf('conf-savedsearches/assetdb-lookupgen')).done((data) => {
@@ -1215,6 +1248,16 @@ require([
 				scopeFieldInput.setError('That column name has a character that is not allowed');
 				invalid = true;
 			} else scopeFieldInput.clearError();
+			const ratio = parseFloat(minRatioInput.getValue());
+			if (isNaN(ratio) || ratio < 0 || ratio > 1) {
+				minRatioInput.setError('Enter a number from 0 to 1');
+				invalid = true;
+			} else minRatioInput.clearError();
+			const keepRuns = parseInt(runsToKeepInput.getValue());
+			if (!/^\d+$/.test(String(runsToKeepInput.getValue()).trim()) || keepRuns < 1 || keepRuns > 5000) {
+				runsToKeepInput.setError('Enter a whole number from 1 to 5000');
+				invalid = true;
+			} else runsToKeepInput.clearError();
 			if (!/^\d+$/.test(String(maxKeyShareInput.getValue()).trim()) || parseInt(maxKeyShareInput.getValue()) > 1000000) {
 				maxKeyShareInput.setError('Enter a whole number from 0 to 1000000');
 				invalid = true;
@@ -1234,6 +1277,8 @@ require([
 					key_blocklist: JSON.stringify(keyBlocklistInput.getValue()),
 					max_key_share: String(parseInt(maxKeyShareInput.getValue())),
 					scope_field: scopeFieldInput.getValue().trim(),
+					min_ratio: String(ratio),
+					runs_to_keep: String(keepRuns),
 				}),
 				setConf('conf-savedsearches/assetdb-lookupgen', {
 					cron_schedule: scheduleInput.getValue().trim(),

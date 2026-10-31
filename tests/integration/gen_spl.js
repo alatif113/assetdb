@@ -12,5 +12,7 @@ if (!/^[A-Za-z0-9_]+$/.test(target || '')) {
 const input = require('node:fs').readFileSync(0, 'utf8');
 const { makeMergeSearch } = load();
 const spl = makeMergeSearch(JSON.parse(input));
-if (!/\| outputlookup assetdb$/.test(spl)) throw new Error('generated search no longer ends with "| outputlookup assetdb"');
-process.stdout.write(spl.replace(/\| outputlookup assetdb$/, `| outputlookup ${target}`));
+const tail = /\| outputlookup override_if_empty=false assetdb$/;
+if (!tail.test(spl)) throw new Error('generated search no longer ends with "| outputlookup override_if_empty=false assetdb"');
+// the temporary collection gets its own run history too, so the real assetdb_runs is never written
+process.stdout.write(spl.replace(tail, `| outputlookup override_if_empty=false ${target}`).replace(/\bassetdb_runs\b/g, `${target}_runs`));

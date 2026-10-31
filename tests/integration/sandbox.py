@@ -39,6 +39,15 @@ class Sandbox(object):
             "fields_list": ",".join(["_key", "asset", "source", "source_lookup", "last_seen", "scope"] + columns)})
         assert r.status_code in (200, 201), r.text
         self._cleanup.append(lambda: self.splunk.delete(self.ns + "/data/transforms/lookups/" + self.kv))
+        self.runs = self.kv + "_runs"
+        r = self.splunk.post(self.ns + "/storage/collections/config", {"name": self.runs, "field.run_time": "number", "field.assets_out": "number"})
+        assert r.status_code in (200, 201), r.text
+        self._cleanup.append(lambda: self.splunk.delete(self.ns + "/storage/collections/config/" + self.runs))
+        r = self.splunk.post(self.ns + "/data/transforms/lookups", {
+            "name": self.runs, "external_type": "kvstore", "collection": self.runs,
+            "fields_list": "_key,run_time,status,assets_out,assets_prev,rows_in,null_keys,overflow_assets,enrich_unmatched,enrich_ambiguous,junk_keys,junk_rows,min_ratio"})
+        assert r.status_code in (200, 201), r.text
+        self._cleanup.append(lambda: self.splunk.delete(self.ns + "/data/transforms/lookups/" + self.runs))
 
     def add_source(self, name, rows, header=None, **options):
         """rows: list of dicts. A `source_lookup` column is added like output_adb_lookup does."""
@@ -53,6 +62,15 @@ class Sandbox(object):
         entry.update(options)
         self.sources.append(entry)
         return lookup
+
+    def rewrite_source(self, name, rows, header=None):
+        """Replace the rows of an existing source lookup (same file, new content)."""
+        entry = [e for e in self.sources if e["name"] == name][0]
+        lookup = entry["lookup"]
+        header = header or sorted({k for r in rows for k in r}) or ["mac"]
+        header = [h for h in header if h != "source_lookup"] + ["source_lookup"]
+        lines = [",".join(header)] + [",".join(str(dict(r, source_lookup=lookup).get(h, "")) for h in header) for r in rows]
+        self.splunk.search('| makeresults format=csv data="%s" | outputlookup %s' % ("\n".join(lines), lookup))
 
     # -- run -------------------------------------------------------------------------------
     def fieldarray(self):
@@ -77,6 +95,10 @@ class Sandbox(object):
             for k, v in list(r.items()):
                 if isinstance(v, str) and k not in ("_key",):
                     r[k] = [v]
+        return rows
+
+    def runs_rows(self):
+        rows = self.splunk.search("| inputlookup max=100000 %s | sort 0 run_time" % self.runs)
         return rows
 
     def close(self):

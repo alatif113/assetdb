@@ -44,7 +44,7 @@ test('getLookupArray: JSON, legacy comma list, and missing general stanza', () =
 test('generated search always ends by writing the assetdb KV store', () => {
 	const { makeMergeSearch } = load();
 	const spl = makeMergeSearch(JSON.parse(fs.readFileSync(path.join(CONFIGS, 'single_lookup_basic.json'), 'utf8')).fieldArray);
-	assert.match(spl, /\| outputlookup assetdb$/);
+	assert.match(spl, /\| outputlookup override_if_empty=false assetdb$/);
 	assert.match(spl, /\| adbmerge max_keys=25/);
 });
 
@@ -193,7 +193,7 @@ test('multivalue fields keep the most recent values by default and can opt into 
 	assert.equal((recent.match(/\| sort 0 -_time/g) || []).length, 2, 'sorted before both stats');
 
 	const alpha = gen([mvField('ip', { max_values: '3', mv_order: 'alpha' })]);
-	assert.ok(!alpha.includes('sort 0'), alpha);
+	assert.ok(!alpha.includes('sort 0 -_time'), alpha);
 	assert.ok(/values\(ip\) as ip/.test(alpha), alpha);
 });
 
@@ -407,4 +407,27 @@ test('a scope column (general scope_field) is used for sources without a fixed s
 test('nothing changes without any scope configured', () => {
 	const spl = gen([single('ip', { key_field: '1', key_scope: 'scoped' })]);
 	assert.ok(!spl.includes('scope'), spl);
+});
+
+// --- run safety and run history ----------------------------------------------------------
+
+test('the search records each run and refuses to overwrite assetdb when the count collapses', () => {
+	const spl = gen([single('mac', { key_field: '1' })], { name: 'general', content: { lookups: general.content.lookups, min_ratio: '0.7', runs_to_keep: '50' } });
+	assert.ok(spl.includes('| eval adb_guard = if(isnotnull(adb_prev) AND adb_assets_out < adb_prev * 0.7, 1, 0)'), spl);
+	assert.ok(spl.includes('inputlookup assetdb_runs | where status="ok" | sort 0 -run_time | head 1'), spl);
+	assert.ok(spl.includes('| sort 0 -run_time | head 50 | outputlookup assetdb_runs | where 1=0]'), spl);
+	assert.ok(spl.includes('status=case(isnull(assets_out) OR assets_out=0, "empty", guard=1, "blocked_low_count", true(), "ok")'), spl);
+	assert.ok(spl.indexOf('| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0') < spl.indexOf('| table _key'), 'helper rows and refused runs are dropped before the table');
+	assert.ok(spl.indexOf('assetdb_runs | sort') < spl.indexOf('adb_guard=0'), 'the run is recorded even when the write is refused');
+	assert.ok(/\| outputlookup override_if_empty=false assetdb$/.test(spl), 'an empty result never wipes the collection');
+	assert.ok(spl.includes('max(adb_total) as adb_total'), 'adbmerge counters are carried through the final stats');
+});
+
+test('min_ratio and runs_to_keep fall back to defaults and are clamped', () => {
+	const cfg = (g) => gen([single('mac', { key_field: '1' })], { name: 'general', content: Object.assign({ lookups: general.content.lookups }, g) });
+	assert.ok(cfg({}).includes('adb_prev * 0.5'), 'default ratio 0.5');
+	assert.ok(cfg({ min_ratio: '0' }).includes('adb_prev * 0,'), 'ratio 0 never blocks');
+	for (const bad of ['2', '-1', 'abc']) assert.ok(cfg({ min_ratio: bad }).includes('adb_prev * 0.5'), bad);
+	assert.ok(cfg({}).includes('head 200 | outputlookup assetdb_runs'), 'default 200 runs');
+	assert.ok(cfg({ runs_to_keep: '999999' }).includes('head 5000 | outputlookup assetdb_runs'), 'capped');
 });

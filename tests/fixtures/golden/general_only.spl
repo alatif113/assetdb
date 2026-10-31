@@ -5,4 +5,4 @@
 | search _key=*
 | adbmerge max_keys=25 max_key_share=50
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| outputlookup assetdb
+| outputlookup override_if_empty=false assetdb

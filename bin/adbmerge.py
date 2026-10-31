@@ -33,6 +33,7 @@ class ADBMergeCommand(ReportingCommand):
     def reduce(self, events):
         result = merge(events, self.max_keys, self.max_key_share)
         stats = result.stats
+        result.annotate()
 
         for event in result.merged:
             yield event

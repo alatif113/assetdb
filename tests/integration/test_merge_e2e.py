@@ -74,6 +74,15 @@ def env(splunk, run_id):
             "fields_list": ",".join(["_key", "asset", "source", "source_lookup", "last_seen"] + FIELDS)})
         assert r.status_code in (200, 201), r.text
         e.created.append(lambda: splunk.delete(ns + "/data/transforms/lookups/" + e.kv))
+        # the generated search also keeps a run history: give the temporary collection its own
+        r = splunk.post(ns + "/storage/collections/config", {"name": e.kv + "_runs", "field.run_time": "number", "field.assets_out": "number"})
+        assert r.status_code in (200, 201), r.text
+        e.created.append(lambda: splunk.delete(ns + "/storage/collections/config/" + e.kv + "_runs"))
+        r = splunk.post(ns + "/data/transforms/lookups", {
+            "name": e.kv + "_runs", "external_type": "kvstore", "collection": e.kv + "_runs",
+            "fields_list": "_key,run_time,status,assets_out,assets_prev,rows_in,null_keys,overflow_assets,enrich_unmatched,enrich_ambiguous,junk_keys,junk_rows,min_ratio"})
+        assert r.status_code in (200, 201), r.text
+        e.created.append(lambda: splunk.delete(ns + "/data/transforms/lookups/" + e.kv + "_runs"))
 
         mega = "|".join("mega%02d" % i for i in range(26))  # 26 keys > max_keys=25
         data = {

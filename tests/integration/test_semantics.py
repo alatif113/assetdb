@@ -182,3 +182,60 @@ def test_scope_column_is_used_when_a_source_has_no_fixed_scope(sandbox):
     sandbox.add_source("a", [{"ip": "10.0.0.5", "site": "East"}, {"ip": "10.0.0.5", "site": "West"}, {"ip": "10.0.0.5", "site": "east"}])
     rows = sandbox.run()
     assert sorted(r["asset"][0] for r in rows) == ["east|10.0.0.5", "west|10.0.0.5"], rows
+
+
+# --- run history and the safety switch -------------------------------------------------------
+
+def test_every_run_is_recorded_with_its_counters(sandbox):
+    sandbox.fields = [field("mac", key_field="1")]
+    sandbox.add_source("a", [{"mac": "m1"}, {"mac": "m2"}, {"mac": ""}])
+    sandbox.run()
+    sandbox.run()
+    runs = sandbox.runs_rows()
+    assert [r["status"] for r in runs] == ["ok", "ok"], runs
+    first = runs[0]
+    # rows_in counts what reached the merge command: rows with a key, identical key sets combined (the keyless row never gets there)
+    assert (first["assets_out"], first["rows_in"], first["null_keys"]) == ("2", "2", "0"), first
+    assert first.get("assets_prev") in (None, ""), "no previous run to compare with"
+    assert runs[1]["assets_prev"] == "2"
+
+
+def test_a_collapsed_run_is_blocked_and_assetdb_is_left_as_it_was(sandbox):
+    sandbox.fields = [field("mac", key_field="1")]
+    sandbox.add_source("a", [{"mac": "m%d" % i} for i in range(10)])
+    assert len(sandbox.run()) == 10
+    sandbox.rewrite_source("a", [{"mac": "m0"}, {"mac": "m1"}])            # 2 < 50% of 10
+    assert len(sandbox.run()) == 10, "the asset database must not be overwritten"
+    runs = sandbox.runs_rows()
+    assert [r["status"] for r in runs] == ["ok", "blocked_low_count"], runs
+    assert runs[1]["assets_out"] == "2" and runs[1]["assets_prev"] == "10"
+    sandbox.rewrite_source("a", [{"mac": "m%d" % i} for i in range(6)])     # 6 >= 50% of the last *successful* run (10)
+    assert len(sandbox.run()) == 6
+
+
+def test_the_safety_switch_can_be_turned_off(sandbox):
+    sandbox.general = {"min_ratio": "0"}
+    sandbox.fields = [field("mac", key_field="1")]
+    sandbox.add_source("a", [{"mac": "m%d" % i} for i in range(10)])
+    sandbox.run()
+    sandbox.rewrite_source("a", [{"mac": "m0"}])
+    assert len(sandbox.run()) == 1
+
+
+def test_an_empty_run_never_wipes_the_asset_database(sandbox):
+    sandbox.general = {"min_ratio": "0"}      # even with the ratio check off, nothing at all must not erase everything
+    sandbox.fields = [field("mac", key_field="1")]
+    sandbox.add_source("a", [{"mac": "m1"}, {"mac": "m2"}])
+    assert len(sandbox.run()) == 2
+    sandbox.rewrite_source("a", [{"mac": ""}], header=["mac"])               # every row has no key
+    assert len(sandbox.run()) == 2
+    assert sandbox.runs_rows()[-1]["status"] == "empty"
+
+
+def test_run_history_is_bounded(sandbox):
+    sandbox.general = {"runs_to_keep": "3"}
+    sandbox.fields = [field("mac", key_field="1")]
+    sandbox.add_source("a", [{"mac": "m1"}])
+    for _ in range(6):
+        sandbox.run()
+    assert len(sandbox.runs_rows()) == 3

@@ -20,6 +20,15 @@ access = read : [ * ], write : [ admin ]
 [transforms/assetdb]
 access = read : [ * ], write : [ admin ]
 
+[collections/assetdb_runs]
+access = read : [ * ], write : [ admin ]
+
+[transforms/assetdb_runs]
+access = read : [ * ], write : [ admin ]
+
+[savedsearches/assetdb-run-alert]
+access = read : [ * ], write : [ admin ]
+
 
 ### EVENT TYPES
 
