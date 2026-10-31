@@ -37,6 +37,11 @@ Create fields to be stored within the *Asset Database* and merged between all in
 
 Every merged asset also gets `last_seen`: the most recent `_time` of the source rows (empty when the source lookups have no `_time` column). Existing installs pick the field up in the `assetdb` lookup definition the next time a field is added or deleted in the UI.
 Every key field gets an index in the KV store collection (the collection allows 10 indexes, `asset` uses one, so at most 9 key fields are indexed). The **Settings** tab holds global settings, including the default case rule and default normalizer for fields that do not set their own. `Max Keys` (stored as `max_keys` in the `[general]` stanza, default 25, hard limit 100) is the largest merged asset: assets whose merged key set is larger are dropped and counted in `python.log`. The limit is hard because the merge command keeps every key set in memory. The tab also sets the cron schedule of the merge search and whether it is scheduled.
+
+**Key quality.** One bad key can chain unrelated assets into a single cluster. Two protections are on by default:
+
+- *Key Blocklist* (Settings): values that are never used to match assets in any key field. The defaults cover all-zero and broadcast MACs, `0.0.0.0`, `::`, loopback and link-local addresses, `localhost` and placeholders such as `unknown`, `none`, `null`, `n/a`. Entries are exact values, `re:<regex>` or `cidr:<network>`; saving the setting replaces the defaults, so you can remove any of them. A blocked value is still stored on the asset, it just cannot link two assets.
+- *Max Key Share* (Settings, default 50, 0 turns it off): a key found in more than this many input rows is not used to match, which catches shared keys you did not think of, such as a NAT address or a golden-image host name. The skipped keys are listed in the `adbmerge` log (`python.log`). Rows left without any key are dropped.
 Source lookups are read with the `input_adb_lookup` macro, which sets `source_lookup` to the lookup name when the lookup has no `source_lookup` column (lookups written by `output_adb_lookup` already carry it). `source` is derived from `source_lookup`.
 
 - **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 

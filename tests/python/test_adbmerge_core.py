@@ -304,3 +304,33 @@ def test_auth_value_variants_and_default():
     # missing adb_auth and adb_auth=1 are authoritative; a multivalue with an authoritative member is too
     result = merge([ev("A", ["a"]), enr("B", ["b"], auth="1"), enr("C", ["c"], auth=["0", "1"])], MAX)
     assert sorted(e["name"] for e in result.merged) == ["A", "B", "C"]
+
+
+# --- shared (junk) keys -------------------------------------------------------------------
+
+def test_a_key_shared_by_too_many_rows_is_not_used_to_match():
+    from adbmerge_core import merge
+    nat = "10.0.0.1"
+    events = [ev("h%d" % i, ["mac%d" % i, nat]) for i in range(6)] + [ev("lonely", [nat])]
+    plain = merge([dict(e, _key=list(e["_key"])) for e in events], MAX)
+    assert len({tuple(e["asset"]) for e in plain.merged}) == 1          # everything chained through the NAT address
+    guarded = merge(events, MAX, max_key_share=5)
+    assert guarded.stats["junk_keys"] == 1 and guarded.junk == [(nat, 7)]
+    assert guarded.stats["junk_rows"] == 1                               # "lonely" had only the junk key
+    assert clusters(guarded.merged) == {"h%d" % i: ["mac%d" % i] for i in range(6)}
+
+
+def test_max_key_share_zero_or_not_exceeded_changes_nothing():
+    from adbmerge_core import merge
+    events = [ev("a", ["k", "x"]), ev("b", ["k", "y"])]
+    for share in (0, 2, 10):
+        result = merge([dict(e, _key=list(e["_key"])) for e in events], MAX, max_key_share=share)
+        assert clusters(result.merged) == {"a": ["k", "x", "y"], "b": ["k", "x", "y"]}
+        assert result.stats["junk_keys"] == 0 and result.junk == []
+
+
+def test_shared_key_counting_includes_enrich_rows_and_most_shared_keys_are_listed_first():
+    from adbmerge_core import merge
+    events = [ev("a%d" % i, ["u%d" % i, "big", "mid"]) for i in range(4)] + [enr("e%d" % i, ["big"]) for i in range(3)]
+    result = merge(events, MAX, max_key_share=3)
+    assert result.junk == [("big", 7), ("mid", 4)]

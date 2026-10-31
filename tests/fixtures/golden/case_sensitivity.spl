@@ -9,7 +9,7 @@
 ```### Sort newest first (multivalue fields keep their most recent values) ###```
 | sort 0 -_time
 | stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, list(sensitive) as sensitive, list(insensitive) as insensitive, list(insensitive2) as insensitive2 by _key
-| adbmerge max_keys=25
+| adbmerge max_keys=25 max_key_share=50
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | sort 0 -_time
 | stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, list(sensitive) as sensitive, list(insensitive) as insensitive, list(insensitive2) as insensitive2 by _key

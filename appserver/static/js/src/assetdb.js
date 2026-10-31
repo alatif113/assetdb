@@ -1113,6 +1113,22 @@ require([
 		});
 		// the widget registers itself globally, so drop the one from a previous render of this tab
 		if (mvc.Components.getInstance('inputGlobalIgnore')) mvc.Components.getInstance('inputGlobalIgnore').dispose();
+		if (mvc.Components.getInstance('inputKeyBlocklist')) mvc.Components.getInstance('inputKeyBlocklist').dispose();
+		const blocklistValues = Generator.getKeyBlocklist(general);
+		const keyBlocklistInput = new MultiSelectInput({
+			id: 'inputKeyBlocklist',
+			label: 'Key Blocklist',
+			allowCustomValues: true,
+			choices: Generator.DEFAULT_KEY_BLOCKLIST.map((value) => ({ value })),
+			value: blocklistValues,
+			help: 'Values that are never used to match assets, in any key field: placeholders, loopback and similar. A value that is blocked here still appears in the asset, it just cannot link two assets. Type a value, re:<regular expression> or cidr:<network>',
+		});
+		const maxKeyShareInput = new TextInput({
+			id: 'inputMaxKeyShare',
+			label: 'Max Key Share',
+			value: String(general.max_key_share === undefined ? Generator.DEFAULT_MAX_KEY_SHARE : general.max_key_share),
+			help: 'A key found in more than this many rows is not used to match assets (0 turns it off). Catches shared keys the blocklist does not know about, such as a NAT address, before they chain unrelated assets together. The keys that were skipped are listed in the adbmerge log',
+		});
 		const globalIgnoreInput = new MultiSelectInput({
 			id: 'inputGlobalIgnore',
 			label: 'Ignore Values (global)',
@@ -1134,6 +1150,8 @@ require([
 			.append(defaultCaseInput.getInput())
 			.append(defaultNormalizerInput.getInput())
 			.append(globalIgnoreInput.getInput())
+			.append(keyBlocklistInput.getInput())
+			.append(maxKeyShareInput.getInput())
 			.append(scheduledInput.getInput())
 			.append(scheduleInput.getInput());
 		const $save = $('<a href="#" class="btn btn-primary btn-save-settings">Save Settings</a>');
@@ -1154,6 +1172,10 @@ require([
 				maxKeysInput.setError(`Enter a whole number from 1 to ${Generator.HARD_MAX_KEYS}`);
 				invalid = true;
 			} else maxKeysInput.clearError();
+			if (!/^\d+$/.test(String(maxKeyShareInput.getValue()).trim()) || parseInt(maxKeyShareInput.getValue()) > 1000000) {
+				maxKeyShareInput.setError('Enter a whole number from 0 to 1000000');
+				invalid = true;
+			} else maxKeyShareInput.clearError();
 			if (!CRON_RE.test(scheduleInput.getValue())) {
 				scheduleInput.setError('Enter a cron expression with 5 fields, e.g. 0 0 * * *');
 				invalid = true;
@@ -1166,6 +1188,8 @@ require([
 					default_case_sensitive: String(parseInt(defaultCaseInput.getValue()) ? 1 : 0),
 					default_normalizer: defaultNormalizerInput.getValue(),
 					ignore_values: JSON.stringify(globalIgnoreInput.getValue()),
+					key_blocklist: JSON.stringify(keyBlocklistInput.getValue()),
+					max_key_share: String(parseInt(maxKeyShareInput.getValue())),
 				}),
 				setConf('conf-savedsearches/assetdb-lookupgen', {
 					cron_schedule: scheduleInput.getValue().trim(),

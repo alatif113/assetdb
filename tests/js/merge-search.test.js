@@ -161,9 +161,9 @@ test('latest keeps _time through the first stats so the second stats can order b
 
 test('max_keys comes from the general stanza, default 25, invalid values fall back', () => {
 	const withKeys = (v) => gen([single('f')], { name: 'general', content: { lookups: general.content.lookups, max_keys: v } });
-	assert.match(withKeys('40'), /\| adbmerge max_keys=40\n/);
-	assert.match(withKeys('500'), /\| adbmerge max_keys=100\n/, 'hard cap');
-	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25\n/, String(bad));
+	assert.match(withKeys('40'), /\| adbmerge max_keys=40 max_key_share=50\n/);
+	assert.match(withKeys('500'), /\| adbmerge max_keys=100 max_key_share=50\n/, 'hard cap');
+	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25 max_key_share=50\n/, String(bad));
 });
 
 test('last_seen is the max source _time, carried through both stats and written to the output', () => {
@@ -353,4 +353,33 @@ test('enrich sources mark their rows and carry the flag through the first stats;
 	assert.ok(spl.includes('max(adb_auth) as adb_auth'), spl);
 	assert.ok(!withSources([{ name: 'a', lookup: 'a.csv' }]).includes('adb_auth'), 'no flag without enrich sources');
 	assert.throws(() => withSources([{ name: 'a', lookup: 'a.csv', role: 'boss' }]), /role/i);
+});
+
+// --- key quality: blocklist and shared-key guard -----------------------------------------
+
+test('the default key blocklist filters every key field before keys are built, but not the stored values', () => {
+	const spl = gen([single('mac', { key_field: '1', case_sensitive: '0' }), single('ip', { key_field: '1', case_sensitive: '1' }), single('owner')]);
+	assert.ok(/eval adbk_mac = mvfilter\(NOT \(in\(lower\(adbk_mac\), "00:00:00:00:00:00"/.test(spl), spl);
+	assert.ok(/adbk_ip = mvfilter\(NOT \(in\(adbk_ip, "00:00:00:00:00:00"/.test(spl), 'case sensitive fields compare exactly');
+	assert.ok(spl.indexOf('Remove blocklisted') < spl.indexOf('_key = mvjoin'), 'before the keys are built');
+	assert.ok(!/owner = mvfilter/.test(spl) && !/mvfilter\(NOT \(in\(lower\(mac\)/.test(spl), 'the field values themselves are untouched');
+	assert.ok(spl.includes('cidrmatch("127.0.0.0/8", adbk_mac)'), spl);
+});
+
+test('an explicit key_blocklist replaces the defaults, and an empty one disables the blocklist', () => {
+	const withList = (v) => gen([single('mac', { key_field: '1', case_sensitive: '0' })], { name: 'general', content: { lookups: general.content.lookups, key_blocklist: v } });
+	const custom = withList(JSON.stringify(['Gateway', 're:^vm-\\d+$', 'cidr:10.9.0.0/16']));
+	assert.ok(custom.includes('in(lower(adbk_mac), "gateway") OR match(lower(adbk_mac), "^vm-\\\\d+$") OR cidrmatch("10.9.0.0/16", adbk_mac)'), custom);
+	assert.ok(!custom.includes('00:00:00:00:00:00'), 'defaults replaced');
+	assert.ok(!withList('[]').includes('Remove blocklisted'), 'empty list: no blocklist step');
+	assert.ok(withList('not json').includes('00:00:00:00:00:00'), 'malformed falls back to the defaults');
+	assert.throws(() => withList(JSON.stringify(['re:(bad'])), /key blocklist regex/i);
+});
+
+test('max_key_share is passed to adbmerge unless it is 0', () => {
+	const withShare = (v) => gen([single('mac', { key_field: '1' })], { name: 'general', content: { lookups: general.content.lookups, max_key_share: v } });
+	assert.match(withShare(undefined), /\| adbmerge max_keys=25 max_key_share=50\n/);
+	assert.match(withShare('200'), /\| adbmerge max_keys=25 max_key_share=200\n/);
+	assert.match(withShare('0'), /\| adbmerge max_keys=25\n/);
+	assert.match(withShare('abc'), /max_key_share=50\n/);
 });

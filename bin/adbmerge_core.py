@@ -28,7 +28,8 @@ class MergeResult(object):
 
     def __init__(self):
         self.merged = []
-        self.stats = {'total': 0, 'null_keys': 0, 'large_keys': 0, 'enrich_unmatched': 0, 'enrich_ambiguous': 0}
+        self.stats = {'total': 0, 'null_keys': 0, 'large_keys': 0, 'enrich_unmatched': 0, 'enrich_ambiguous': 0, 'junk_keys': 0, 'junk_rows': 0}
+        self.junk = []  # (key, rows) of the most widely shared keys that were removed, most shared first
 
 
 def _clean_keys(event):
@@ -51,7 +52,7 @@ def _is_enrich(event):
     return value is not None and str(value).strip() == '0'
 
 
-def merge(events, max_keys):
+def merge(events, max_keys, max_key_share=0):
     """Merge assets that share any key, directly or transitively.
 
     Authoritative rows create assets and link assets together. Enrich-only rows (adb_auth=0) never create or link
@@ -59,6 +60,9 @@ def merge(events, max_keys):
 
     :param events: iterable of dict-like events with a `_key` field (str or list of str)
     :param max_keys: clusters with more unique keys than this are dropped
+    :param max_key_share: a key found in more than this many input rows is not used to match (0 disables). Such keys
+        (a NAT address, a golden image host name) would otherwise chain unrelated assets into one cluster. Rows left
+        without any key are dropped and counted
     :return: MergeResult
     """
     result = MergeResult()
@@ -68,6 +72,7 @@ def merge(events, max_keys):
     size = {}  # root -> number of unique keys in its cluster
     entries = []  # (first_key, event) of authoritative rows, in arrival order
     enrich = []  # (key_list, event) of enrich-only rows, in arrival order
+    rows = []  # (key_list, event, is_enrich)
 
     for event in events:
         stats['total'] += 1
@@ -76,8 +81,28 @@ def merge(events, max_keys):
         if len(key_list) == 0:
             stats['null_keys'] += 1
             continue
+        rows.append((key_list, event, _is_enrich(event)))
 
-        if _is_enrich(event):
+    if max_key_share and max_key_share > 0:
+        counts = {}
+        for key_list, _, _ in rows:
+            for key in key_list:
+                counts[key] = counts.get(key, 0) + 1
+        junk = dict((key, n) for key, n in counts.items() if n > max_key_share)
+        if junk:
+            stats['junk_keys'] = len(junk)
+            result.junk = sorted(junk.items(), key=lambda kv: (-kv[1], kv[0]))[:20]
+            kept = []
+            for key_list, event, is_enrich in rows:
+                key_list = [k for k in key_list if k not in junk]
+                if key_list:
+                    kept.append((key_list, event, is_enrich))
+                else:
+                    stats['junk_rows'] += 1
+            rows = kept
+
+    for key_list, event, is_enrich in rows:
+        if is_enrich:
             enrich.append((key_list, event))
             continue
 
@@ -135,7 +160,7 @@ def merge(events, max_keys):
     return result
 
 
-def merge_assets(events, max_keys):
+def merge_assets(events, max_keys, max_key_share=0):
     """Backwards compatible wrapper: (merged_events, null_keys, large_keys, total); large_keys counts dropped assets."""
-    result = merge(events, max_keys)
+    result = merge(events, max_keys, max_key_share)
     return result.merged, result.stats['null_keys'], result.stats['large_keys'], result.stats['total']

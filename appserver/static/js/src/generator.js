@@ -24,6 +24,13 @@ define([], function () {
 	const MERGE_ORDER_RE = /^[A-Za-z0-9_]+$/;
 	const MERGE_METHODS = ['latest', 'earliest', 'min', 'max', 'avg', 'sum', 'coalesce'];
 	const DEFAULT_MAX_KEYS = 25;
+	const DEFAULT_MAX_KEY_SHARE = 50;
+	const DEFAULT_KEY_BLOCKLIST = [
+		'00:00:00:00:00:00', 'ff:ff:ff:ff:ff:ff', 're:^(00[:-]?){5}00$', 're:^(ff[:-]?){5}ff$',
+		'0.0.0.0', '::', '::1', 'localhost', 'localhost.localdomain',
+		'unknown', 'none', 'null', 'n/a', 'na', 'undefined', '-',
+		'cidr:127.0.0.0/8', 'cidr:169.254.0.0/16',
+	];
 	const CIDR_RE = /^[0-9a-fA-F:.]+\/\d{1,3}$/;
 	// Normaliser presets: each maps to a macro in macros.conf that rewrites every value of one field.
 	const NORMALIZERS = {
@@ -123,6 +130,53 @@ define([], function () {
 	}
 
 	/**
+	 * mvfilter() clause that drops every value of `name` matching one of the entries. An entry is an exact value,
+	 * `re:<regex>` or `cidr:<network>`; exact values and regexes are compared lowercased unless `caseSensitive`.
+	 *
+	 * @return {String}	The assignment `name = mvfilter(NOT (...))`, or '' when there are no entries
+	 */
+	function valueFilter(name, entries, caseSensitive, label) {
+		if (!entries.length) return '';
+		const cmp = caseSensitive ? name : `lower(${name})`;
+		const exact = [];
+		const tests = [];
+		for (const entry of entries) {
+			const text = String(entry);
+			if (text.startsWith('re:')) {
+				const pattern = text.slice(3);
+				try { new RegExp(pattern); } catch { throw new Error(`Invalid ${label} regex "${pattern}" for field ${name}`); }
+				tests.push(`match(${cmp}, ${splQuote(caseSensitive ? pattern : pattern.toLowerCase())})`);
+			} else if (text.startsWith('cidr:')) {
+				const network = text.slice(5);
+				if (!CIDR_RE.test(network)) throw new Error(`Invalid ${label} CIDR "${network}" for field ${name}`);
+				tests.push(`cidrmatch(${splQuote(network)}, ${name})`);
+			} else {
+				exact.push(splQuote(caseSensitive ? text : text.toLowerCase()));
+			}
+		}
+		if (exact.length) tests.unshift(`in(${cmp}, ${exact.join(', ')})`);
+		return `${name} = mvfilter(NOT (${tests.join(' OR ')}))`;
+	}
+
+	/**
+	 * The key blocklist: values that are never used to match assets (placeholders, loopback, shared addresses).
+	 * An explicit `key_blocklist` in [general] replaces the defaults, including an empty list.
+	 */
+	function getKeyBlocklist(general) {
+		if (general.key_blocklist === undefined || general.key_blocklist === null) return DEFAULT_KEY_BLOCKLIST.slice();
+		const parsed = safeParse(general.key_blocklist, null);
+		return Array.isArray(parsed) ? parsed : DEFAULT_KEY_BLOCKLIST.slice();
+	}
+
+	/**
+	 * max_key_share for adbmerge: keys found in more than this many input rows are not used to match (0 disables).
+	 */
+	function parseMaxKeyShare(general) {
+		const n = parseInt(general.max_key_share);
+		return isNaN(n) || n < 0 ? DEFAULT_MAX_KEY_SHARE : Math.min(n, 1000000);
+	}
+
+	/**
 	 * max_keys for adbmerge from the [general] stanza of assetdb.conf: a positive integer, default 25.
 	 */
 	function parseMaxKeys(fieldArray) {
@@ -188,6 +242,8 @@ define([], function () {
 		let earliestFinal = [];
 		let keyTemps = [];
 		let keyFields = [];
+		let blocklistClauses = [];
+		const keyBlocklist = getKeyBlocklist(general);
 		// Sources: only enabled ones take part. Per source options are applied to that source's rows only (source_lookup test).
 		const lookupsArray = getLookupArray(fieldArray).filter(sourceEnabled);
 		const rowFilters = [];
@@ -256,6 +312,8 @@ define([], function () {
 				keys.push(name);
 				keyFields.push(name);
 				keyTemps.push(`adbk_${name} = ${keepCase ? `lower(${name})` : name}`);
+				const blocked = valueFilter(`adbk_${name}`, keyBlocklist, caseSensitive && !keepCase, 'key blocklist');
+				if (blocked) blocklistClauses.push(blocked);
 			}
 
 			// Ignore list: the field's own entries plus the global list (unless the field opts out). An entry is an exact
@@ -264,28 +322,8 @@ define([], function () {
 			const inheritIgnore = content.inherit_ignore === undefined || content.inherit_ignore === '' ? true : !!parseInt(content.inherit_ignore);
 			const globalIgnored = inheritIgnore ? safeParse(general.ignore_values, []) : [];
 			if (Array.isArray(ownIgnored)) {
-				const entries = ownIgnored.concat(Array.isArray(globalIgnored) ? globalIgnored : []);
-				if (entries.length) {
-					const cmp = caseSensitive ? name : `lower(${name})`;
-					const exact = [];
-					const tests = [];
-					for (const entry of entries) {
-						const text = String(entry);
-						if (text.startsWith('re:')) {
-							const pattern = text.slice(3);
-							try { new RegExp(pattern); } catch { throw new Error(`Invalid ignore regex "${pattern}" for field ${name}`); }
-							tests.push(`match(${cmp}, ${splQuote(caseSensitive ? pattern : pattern.toLowerCase())})`);
-						} else if (text.startsWith('cidr:')) {
-							const network = text.slice(5);
-							if (!CIDR_RE.test(network)) throw new Error(`Invalid ignore CIDR "${network}" for field ${name}`);
-							tests.push(`cidrmatch(${splQuote(network)}, ${name})`);
-						} else {
-							exact.push(splQuote(caseSensitive ? text : text.toLowerCase()));
-						}
-					}
-					if (exact.length) tests.unshift(`in(${cmp}, ${exact.join(', ')})`);
-					ignoreValues.push(`${name} = mvfilter(NOT (${tests.join(' OR ')}))`);
-				}
+				const clause = valueFilter(name, ownIgnored.concat(Array.isArray(globalIgnored) ? globalIgnored : []), caseSensitive, 'ignore');
+				if (clause) ignoreValues.push(clause);
 			}
 
 			// Allowed sources: values from any other source are discarded before the merge.
@@ -396,6 +434,7 @@ define([], function () {
 		if (keys.length) {
 			section('Build match keys (lowercased where the field is case insensitive)');
 			command(`| eval ${keyTemps.join(', ')}`);
+			if (blocklistClauses.length) { section('Remove blocklisted values from the match keys'); command(`| eval ${blocklistClauses.join(', ')}`); }
 			section('Shallow merge assets with matching key fields (using basic stats)');
 			command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvjoin(mvdedup(mvappend(${keyRefs.join(', ')})), "::")`));
 		}
@@ -404,7 +443,7 @@ define([], function () {
 		if (recentMv) { section('Sort newest first (multivalue fields keep their most recent values)'); command('| sort 0 -_time'); }
 		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(enrichLookups.length ? ['max(adb_auth) as adb_auth'] : [], keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
 		if (keys.length) { section('Deep merge assets with matching key fields (using custom command)'); command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvappend(${keyRefs.join(', ')})`)); }
-		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}`);
+		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}${parseMaxKeyShare(general) ? ` max_key_share=${parseMaxKeyShare(general)}` : ''}`);
 		command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
 		if (recentMv) command('| sort 0 -_time');
 		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${statsFinal.join(', ')} by _key`);
@@ -428,6 +467,9 @@ define([], function () {
 		checkEvalExpression: checkEvalExpression,
 		isReservedFieldName: isReservedFieldName,
 		parseMaxKeys: parseMaxKeys,
+		getKeyBlocklist: getKeyBlocklist,
+		DEFAULT_KEY_BLOCKLIST: DEFAULT_KEY_BLOCKLIST,
+		DEFAULT_MAX_KEY_SHARE: DEFAULT_MAX_KEY_SHARE,
 		sourceEnabled: sourceEnabled,
 		checkBalancedParens: checkBalancedParens,
 		MAX_AGE_RE: MAX_AGE_RE,

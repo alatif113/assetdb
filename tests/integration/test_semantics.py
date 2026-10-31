@@ -141,3 +141,24 @@ def test_enrich_sources_add_data_but_never_create_or_link_assets(sandbox):
     assert sorted(rows) == ["m1", "m2"], rows
     assert rows["m1"]["vulns"] == ["7"], rows["m1"]
     assert not rows["m2"].get("vulns"), rows["m2"]
+
+
+# --- key quality ----------------------------------------------------------------------------
+
+def test_blocklisted_values_never_link_assets_but_stay_in_the_data(sandbox):
+    sandbox.fields = [field("mac", key_field="1"), field("ip", key_field="1")]
+    sandbox.add_source("a", [{"mac": "m1", "ip": "0.0.0.0"}, {"mac": "m2", "ip": "0.0.0.0"}, {"mac": "m3", "ip": "10.0.0.3"}])
+    rows = {r["mac"][0]: r for r in sandbox.run()}
+    assert sorted(rows) == ["m1", "m2", "m3"], rows             # not chained through 0.0.0.0
+    assert rows["m1"]["ip"] == ["0.0.0.0"], rows["m1"]            # the placeholder is still stored on the asset
+    assert rows["m1"]["asset"] == ["m1"], rows["m1"]
+
+
+def test_a_widely_shared_key_is_skipped_by_the_frequency_guard(sandbox):
+    sandbox.general = {"max_key_share": "5", "key_blocklist": "[]"}
+    sandbox.fields = [field("mac", key_field="1"), field("ip", key_field="1")]
+    rows = [{"mac": "m%d" % i, "ip": "10.0.0.1"} for i in range(8)]      # eight hosts behind one NAT address
+    sandbox.add_source("a", rows)
+    out = sandbox.run()
+    assert sorted(r["mac"][0] for r in out) == ["m%d" % i for i in range(8)], out
+    assert all(r["asset"] == [r["mac"][0]] for r in out)

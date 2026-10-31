@@ -3,6 +3,6 @@
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="a.csv", "a", source_lookup="b.csv", "b")
 | search _key=*
-| adbmerge max_keys=25
+| adbmerge max_keys=25 max_key_share=50
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | outputlookup assetdb

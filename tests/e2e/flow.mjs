@@ -73,6 +73,9 @@ try {
   await page.waitForTimeout(1500);
   check((await generalConf()).max_keys === '30', 'max keys saved to the [general] stanza');
   check(Array.isArray(JSON.parse((await generalConf()).ignore_values || 'null')), 'global ignore list saved as a JSON array');
+  check(JSON.parse((await generalConf()).key_blocklist || 'null')?.includes('00:00:00:00:00:00'), 'key blocklist saved (defaults shown and stored)');
+  check((await generalConf()).max_key_share === '50', 'max key share saved');
+  check((await savedSearch()).includes('adbmerge max_keys=30 max_key_share=50'), 'saved search passes max_key_share');
   check((await savedSearch()).includes('adbmerge max_keys=30'), 'saved search regenerated with the new max keys');
   await page.click('#ab_config a.tab-label:has-text("Settings")');
   await page.fill('#inputMaxKeys input', originalMaxKeys || '25');

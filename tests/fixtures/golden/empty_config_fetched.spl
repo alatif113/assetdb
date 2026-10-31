@@ -5,6 +5,8 @@
 | foreach nt_host [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Build match keys (lowercased where the field is case insensitive) ###```
 | eval adbk_nt_host = nt_host
+```### Remove blocklisted values from the match keys ###```
+| eval adbk_nt_host = mvfilter(NOT (in(adbk_nt_host, "00:00:00:00:00:00", "ff:ff:ff:ff:ff:ff", "0.0.0.0", "::", "::1", "localhost", "localhost.localdomain", "unknown", "none", "null", "n/a", "na", "undefined", "-") OR match(adbk_nt_host, "^(00[:-]?){5}00$") OR match(adbk_nt_host, "^(ff[:-]?){5}ff$") OR cidrmatch("127.0.0.0/8", adbk_nt_host) OR cidrmatch("169.254.0.0/16", adbk_nt_host)))
 ```### Shallow merge assets with matching key fields (using basic stats) ###```
 | eval _key = adbk_nt_host
 | search _key=*
@@ -13,7 +15,7 @@
 | stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, values(adbk_nt_host) as adbk_nt_host, list(nt_host) as nt_host by _key
 ```### Deep merge assets with matching key fields (using custom command) ###```
 | eval _key = adbk_nt_host
-| adbmerge max_keys=25
+| adbmerge max_keys=25 max_key_share=50
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | sort 0 -_time
 | stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, list(nt_host) as nt_host by _key

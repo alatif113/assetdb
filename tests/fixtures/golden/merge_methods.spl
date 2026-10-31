@@ -6,7 +6,7 @@
 | eval {source}_os = os
 | search _key=*
 | stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, max(priority) as priority, min(risk) as risk, sum(score) as score__sum, count(score) as score__count, latest(owner) as owner, latest(lookupB_os) as lookupB_os, latest(lookupA_os) as lookupA_os by _key
-| adbmerge max_keys=25
+| adbmerge max_keys=25 max_key_share=50
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, max(priority) as priority, min(risk) as risk, sum(score__sum) as score__sum, sum(score__count) as score__count, latest(owner) as owner, latest(lookupB_os) as lookupB_os, latest(lookupA_os) as lookupA_os by _key
 ```### Calculate averages ###```
