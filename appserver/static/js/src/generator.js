@@ -223,7 +223,7 @@ define([], function () {
 
 	/**
 	 * Get lookupArray from fieldArray
-	 * 
+	 *
 	 * @param {Array}	fieldArray		Array of field data from assetdb.conf
 	 */
 	function getLookupArray(fieldArray) {
@@ -237,7 +237,7 @@ define([], function () {
 		if (Array.isArray(parsed)) return parsed;
 		return general.content.lookups.split(',').map(lookup => {return {name: lookup, lookup: lookup}});
 	}
-	
+
 	/**
 	 * Read-only searches that show what the merge would produce, built from the generated lines: everything up to and
 	 * including the adbmerge command (so nothing is written) followed by a small summary tail.
@@ -314,7 +314,7 @@ define([], function () {
 	 * (the entries of the assetdb.conf REST listing, including the [general] stanza).
 	 */
 	function buildSearchLines(fieldArray) {
-		
+
 		let fieldSplit = [];
 		let coalesce = [];
 		let multivalue = [];
@@ -527,7 +527,7 @@ define([], function () {
 			}
 			table.push(name);
 		};
-		
+
 		const lines = [];
 		const section = (title) => lines.push({ kind: 'comment', text: `\`\`\`### ${title} ###\`\`\`` });
 		const command = (text) => lines.push({ kind: 'command', text });

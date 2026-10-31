@@ -1,6 +1,6 @@
 # AssetDB
 
-AssetDB is a Splunk application that allows merging distinct data sources into an asset data base, without the need for Splunk Enterprise Security. The app is currently in beta and may be prone to bugs. 
+AssetDB is a Splunk application that allows merging distinct data sources into an asset data base, without the need for Splunk Enterprise Security. The app is currently in beta and may be prone to bugs.
 
 ## Usage
 
@@ -15,9 +15,9 @@ The sections below keep the original names of the things you configure: the *Sou
 
 ### Asset Lookups
 
-Create lookup files and corresponding lookup generation searches for each unique data source that provides asset information. 
+Create lookup files and corresponding lookup generation searches for each unique data source that provides asset information.
 
- - **Add lookup file**: Click *Add source* on the Sources tab to add a lookup file to be used to populate the merged *Asset Database*. A demo lookup file, *assetdb_demo_assets.csv* is provided by default. 
+ - **Add lookup file**: Click *Add source* on the Sources tab to add a lookup file to be used to populate the merged *Asset Database*. A demo lookup file, *assetdb_demo_assets.csv* is provided by default.
 
  - **Delete lookup file**: Click the *Remove* icon in the row of a source to remove the lookup and prevent its contents from being merged into the *Asset Database*.
 
@@ -39,7 +39,7 @@ When a lookup is chosen the dialog shows its row count and the columns it holds.
 
 ### Asset Fields
 
-Create fields to be stored within the *Asset Database* and merged between all input lookup files. 
+Create fields to be stored within the *Asset Database* and merged between all input lookup files.
 
 
 
@@ -65,15 +65,15 @@ Every key field gets an index in the KV store collection (the collection allows 
 Source lookups are read with the `input_adb_lookup` macro, which sets `source_lookup` to the lookup name when the lookup has no `source_lookup` column (lookups written by `output_adb_lookup` already carry it). `source` is derived from `source_lookup`.
 
 - **Add CIM fields**: Click *Add CIM preset* to add the missing fields of the CIM-shaped asset schema in one step: `ip`, `mac`, `nt_host`, `dns` (keys, with normalizers and validation), `owner` (conflicts flagged), `priority`, `bunit`, `category`, `city`, `country`, `pci_domain` and `is_expected`. It only uses the names and sensible defaults; it needs neither the CIM add-on nor Enterprise Security. Fields that already exist are left alone.
-- **Add field**: Click *Add field* on the Fields tab to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
+- **Add field**: Click *Add field* on the Fields tab to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties.
 
-- **Edit field**: Click the *Edit* icon in the row of a field to edit an existing field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
+- **Edit field**: Click the *Edit* icon in the row of a field to edit an existing field into the *Asset Database*. See the **Field Properties** section below for more information on field properties.
 
-- **Delete field**: Click the *Remove* icon in the row of a field to delete an existing field from the *Asset Database*. Deleting a field, does not remove that field from any underlying lookup files. 
+- **Delete field**: Click the *Remove* icon in the row of a field to delete an existing field from the *Asset Database*. Deleting a field, does not remove that field from any underlying lookup files.
 
 ### Field Properties
 
-The following field properties can be set when adding a new field or editing an existing field. 
+The following field properties can be set when adding a new field or editing an existing field.
 
 | Property | Description |
 | ----------- | ----------- |
@@ -87,12 +87,12 @@ The following field properties can be set when adding a new field or editing an 
 | Ignore Values | (Optional) Values to drop from this field. Each entry is an exact value (compared in lowercase on case insensitive fields), `re:<regular expression>` or `cidr:<network>`, e.g. `unknown`, `re:^169\.254\.`, `cidr:127.0.0.0/8`. |
 | Use Global Ignore List | Also ignore the values in the global ignore list on the Settings tab. On by default. |
 | Allowed Sources | (Optional) Only take values for this field from these sources. Values from other sources are discarded before the merge. |
-| Fill Null | (Optional) A static value for assets that have no value for this field in any source (e.g. a default asset priority). Applied after the merge, so it never competes with real values. Not allowed on key fields. | 
-| Validation | (Optional) A regular expression to validate field values. Values that fail validation are ignored. Case insensitive fields are lowercased first, so write the regex for lowercase values. | 
+| Fill Null | (Optional) A static value for assets that have no value for this field in any source (e.g. a default asset priority). Applied after the merge, so it never competes with real values. Not allowed on key fields. |
+| Validation | (Optional) A regular expression to validate field values. Values that fail validation are ignored. Case insensitive fields are lowercased first, so write the regex for lowercase values. |
 | Field Type | Defines the type of field. Use a single value, or keep all unique entries as a multivalue. |
 | Merge Method | (Only applicable when Field Type is *Single*) Defines how a single value is derived across the input lookup table files.<br>- **Latest**: the most recent value<br>- **Earliest**: the first value, by the `_time` of the source rows<br>- **Min** / **Max**: smallest / largest value; set Value Type to *Number* so values are compared as numbers, otherwise as text<br>- **Avg** / **Sum**: average / total, for numeric values<br>- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
 | Coalesce | (Only applicable when Merge Method is *Coalesce*) Defines the precedence of source data to be used for this field. |
-| Max Values | (Only applicable when Field Type is *Multivalue*) The maximum values the multivalue field can have (1 to 100). Excess values are trimmed, keeping the most recent values (by the `_time` of the source rows) unless Value Order is *Alphabetical*. Large multivalue fields can lead to reduced performance. 
+| Max Values | (Only applicable when Field Type is *Multivalue*) The maximum values the multivalue field can have (1 to 100). Excess values are trimmed, keeping the most recent values (by the `_time` of the source rows) unless Value Order is *Alphabetical*. Large multivalue fields can lead to reduced performance.
 | Value Type | (Single value fields) The type declared for the field in the KV store collection: text, number, true/false, time or CIDR. |
 | Eval Expression | (Optional) An SPL eval expression applied to the field before merging, e.g. `replace(field1, "[^w]", "")`. Pipes, backticks and square brackets are only allowed inside quoted strings. |
 
@@ -107,8 +107,8 @@ AssetDB uses *Key Fields* to merge assets together into a single *Asset Database
 3. Asset from `lookup_A` and Asset from `lookup_B` share a key `mac_A`
 4. Asset from `lookup_A` and Asset from `lookup_B` are merged
 5. The newly merged Asset and Asset from `lookup_C` share a key `host_B`
-6. The newly merged Asset and Asset from `lookup_C` are merged. 
-7. The Asset from `lookup_D` does not share keys with any other asset. It is not merged. 
+6. The newly merged Asset and Asset from `lookup_C` are merged.
+7. The Asset from `lookup_D` does not share keys with any other asset. It is not merged.
 
 Note how although, the Asset from `lookup_A` and Asset from `lookup_C` do not share any keys, they end up being merged due to both sharing keys with the Asset from `lookup_B`.
 
@@ -150,7 +150,7 @@ The columns come from the `adb_enrich_outputs` macro, which the Configure page k
 
 ### Asset Merge Search
 
-Merging is done via a custom command `adbmerge` and saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store. 
+Merging is done via a custom command `adbmerge` and saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store.
 
 **Preview.** The *Run preview* button on the Pipeline tab runs the whole merge without saving anything and compares it with the asset database it would replace: how many assets would be added, removed or changed (changes of the values inside an asset count), how many stay the same, and the merge counters (rows merged, oversized clusters, rows without a key, shared keys skipped, unmatched enrich rows). If a real run would be stopped by the safety check, the preview says so. The comparison runs as a search job, and *Open preview in Search* opens that job (by its search ID) in the Search app in a new window, where every asset that would be added, removed or changed is a row (`change`, `asset`, `changed_fields`). The preview runs the same work as a real run apart from the writes, so it can take a while on a big inventory.
 
