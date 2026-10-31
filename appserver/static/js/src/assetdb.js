@@ -365,7 +365,7 @@ require([
 			oneshot('| inputlookup assetdb_overflow | stats count', 1).catch(() => null),
 			oneshot('| inputlookup assetdb_overflow | head 5', 5).catch(() => null),
 			changesBase ? oneshot(`${changesBase} | eventstats max(run_time) as adb_last | where run_time=adb_last | stats count by change`, 10).catch(() => null) : Promise.resolve([]),
-			changesBase ? oneshot(`${changesBase} | sort 0 -run_time | head 5`, 5).catch(() => null) : Promise.resolve([]),
+			changesBase ? oneshot(`${changesBase} | sort 0 -run_time | head 5 | table run_time change asset changed_fields`, 5).catch(() => null) : Promise.resolve([]),
 		]);
 		S.runs = runs; S.overflow = overflow; S.overflowCount = overflowCount ? parseInt((overflowCount[0] || {}).count || 0) : null;
 		S.changes = changes; S.changeCounts = changeCounts; ui.runsLoaded = true;
