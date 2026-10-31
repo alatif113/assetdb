@@ -49,7 +49,7 @@ apps, and run searches; put the value in `SPLUNK_TOKEN`. Download the server's c
 | `make deploy` | pre-flight (REST + ssh), backup to `dist/backups/`, rsync to the server (see below) |
 | `make reload` | decide nothing / reload / restart from what changed since the last deploy |
 | `make integration` | live tests against the server |
-| `make e2e` | opt-in Playwright check (`npm i --no-save playwright && npx playwright install chromium`) |
+| `make e2e` | opt-in Playwright check (`npm i --no-save playwright && npx playwright install chromium`; `npm ci`/`make package` removes it again). `scripts/e2e.sh --flow` also adds and deletes a test field through the UI against the real config and restores the saved search text afterwards. |
 | `make all` | `scripts/test-all.sh`: unit -> minjs -> package -> inspect -> deploy -> reload -> integration |
 
 `scripts/test-all.sh` flags: `--skip-deploy` (local stages only), `--only <stage>`, `--dry-run`
@@ -147,3 +147,10 @@ touched. If a run is killed, remove leftovers matching `adbtest_*` under Setting
 existing `==` / unused-variable warnings are tolerated up to a cap) and ruff (`pyproject.toml`).
 `lib/`, `*.min*.js`, `prism.js` and `dist/` are excluded. Prettier settings are in `.prettierrc`
 (tabs, single quotes, 140 columns) but formatting is not enforced.
+
+## Static file caching after a deploy
+
+Splunk Web serves app JS/CSS from a cache keyed by its static version, so a deployed change can keep
+showing the old files. On a licensed instance use `/en-US/_bump` (what `scripts/reload.sh` tries); on
+Splunk Free it is refused (403) and a splunkd restart (`scripts/reload.sh --restart --yes`) is what
+reliably refreshes the files. Browsers also cache them for a year: hard-refresh after a deploy.

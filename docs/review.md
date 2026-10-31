@@ -177,16 +177,8 @@ Each step is one independently committable change. A star marks steps that touch
 
 ## Implementation status
 
-Decisions taken: overflow clusters are dropped (counted in the log); writes limited to `admin`; support Splunk 10.0+, later overridden: to pass AppInspect the app uses splunk-sdk 3.0.1 and `python.required = 3.13`, so `adbmerge` needs a Splunk that runs commands on Python 3.13 (not 10.0, which uses 3.9).
+Decisions taken: overflow clusters are dropped (counted in the log); writes limited to `admin`; to pass AppInspect without warnings the app uses splunk-sdk 3.0.1 and `python.required = 3.13`, so `adbmerge` needs a Splunk that runs commands on Python 3.13 (not 10.0, which uses 3.9).
 
-| Step | Status |
-| --- | --- |
-| 1-12 | Done, one commit each (F-01 to F-19 except F-21/F-39/F-32/F-33/F-35/F-40; F-24, F-25, F-38) |
-| 14 | Done (F-26) |
-| 15 | Done locally (F-20, F-34); needs a run on the live server |
-| 17 | Partly done: F-36, F-37, F-27 (README only; the dead eval code remains) |
-| 13 | **Not done**: absolute module paths/links and dark-mode CSS can only be verified in a browser on the server |
-| 16 | **Not done**: F-21 needs live measurement of `outputlookup` |
-| 17 (rest) | Not done: F-32, F-33, F-35, F-39, F-40, lint configs |
+All 17 steps are implemented and committed (one commit per step or group). Verified on the dev server (Splunk 10.4.2): integration tests (11), the Configure page e2e, and a UI flow that adds/deletes a field, rejects reserved names and fill null on key fields, and leaves the config as found. Not implemented as originally written: F-21 is measured and documented rather than changed (see below), and the 49 ESLint warnings (`==` comparisons, unused AMD parameters) were left.
 
 **F-21 measured (Splunk 10.4.2):** 45,000-row KV collection rewritten with `outputlookup` while 6 readers polled it, 8 rewrites of about 2s: 209 of 212 reads saw 45,000 rows and 3 returned no result rows, so a short empty window exists. Failure mid-write was not reproduced. Documented in the README instead of double-buffering the collection. Also found: `inputlookup` on a KV collection is capped at 50,000 rows by default.

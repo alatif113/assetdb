@@ -24,7 +24,7 @@ if (await page.locator('input[name=username]').count()) {
 await page.goto(`${base}/en-US/app/assetdb/configure`);
 const csrf = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
 if (csrf) {
-  await ctx.request.post(`${base}/en-US/_bump`, { headers: { 'X-Splunk-Form-Key': csrf.value }, form: { splunk_form_key: csrf.value } });
+  await ctx.request.post(`${base}/en-US/_bump`, { headers: { 'X-Splunk-Form-Key': csrf.value, 'X-Requested-With': 'XMLHttpRequest' }, form: { splunk_form_key: csrf.value } });
 }
 await page.goto(`${base}/en-US/app/assetdb/configure`);
 await page.waitForSelector('#ab_config', { timeout: 60000 });
