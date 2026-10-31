@@ -2,7 +2,6 @@
 
 import sys
 import os
-import logging
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
 from splunklib.searchcommands import \
@@ -20,12 +19,12 @@ class ADBMergeCommand(ReportingCommand):
         **Syntax:** **max_keys=***<number>*
         **Description:** The maximum number of unique keys a merged asset can have. Assets in a larger cluster are dropped (and counted in the log). Large numbers of keys can reduce merge performance.
         ''', require=True, validate=Integer(1))
-     
+
     @Configuration()
     def map(self, events):
         for event in events:
             yield event
-    
+
     def reduce(self, events):
         merged, null_keys, large_keys, total = merge_assets(events, self.max_keys)
 

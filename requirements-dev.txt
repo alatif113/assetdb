@@ -3,3 +3,4 @@ pytest-cov==7.1.0
 requests==2.34.2
 splunk-appinspect==4.4.0
 shellcheck-py==0.11.0.1
+ruff==0.17.3

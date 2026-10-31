@@ -4,7 +4,8 @@
 	"description": "",
 	"scripts": {
 		"build": "bash scripts/build-minjs.sh",
-		"test": "node --test tests/js/*.test.js"
+		"test": "node --test tests/js/*.test.js",
+		"lint": "eslint ."
 	},
 	"repository": {
 		"type": "git",
@@ -20,6 +21,10 @@
 		"@babel/cli": "^7.15.4",
 		"@babel/core": "^7.15.5",
 		"@babel/preset-env": "^7.15.6",
+		"@eslint/js": "^9.39.5",
+		"eslint": "^9.39.5",
+		"globals": "^17.13.0",
+		"prettier": "^3.9.10",
 		"terser": "^5.8.0",
 		"underscore": "1.13.8"
 	},

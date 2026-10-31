@@ -1,0 +1,7 @@
+[tool.ruff]
+line-length = 140
+extend-exclude = ["lib", "node_modules", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+ignore = ["E501"]  # long literal lines in tests and the splunklib option doc

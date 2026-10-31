@@ -55,7 +55,7 @@ class Splunk(object):
         if not self.token and not (self.user and self.password):
             pytest.exit("Set SPLUNK_TOKEN or SPLUNK_USER and SPLUNK_PASSWORD", returncode=3)
         if os.environ.get("SPLUNK_INSECURE_TLS") == "1":
-            warnings.warn("SPLUNK_INSECURE_TLS=1: TLS certificate verification is DISABLED")
+            warnings.warn("SPLUNK_INSECURE_TLS=1: TLS certificate verification is DISABLED", stacklevel=2)
             self.verify = False
             requests.packages.urllib3.disable_warnings()
         else:

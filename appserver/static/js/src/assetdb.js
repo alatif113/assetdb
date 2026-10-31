@@ -40,8 +40,8 @@ require([
 	}
 
 	const FIELD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-	const SOURCE_NAME_RE = /^[A-Za-z0-9_.\-]+$/;
-	const LOOKUP_FILE_RE = /^[A-Za-z0-9_.\-]+$/;
+	const SOURCE_NAME_RE = /^[A-Za-z0-9_.-]+$/;
+	const LOOKUP_FILE_RE = /^[A-Za-z0-9_.-]+$/;
 	const MERGE_ORDER_RE = /^[A-Za-z0-9_]+$/;
 	const MERGE_METHODS = ['latest', 'min', 'max', 'avg', 'coalesce'];
 	const DEFAULT_MAX_KEYS = 25;

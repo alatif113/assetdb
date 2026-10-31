@@ -140,3 +140,10 @@ touched. If a run is killed, remove leftovers matching `adbtest_*` under Setting
 | `KV store not ready` | wait (it initialises after restart); `splunk show kvstore-status` on the server |
 | Old UI after deploy | run `reload.sh`, hard-refresh; the integration test compares served `assetdb.min.js` with the repo build |
 | `rsync is not installed on host` | install rsync on the server |
+
+## Lint
+
+`make lint` = shellcheck (`scripts/`, `tests/shell/`), ESLint (`eslint.config.js`; 0 errors required,
+existing `==` / unused-variable warnings are tolerated up to a cap) and ruff (`pyproject.toml`).
+`lib/`, `*.min*.js`, `prism.js` and `dist/` are excluded. Prettier settings are in `.prettierrc`
+(tabs, single quotes, 140 columns) but formatting is not enforced.
