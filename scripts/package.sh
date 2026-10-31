@@ -35,7 +35,8 @@ EXCLUDES=(
   '.*' node_modules tests scripts docs mockups dist local local.meta
   '*.pyc' __pycache__ '*.swp' '*~' '.DS_Store'
   CLAUDE.md package.json package-lock.json babel.config.json Makefile
-  pytest.ini requirements-dev.txt coverage
+  pytest.ini requirements-dev.txt coverage eslint.config.js pyproject.toml
+  '* [0-9].*' '* [0-9]'   # iCloud Drive conflict copies ("name 2.py")
   appserver/static/js/src
   static/slides.gif   # README illustration only; AppInspect allows only png in static/
 )
