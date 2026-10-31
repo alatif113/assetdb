@@ -3,19 +3,29 @@ require([
 	'jquery',
 	'splunkjs/mvc',
 	'splunkjs/mvc/searchmanager',
-	'/static/app/assetdb/js/modal.min.js',
-	'/static/app/assetdb/js/textInput.min.js',
-	'/static/app/assetdb/js/radioInput.min.js',
-	'/static/app/assetdb/js/spinnerInput.min.js',
-	'/static/app/assetdb/js/multiselectInput.min.js',
-	'/static/app/assetdb/js/format.min.js',
+	'../app/assetdb/js/modal.min',
+	'../app/assetdb/js/textInput.min',
+	'../app/assetdb/js/radioInput.min',
+	'../app/assetdb/js/spinnerInput.min',
+	'../app/assetdb/js/multiselectInput.min',
+	'../app/assetdb/js/format.min',
 	'splunkjs/mvc/simpleform/input/dropdown',
+	'splunkjs/mvc/utils',
 	'splunkjs/mvc/simplexml/ready!',
-], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, DropdownInput) {
+], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, DropdownInput, MvcUtils) {
 	const $el = $('#ab_config');
 	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
 	const VALIDATION_ENDPOINT = '/services/search/v2/parser';
 	const SERVICE = mvc.createService();
+
+	/**
+	 * Splunk Web URL for a path such as /app/assetdb/search, with the root endpoint and locale prefix.
+	 */
+	function makeUrl(path) {
+		const root = (typeof window !== 'undefined' && window.$C && window.$C.MRSPARKLE_ROOT_PATH) || '';
+		const locale = MvcUtils.getPageInfo().locale;
+		return `${root}/${locale}${path}`;
+	}
 	
 	/**
 	 * JSON.parse that returns `fallback` instead of throwing on malformed or non-string input.
@@ -813,8 +823,8 @@ require([
 					</section>
 					<section data-section-id="section-search">
 						<p><i class="icon-info-circle"></i> Auto generated search that merges all asset lookups according to configured fields and their respective merge settings.</p>
-						<a target="_blank" href="/app/assetdb/search?s=%2FservicesNS%2Fnobody%2Fassetdb%2Fsaved%2Fsearches%2Fassetdb-lookupgen" class="btn btn-primary">Run Search <i class="icon-external"></i></a>
-						<a target="_blank" href="/manager/assetdb/saved/searches?app=assetdb&search=assetdb-lookupgen" class="btn btn-edit-schedule">Edit Schedule <i class="icon-external"></i></a>
+						<a target="_blank" href="${makeUrl('/app/assetdb/search')}?s=%2FservicesNS%2Fnobody%2Fassetdb%2Fsaved%2Fsearches%2Fassetdb-lookupgen" class="btn btn-primary">Run Search <i class="icon-external"></i></a>
+						<a target="_blank" href="${makeUrl('/manager/assetdb/saved/searches')}?app=assetdb&search=assetdb-lookupgen" class="btn btn-edit-schedule">Edit Schedule <i class="icon-external"></i></a>
 						<div class="query-container">
 							<div class="formatted-query"></div>
 						</div>

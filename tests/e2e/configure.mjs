@@ -20,10 +20,22 @@ if (await page.locator('input[name=username]').count()) {
   await page.click('input[type=submit], button[type=submit]');
   await page.waitForLoadState('networkidle');
 }
+// Splunk Web caches app static files for a year per build; bump so the freshly deployed JS/CSS is served.
+await page.goto(`${base}/en-US/app/assetdb/configure`);
+const csrf = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
+if (csrf) {
+  await ctx.request.post(`${base}/en-US/_bump`, { headers: { 'X-Splunk-Form-Key': csrf.value }, form: { splunk_form_key: csrf.value } });
+}
 await page.goto(`${base}/en-US/app/assetdb/configure`);
 await page.waitForSelector('#ab_config', { timeout: 60000 });
 // Splunk polls forever, so 'networkidle' never fires here; wait for the SPA to render instead.
 await page.waitForSelector('#ab_config .lookups-table', { timeout: 60000 });
+// Links must be built with the locale/root_endpoint prefix
+await page.click('#ab_config a.tab-label:has-text("Asset Merge Search")');
+const runHref = await page.getAttribute('#ab_config a:has-text("Run Search")', 'href');
+const schedHref = await page.getAttribute('#ab_config a:has-text("Edit Schedule")', 'href');
+if (!/^\/[a-z]{2}-[A-Z]{2}\/app\/assetdb\/search\?/.test(runHref)) errors.push(`Run Search link is not locale prefixed: ${runHref}`);
+if (!/^\/[a-z]{2}-[A-Z]{2}\/manager\/assetdb\//.test(schedHref)) errors.push(`Edit Schedule link is not locale prefixed: ${schedHref}`);
 await page.screenshot({ path: process.env.E2E_SCREENSHOT || 'dist/e2e-configure.png' });
 await browser.close();
 

@@ -1,4 +1,4 @@
-define(['/static/app/assetdb/js/prism.min.js', 'jquery', 'underscore'], function (Prism, $, _) {
+define(['./prism.min', 'jquery', 'underscore'], function (Prism, $, _) {
 	function flatten(content) {
 		if (Array.isArray(content)) return content.map(flatten).join('');
 		if (content && typeof content == 'object') return flatten(content.content);

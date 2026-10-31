@@ -43,7 +43,7 @@ function load({ confEntries = [] } = {}) {
 	const mvc = { createService: () => service };
 
 	const sandbox = { module: { exports: {} }, console };
-	sandbox.require = (deps, fn) => fn(underscore, $, mvc, noop, noop, noop, noop, noop, noop, noop, noop);
+	sandbox.require = (deps, fn) => fn(underscore, $, mvc, noop, noop, noop, noop, noop, noop, noop, noop, noop);
 	vm.runInNewContext(source, sandbox, { filename: SRC });
 	return sandbox.module.exports;
 }
