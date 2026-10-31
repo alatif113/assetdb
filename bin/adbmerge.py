@@ -36,6 +36,16 @@ class ADBMergeCommand(ReportingCommand):
             yield event
 
     def reduce(self, events):
+        # Splunk's chunked protocol calls reduce once per input chunk, and a chunk holds only part of the rows (tens of thousands).
+        # Merging per chunk would silently miss every cluster that spans two chunks, so the rows are collected and merged once, in
+        # the last chunk. Only the keys are sent through this command (see the generated search), which keeps the buffer small.
+        if not hasattr(self, '_adb_buffer'):
+            self._adb_buffer = []
+        self._adb_buffer.extend(events)
+        if not self._finished:
+            return
+        events, self._adb_buffer = self._adb_buffer, []
+
         if self.overflow not in ('drop', 'emit'):
             raise ValueError('overflow must be drop or emit')
         result = merge(events, self.max_keys, self.max_key_share, emit_overflow=(self.overflow == 'emit'))
