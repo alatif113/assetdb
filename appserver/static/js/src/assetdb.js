@@ -277,6 +277,57 @@ require([
 	}
 
 	/**
+	 * Plain table from result rows (text only).
+	 */
+	function renderTable(rows, columns) {
+		const $table = $('<table class="table table-striped table-condensed"></table>');
+		$table.append($('<thead></thead>').append($('<tr></tr>').append(columns.map((c) => $('<th></th>').text(c.replace(/_/g, ' '))))));
+		$table.append($('<tbody></tbody>').append(rows.map((row) => $('<tr></tr>').append(columns.map((c) => {
+			const v = row[c];
+			return $('<td></td>').text(Array.isArray(v) ? v.join(', ') : (v === undefined ? '' : v));
+		})))));
+		return $table;
+	}
+
+	/**
+	 * Run the merge up to adbmerge without writing anything and show what it would produce, next to what
+	 * assetdb holds now. It does the work of a real run (minus the writes), so it can take a while on big inventories.
+	 */
+	function previewMerge() {
+		const modal = new Modal({
+			wide: true,
+			title: 'Merge Preview',
+			primaryButton: 'Close',
+			onRemove: function () {},
+			onPrimaryBtnClick: function () {
+				this.hide();
+			},
+		});
+		const $body = $('<div class="adb-preview"><p>Running the merge without saving it...</p></div>');
+		modal.setBody($body);
+		modal.show();
+
+		const oneshot = (search) => $.when(SERVICE.post('/servicesNS/nobody/assetdb/search/jobs', { search, exec_mode: 'oneshot', output_mode: 'json', count: 0 }).promise())
+			.then((data) => safeParse(Array.isArray(data) ? data[0] : data, {}).results || []);
+
+		$.when(makeMergeSearchLines([]))
+			.then((lines) => Generator.buildPreviewSearches(lines))
+			.then((searches) => $.when(oneshot(searches.summary), oneshot(searches.clusters), oneshot(searches.sources), oneshot(searches.current)))
+			.done((summary, clusters, sources, current) => {
+				const s = (summary && summary[0]) || {};
+				const now = ((current && current[0]) || {}).assets;
+				$body.empty()
+					.append($('<p></p>').append($('<b></b>').text(`${s.assets || 0} assets`)).append(document.createTextNode(` would be produced${now !== undefined ? ` (assetdb holds ${now} now)` : ''}.`)))
+					.append(renderTable([s], ['assets', 'merge_inputs', 'overflow_clusters', 'rows_without_keys', 'shared_keys_skipped', 'rows_dropped_for_shared_keys', 'enrich_unmatched', 'enrich_ambiguous']))
+					.append($('<h4 class="adb-group-title"></h4>').text('Assets per source'))
+					.append(renderTable(sources || [], ['source', 'assets']))
+					.append($('<h4 class="adb-group-title"></h4>').text('Largest merged assets (by number of keys)'))
+					.append(renderTable(clusters || [], ['keys', 'source', 'asset']));
+			})
+			.fail((err) => $body.empty().append($('<div class="error-message"></div>').text(`The preview could not run: ${describeError(err)}`)));
+	}
+
+	/**
 	 * Offer the CIM-shaped asset fields that are not configured yet.
 	 */
 	function addCimFields(fieldArray) {
@@ -1285,12 +1336,7 @@ require([
 				const $body = $('.adb-runs-body', $runs).empty();
 				if (!rows.length) return $body.text('No runs recorded yet. The first scheduled or manual run of the merge search creates the first record.');
 				const cols = ['run_time', 'status', 'assets_out', 'assets_prev', 'rows_in', 'null_keys', 'overflow_assets', 'junk_keys', 'enrich_unmatched', 'enrich_ambiguous'];
-				const $table = $('<table class="table table-striped table-condensed"></table>');
-				$table.append($('<thead></thead>').append($('<tr></tr>').append(cols.map((c) => $('<th></th>').text(c.replace(/_/g, ' '))))));
-				$table.append($('<tbody></tbody>').append(rows.map((row) => $('<tr></tr>').append(cols.map((c) => {
-					const v = row[c];
-					return $('<td></td>').text(c === 'run_time' && v ? new Date(parseFloat(v) * 1000).toLocaleString() : (v === undefined ? '' : v));
-				})))));
+				const $table = renderTable(rows.map((row) => Object.assign({}, row, { run_time: row.run_time ? new Date(parseFloat(row.run_time) * 1000).toLocaleString() : '' })), cols);
 				$body.append($table);
 			})
 			.fail(() => $('.adb-runs-body', $runs).text('The run history could not be read.'));
@@ -1423,6 +1469,7 @@ require([
 						<p><i class="icon-info-circle"></i> Auto generated search that merges all asset lookups according to configured fields and their respective merge settings.</p>
 						<a target="_blank" href="${makeUrl('/app/assetdb/search')}?s=%2FservicesNS%2Fnobody%2Fassetdb%2Fsaved%2Fsearches%2Fassetdb-lookupgen" class="btn btn-primary">Run Search <i class="icon-external"></i></a>
 						<a target="_blank" href="${makeUrl('/manager/assetdb/saved/searches')}?app=assetdb&search=assetdb-lookupgen" class="btn btn-edit-schedule">Edit Schedule <i class="icon-external"></i></a>
+						<a href="#" class="btn btn-preview-merge">Preview <i class="icon-search"></i></a>
 						<div class="query-container">
 							<div class="formatted-query"></div>
 						</div>
@@ -1463,6 +1510,7 @@ require([
 
 			$('.btn-add-field', $container).on('click', () => editAddField(fieldArray));
 			$('.btn-add-cim-fields', $container).on('click', () => addCimFields(fieldArray));
+			$('.btn-preview-merge', $container).on('click', () => { previewMerge(); return false; });
 			$('.btn-add-lookup', $container).on('click', () => addLookup(lookupArray));
 
 			lookupArray.forEach(function (lookup) {

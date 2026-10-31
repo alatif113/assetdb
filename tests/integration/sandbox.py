@@ -72,6 +72,14 @@ class Sandbox(object):
         self.sources.append(entry)
         return lookup
 
+    def preview(self):
+        """Run the preview searches (read only) and return {name: rows}."""
+        out = subprocess.check_output(["node", os.path.join(ROOT, "tests", "integration", "gen_preview.js")],
+                                      input=json.dumps(self.fieldarray()).encode(), cwd=ROOT)
+        searches = json.loads(out.decode())
+        searches["current"] = searches["current"].replace("assetdb", self.kv)
+        return dict((name, self.splunk.search(spl)) for name, spl in searches.items())
+
     def rewrite_source(self, name, rows, header=None):
         """Replace the rows of an existing source lookup (same file, new content)."""
         entry = [e for e in self.sources if e["name"] == name][0]

@@ -154,6 +154,14 @@ try {
   check((await macro()).includes(`${name} AS asset_${name}`), 'adb_enrich_outputs lists the new field');
   check((await fieldsList()).split(',').includes(name) && (await fieldsList()).includes('last_seen'), 'transforms fields_list updated (incl. last_seen)');
 
+  // merge preview: runs the pipeline up to adbmerge without writing and shows the numbers
+  await page.click('#ab_config a.tab-label:has-text("Asset Merge Search")');
+  await page.click('#ab_config .btn-preview-merge');
+  await page.waitForSelector('.modal:visible .adb-preview b', { timeout: 120000 });
+  check(/^\d+ assets$/.test(await modal().locator('.adb-preview b').first().innerText()), 'merge preview shows how many assets the merge would produce');
+  await page.click('.modal:visible .btn-primary');
+  await page.waitForTimeout(800);
+
   // delete it again
   await page.click('#ab_config a.tab-label:has-text("Asset Fields")');
   await page.click(`#ab_config tr[data-name="${name}"] .adb-field-delete`);

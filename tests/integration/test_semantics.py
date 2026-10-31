@@ -268,3 +268,20 @@ def test_conflicting_values_across_sources_are_flagged(sandbox):
     rows = {r["mac"][0]: r for r in sandbox.run()}
     assert rows["m1"]["conflicts"] == ["owner"], rows["m1"]
     assert not rows["m2"].get("conflicts"), rows["m2"]
+
+
+# --- merge preview ----------------------------------------------------------------------------------
+
+def test_preview_summarises_the_merge_without_writing_anything(sandbox):
+    sandbox.general = {"max_keys": "3", "max_key_share": "0", "key_blocklist": "[]"}
+    sandbox.fields = [field("mac", key_field="1"), field("ip", key_field="1")]
+    rows = [{"mac": "big%d" % i, "ip": "10.0.0.1"} for i in range(4)] + [{"mac": "m1", "ip": "10.0.0.9"}, {"mac": "m1", "ip": "10.0.0.10"}, {"mac": "", "ip": ""}]
+    sandbox.add_source("a", rows)
+    sandbox.create_kv(["mac", "ip"])
+    result = sandbox.preview()
+    summary = result["summary"][0]
+    assert (summary["assets"], summary["overflow_clusters"]) == ("1", "1"), summary          # m1 + its two ips is one asset (two key sets); the big cluster overflows
+    assert result["current"][0]["assets"] == "0", "nothing was written: the temporary collection is still empty"
+    assert sandbox.rows() == [] and sandbox.overflow_rows() == [] and sandbox.runs_rows() == []
+    assert result["clusters"][0]["keys"] == "3"
+    assert [r["source"] for r in result["sources"]] == ["a"]

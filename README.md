@@ -130,6 +130,8 @@ The columns come from the `adb_enrich_outputs` macro, which the Configure page k
 
 Merging is done via a custom command `adbmerge` and saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store. 
 
+**Preview.** The *Preview* button on this tab runs the merge up to the `adbmerge` command without saving anything and shows how many assets it would produce (next to what `assetdb` holds now), how many assets each source contributes, the largest merged assets and the counters (overflow clusters, rows without keys, skipped shared keys, unmatched enrich rows). Use it before changing key fields, normalizers or blocklists. It does the work of a real run minus the writes, so on a large inventory it takes about as long.
+
 ### Operational notes
 
 - **Rewrite window.** The merge search ends with `outputlookup assetdb`, which replaces the collection. Measured on Splunk 10.4.2 with a 45,000 row collection rewritten in about 2 seconds while six readers polled it, roughly 1 in 70 reads returned no results during a rewrite. Searches that use `| lookup assetdb` during the nightly run (default `0 0 * * *`, with a 60 minute schedule window) can therefore miss matches briefly. Schedule the search outside the hours that matter.

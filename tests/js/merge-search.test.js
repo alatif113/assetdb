@@ -468,3 +468,20 @@ test('CIM preset fields are valid for the generator, use CIM names and keep with
 	const spl = gen(presets);
 	assert.ok(spl.includes('`normalize_mac(mac)`') && spl.includes('`normalize_hostname(nt_host)`') && spl.includes('mvfilter(match(mac'), spl);
 });
+
+// --- merge preview -----------------------------------------------------------------------
+
+test('preview searches stop at adbmerge, never write, and summarise the result', () => {
+	const { buildPreviewSearches } = require('./load-generator').loadGenerator();
+	const lines = JSON.parse(JSON.stringify(load().makeMergeSearchLines([general, single('mac', { key_field: '1' }), single('owner')])));
+	const p = buildPreviewSearches(lines);
+	for (const key of ['summary', 'clusters', 'sources']) {
+		assert.ok(p[key].includes('| adbmerge max_keys=25'), key);
+		assert.ok(!/outputlookup|collect|appendpipe/.test(p[key]), `${key} must not write: ${p[key]}`);
+		assert.ok(!p[key].includes('```'), 'comment lines are not part of the search');
+	}
+	assert.ok(p.summary.endsWith('max(adb_enrich_ambiguous) as enrich_ambiguous'), p.summary);
+	assert.ok(p.clusters.includes('| sort 0 -keys | head 10'), p.clusters);
+	assert.equal(p.current, '| inputlookup assetdb | stats count as assets');
+	assert.throws(() => buildPreviewSearches([{ kind: 'command', text: '| outputlookup assetdb' }]), /adbmerge/);
+});

@@ -231,6 +231,25 @@ define([], function () {
 	}
 	
 	/**
+	 * Read-only searches that show what the merge would produce, built from the generated lines: everything up to and
+	 * including the adbmerge command (so nothing is written) followed by a small summary tail.
+	 *
+	 * @param {Array}	lines	Lines from buildSearchLines
+	 * @return {Object}		{ summary, clusters, sources, current } SPL strings
+	 */
+	function buildPreviewSearches(lines) {
+		const at = lines.findIndex((line) => line.kind === 'command' && line.text.startsWith('| adbmerge '));
+		if (at < 0) throw new Error('The merge search has no adbmerge step to preview');
+		const base = lines.slice(0, at + 1).filter((line) => line.kind === 'command').map((line) => line.text).join('\n');
+		return {
+			summary: `${base}\n| stats dc(eval(if(isnull(adb_overflow), md5(mvjoin(mvsort(asset), "::")), null()))) as assets, count(eval(adb_overflow=1)) as overflow_clusters, max(adb_total) as merge_inputs, max(adb_null_keys) as rows_without_keys, max(adb_junk_keys) as shared_keys_skipped, max(adb_junk_rows) as rows_dropped_for_shared_keys, max(adb_enrich_unmatched) as enrich_unmatched, max(adb_enrich_ambiguous) as enrich_ambiguous`,
+			clusters: `${base}\n| where isnull(adb_overflow) | eval keys=mvcount(asset), adb_id=md5(mvjoin(mvsort(asset), "::")) | dedup adb_id | sort 0 -keys | head 10 | table asset keys source`,
+			sources: `${base}\n| where isnull(adb_overflow) | eval adb_id=md5(mvjoin(mvsort(asset), "::")) | mvexpand source | stats dc(adb_id) as assets by source | sort 0 -assets`,
+			current: '| inputlookup assetdb | stats count as assets',
+		};
+	}
+
+	/**
 	 * CIM-shaped asset fields (the names of the Splunk Common Information Model / ES asset schema) with sensible
 	 * defaults. Only names and defaults: nothing here needs the CIM add-on or Enterprise Security.
 	 */
@@ -573,6 +592,7 @@ define([], function () {
 		FIELD_NAME_RE: FIELD_NAME_RE,
 		NORMALIZERS: NORMALIZERS,
 		cimPresetFields: cimPresetFields,
+		buildPreviewSearches: buildPreviewSearches,
 		VALIDATION_TYPES: VALIDATION_TYPES,
 		VALUE_TYPES: VALUE_TYPES,
 		HARD_MAX_KEYS: HARD_MAX_KEYS,
