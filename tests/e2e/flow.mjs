@@ -182,10 +182,13 @@ try {
     for (const n of presetNames.filter((x) => present.includes(x))) await ctx.request.delete(`${root}/configs/conf-assetdb/${n}`, { headers: hdr }).catch(() => {});
     if (originalFieldsList !== undefined) await ctx.request.post(`${root}/configs/conf-transforms/assetdb`, { headers: hdr, form: { fields_list: originalFieldsList } }).catch(() => {});
     if (originalMacro !== undefined) await ctx.request.post(`${root}/data/macros/adb_enrich_outputs`, { headers: hdr, form: { definition: originalMacro } }).catch(() => {});
+    // only clear settings that exist: blank entries for unknown names would count against the 10 index limit
+    const current = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb').catch(() => ({ entry: [{ content: {} }] }))).entry[0].content;
     const clear = {};
-    for (const n of presetNames) { clear[`accelerated_fields.${n}`] = ''; clear[`field.${n}`] = ''; }
-    await ctx.request.post(`${root}/storage/collections/config/assetdb`, { headers: hdr, form: clear }).catch(() => {});
-    check(!(await conf().catch(() => [])).some((e) => presetNames.includes(e.name)), 'CIM fields cleaned up');
+    for (const n of presetNames) for (const k of [`accelerated_fields.${n}`, `field.${n}`]) if (current[k]) clear[k] = '';
+    if (Object.keys(clear).length) await ctx.request.post(`${root}/storage/collections/config/assetdb`, { headers: hdr, form: clear }).catch(() => {});
+    const after = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb').catch(() => ({ entry: [{ content: {} }] }))).entry[0].content;
+    check(!(await conf().catch(() => [])).some((e) => presetNames.includes(e.name)) && presetNames.every((n) => !after[`accelerated_fields.${n}`] && !after[`field.${n}`]), 'CIM fields cleaned up (config and collection)');
   }
   // the UI regenerates the saved search on every change; put back what was there before
   const csrf = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
