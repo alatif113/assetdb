@@ -10,7 +10,7 @@ from splunklib.searchcommands import \
 from splunklib.searchcommands.validators import Integer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from adbmerge_core import HARD_MAX_KEYS, merge
+from adbmerge_core import HARD_MAX_KEYS, merge, with_common_fields
 
 @Configuration()
 class ADBMergeCommand(ReportingCommand):
@@ -25,17 +25,24 @@ class ADBMergeCommand(ReportingCommand):
         **Description:** A key found in more than this many input rows is not used to match assets (0 turns the check off). Such keys, e.g. a NAT address, would chain unrelated assets together.
         ''', require=False, default=0, validate=Integer(0, 1000000))
 
+    overflow = Option(doc='''
+        **Syntax:** **overflow=***<drop|emit>*
+        **Description:** What to do with clusters larger than max_keys. drop (default) discards them; emit also outputs one event per cluster with adb_overflow=1, a sample of its keys and its size so they can be reviewed.
+        ''', require=False, default='drop')
+
     @Configuration()
     def map(self, events):
         for event in events:
             yield event
 
     def reduce(self, events):
-        result = merge(events, self.max_keys, self.max_key_share)
+        if self.overflow not in ('drop', 'emit'):
+            raise ValueError('overflow must be drop or emit')
+        result = merge(events, self.max_keys, self.max_key_share, emit_overflow=(self.overflow == 'emit'))
         stats = result.stats
         result.annotate()
 
-        for event in result.merged:
+        for event in with_common_fields(list(result.merged) + list(result.overflow)):
             yield event
 
         self.logger.info('adbmerge: {total} assets in, {null_keys} ignored with null keys, {large_keys} dropped for sharing more than {max_keys} '

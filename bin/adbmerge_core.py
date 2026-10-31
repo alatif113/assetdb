@@ -28,6 +28,7 @@ class MergeResult(object):
 
     def __init__(self):
         self.merged = []
+        self.overflow = []  # one event per cluster that was too large to merge (only with emit_overflow)
         self.stats = {'total': 0, 'null_keys': 0, 'large_keys': 0, 'enrich_unmatched': 0, 'enrich_ambiguous': 0, 'junk_keys': 0, 'junk_rows': 0}
         self.junk = []  # (key, rows) of the most widely shared keys that were removed, most shared first
 
@@ -63,7 +64,7 @@ def _is_enrich(event):
     return value is not None and str(value).strip() == '0'
 
 
-def merge(events, max_keys, max_key_share=0):
+def merge(events, max_keys, max_key_share=0, emit_overflow=False):
     """Merge assets that share any key, directly or transitively.
 
     Authoritative rows create assets and link assets together. Enrich-only rows (adb_auth=0) never create or link
@@ -74,6 +75,7 @@ def merge(events, max_keys, max_key_share=0):
     :param max_key_share: a key found in more than this many input rows is not used to match (0 disables). Such keys
         (a NAT address, a golden image host name) would otherwise chain unrelated assets into one cluster. Rows left
         without any key are dropped and counted
+    :param emit_overflow: also return one summary event per dropped cluster in MergeResult.overflow
     :return: MergeResult
     """
     result = MergeResult()
@@ -144,10 +146,23 @@ def merge(events, max_keys, max_key_share=0):
     for first_key, event in entries:
         groups.setdefault(first_key, []).append(event)
 
+    overflow = {}  # root -> [rows, sources, source_lookups] of clusters that were too large
+
+    def note_overflow(root, events_):
+        info = overflow.setdefault(root, [0, set(), set()])
+        for event_ in events_:
+            info[0] += 1
+            for index, field in ((1, 'source'), (2, 'source_lookup')):
+                value = event_.get(field)
+                for item in (value if isinstance(value, list) else [value]):
+                    if item not in (None, ''):
+                        info[index].add(item)
+
     for first_key, group in groups.items():
         root = _find(parent, first_key)
         if root not in members:
             stats['large_keys'] += len(group)
+            note_overflow(root, group)
             continue
         keys = sorted(members[root])
         for event in group:
@@ -167,8 +182,37 @@ def merge(events, max_keys, max_key_share=0):
                 result.merged.append(event)
             else:
                 stats['large_keys'] += 1
+                note_overflow(root, [event])
+
+    if emit_overflow and overflow:
+        cluster_keys = {}
+        for key in parent:
+            root = _find(parent, key)
+            if root in overflow:
+                cluster_keys.setdefault(root, []).append(key)
+        for root, (rows_, sources, lookups) in sorted(overflow.items(), key=lambda kv: -kv[1][0]):
+            keys = sorted(cluster_keys.get(root, []))
+            result.overflow.append({
+                'adb_overflow': 1, 'asset': keys[:20], 'adb_cluster_keys': len(keys), 'adb_cluster_rows': rows_,
+                'source': sorted(sources), 'source_lookup': sorted(lookups),
+            })
 
     return result
+
+
+def with_common_fields(events):
+    """Give the first event every field name any event has.
+
+    Splunk's chunked protocol takes the column names from the first record written, so a field that only later
+    events have (the overflow summaries) would be silently dropped. Missing values are written empty.
+    """
+    events = list(events)
+    if events:
+        first = events[0]
+        for event in events:
+            for name in event:
+                first.setdefault(name, None)
+    return events
 
 
 def merge_assets(events, max_keys, max_key_share=0):

@@ -292,6 +292,7 @@ require([
 			fieldNames.push('source_lookup');
 			fieldNames.push('last_seen');
 			fieldNames.push('scope');
+			fieldNames.push('conflicts');
 
 			let fields_list = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, fields_list));
@@ -324,6 +325,7 @@ require([
 			fieldNames.push('source_lookup');
 			fieldNames.push('last_seen');
 			fieldNames.push('scope');
+			fieldNames.push('conflicts');
 
 			let fields_list = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, fields_list));
@@ -429,6 +431,17 @@ require([
 			choices: VALIDATION_TYPE_CHOICES,
 			value: field?.content?.validation_type || 'none',
 			help: 'Values that are not of this type are dropped (checked after normalizing)',
+		});
+
+		let trackConflictsInput = new RadioInput({
+			id: 'inputTrackConflicts',
+			label: 'Flag Conflicts',
+			choices: [
+				{ label: 'Yes', value: 1 },
+				{ label: 'No', value: 0 },
+			],
+			value: field?.content?.track_conflicts || 0,
+			help: 'Record this field in the asset\'s conflicts field when its sources disagree (more than one different value), so the assets can be reviewed. Costs memory proportional to the distinct values',
 		});
 
 		let valueTypeInput = new SelectInput({
@@ -582,7 +595,7 @@ require([
 			.append(evalExpInput.getInput());
 
 		$('.input-group-merging', $form).append(fillnullInput.getInput());
-		$('.input-group-single', $form).append(mergeMethodInput.getInput()).append(mergeOrderInput.getInput()).append(valueTypeInput.getInput());
+		$('.input-group-single', $form).append(mergeMethodInput.getInput()).append(mergeOrderInput.getInput()).append(valueTypeInput.getInput()).append(trackConflictsInput.getInput());
 		$('.input-group-multivalue', $form).append(spinnerInput.getInput()).append(mvOrderInput.getInput());
 
 		// Keep Original Case only applies to case insensitive key fields
@@ -695,6 +708,7 @@ require([
 						mv_order: mvOrderInput.getValue(),
 						keep_case: parseInt(keyFieldInput.getValue()) === 1 && parseInt(caseSensitiveInput.getValue()) === 0 ? keepCaseInput.getValue() : 0,
 						description: descriptionInput.getValue(),
+						track_conflicts: fieldTypeInput.getValue() === 'single' ? trackConflictsInput.getValue() : 0,
 						key_scope: parseInt(keyFieldInput.getValue()) === 1 ? keyScopeInput.getValue() : 'global',
 						normalizer: normalizerInput.getValue(),
 						validation_type: validationTypeInput.getValue(),

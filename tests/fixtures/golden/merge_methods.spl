@@ -6,7 +6,10 @@
 | eval {source}_os = os
 | search _key=*
 | stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, max(priority) as priority, min(risk) as risk, sum(score) as score__sum, count(score) as score__count, latest(owner) as owner, latest(lookupB_os) as lookupB_os, latest(lookupA_os) as lookupA_os by _key
-| adbmerge max_keys=25 max_key_share=50
+| adbmerge max_keys=25 max_key_share=50 overflow=emit
+```### Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb ###```
+| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]
+| where isnull(adb_overflow)
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows, max(priority) as priority, min(risk) as risk, sum(score__sum) as score__sum, sum(score__count) as score__count, latest(owner) as owner, latest(lookupB_os) as lookupB_os, latest(lookupA_os) as lookupA_os by _key
 ```### Calculate averages ###```

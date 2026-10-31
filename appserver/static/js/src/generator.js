@@ -102,7 +102,7 @@ define([], function () {
 	}
 
 	// Field names that would collide with the [general] stanza or with Splunk's own fields.
-	const RESERVED_FIELD_NAMES = ['general', 'asset', 'source', 'source_lookup', 'last_seen', 'scope', '_key', '_time', '_raw', 'host', 'index', 'sourcetype', 'linecount', 'punct', 'splunk_server', 'timestartpos', 'timeendpos'];
+	const RESERVED_FIELD_NAMES = ['general', 'asset', 'source', 'source_lookup', 'last_seen', 'scope', 'conflicts', '_key', '_time', '_raw', 'host', 'index', 'sourcetype', 'linecount', 'punct', 'splunk_server', 'timestartpos', 'timeendpos'];
 
 	function isReservedFieldName(name) {
 		return RESERVED_FIELD_NAMES.includes(String(name).toLowerCase());
@@ -244,6 +244,7 @@ define([], function () {
 		let avgEval = [];
 		let usesLatest = false;
 		let recentMv = false;
+		let conflictFields = [];
 		let dedupMv = [];
 		let evalExp = [];
 		let keys = [];
@@ -380,6 +381,12 @@ define([], function () {
 				caseInsensitive.push(name);
 			}
 
+			if (content.field_type == 'single' && parseInt(content.track_conflicts || 0)) {
+				conflictFields.push(name);
+				stats.push(`values(${name}) as ${name}__v`);
+				statsFinal.push(`values(${name}__v) as ${name}__v`);
+			}
+
 			if (content.field_type == 'single' && ['number', 'time'].includes(content.value_type)) typed.push(`${name} = tonumber(${name})`);
 
 			if (content.field_type == 'single') {
@@ -481,11 +488,18 @@ define([], function () {
 		if (recentMv) { section('Sort newest first (multivalue fields keep their most recent values)'); command('| sort 0 -_time'); }
 		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(enrichLookups.length ? ['max(adb_auth) as adb_auth'] : [], keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
 		if (keys.length) { section('Deep merge assets with matching key fields (using custom command)'); command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvappend(${keyRefs.join(', ')})`)); }
-		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}${parseMaxKeyShare(general) ? ` max_key_share=${parseMaxKeyShare(general)}` : ''}`);
+		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}${parseMaxKeyShare(general) ? ` max_key_share=${parseMaxKeyShare(general)}` : ''} overflow=emit`);
+		section('Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb');
+		command('| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]');
+		command('| where isnull(adb_overflow)');
 		command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
 		if (recentMv) command('| sort 0 -_time');
 		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat(RUN_COUNTERS.map((c) => `max(${c}) as ${c}`), statsFinal).join(', ')} by _key`);
 		if (avgEval.length) { section('Calculate averages'); command(`| eval ${avgEval.join(', ')}`); }
+		if (conflictFields.length) {
+			section('Flag fields whose sources disagree');
+			command(`| eval conflicts = mvappend(${conflictFields.map((n) => `if(mvcount(${n}__v) > 1, "${n}", null())`).join(', ')})`);
+		}
 		if (earliestFinal.length) { section('Pick the earliest values'); command(`| eval ${earliestFinal.join(', ')}`); }
 		if (coalesce.length) { section('Define coalesce fields based on lookup priority'); command(`| eval ${coalesce.join(', ')}`); }
 		if (fillnull.length) { section('Fill null values (after the merge, only where an asset has no value at all)'); command(`| eval ${fillnull.join(', ')}`); }
@@ -508,7 +522,7 @@ define([], function () {
 			section('Only write the asset database when the run passed the safety check');
 			command('| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0');
 		}
-		if (table.length) { section('Output to KV store'); command(`| table _key, asset, source, source_lookup, last_seen, ${usesScope ? 'scope, ' : ''}${table.join(', ')}`); }
+		if (table.length) { section('Output to KV store'); command(`| table _key, asset, source, source_lookup, last_seen, ${usesScope ? 'scope, ' : ''}${conflictFields.length ? 'conflicts, ' : ''}${table.join(', ')}`); }
 		command('| outputlookup override_if_empty=false assetdb');
 
 		return lines;

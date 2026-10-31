@@ -19,7 +19,10 @@
 | stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, values(adbk_mac) as adbk_mac, latest(priority) as priority, list(mac) as mac by _key
 ```### Deep merge assets with matching key fields (using custom command) ###```
 | eval _key = adbk_mac
-| adbmerge max_keys=25 max_key_share=50
+| adbmerge max_keys=25 max_key_share=50 overflow=emit
+```### Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb ###```
+| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]
+| where isnull(adb_overflow)
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | sort 0 -_time
 | stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows, latest(priority) as priority, list(mac) as mac by _key

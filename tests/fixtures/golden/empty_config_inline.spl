@@ -1,4 +1,7 @@
 | search _key=*
-| adbmerge max_keys=25 max_key_share=50
+| adbmerge max_keys=25 max_key_share=50 overflow=emit
+```### Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb ###```
+| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]
+| where isnull(adb_overflow)
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | outputlookup override_if_empty=false assetdb

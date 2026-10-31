@@ -1,4 +1,5 @@
 <nav color="#202252" search_view="search">
   <view name="search" />
   <view name="configure" default='true' />
+  <view name="review" />
 </nav>

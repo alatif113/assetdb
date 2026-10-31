@@ -239,3 +239,32 @@ def test_run_history_is_bounded(sandbox):
     for _ in range(6):
         sandbox.run()
     assert len(sandbox.runs_rows()) == 3
+
+
+# --- overflow review and conflicts ---------------------------------------------------------------
+
+def test_overflow_clusters_are_listed_for_review_and_kept_out_of_assetdb(sandbox):
+    sandbox.general = {"max_keys": "3", "max_key_share": "0", "key_blocklist": "[]"}
+    sandbox.fields = [field("mac", key_field="1"), field("ip", key_field="1")]
+    rows = [{"mac": "big%d" % i, "ip": "10.0.0.1"} for i in range(5)] + [{"mac": "ok1", "ip": "10.0.0.9"}]   # five hosts share one ip: 6 keys > 3
+    sandbox.add_source("a", rows)
+    out = sandbox.run()
+    assert [r["mac"][0] for r in out] == ["ok1"], out
+    overflow = sandbox.overflow_rows()
+    assert len(overflow) == 1, overflow
+    assert overflow[0]["cluster_keys"] == "6" and overflow[0]["cluster_rows"] == "5"
+    assert len(overflow[0]["asset"]) == 6 if isinstance(overflow[0]["asset"], list) else False
+    sandbox.rewrite_source("a", [{"mac": "ok1", "ip": "10.0.0.9"}])
+    sandbox.general["min_ratio"] = "0"
+    sandbox.run()
+    assert sandbox.overflow_rows() == [], "a run without overflow clears the old list"
+
+
+def test_conflicting_values_across_sources_are_flagged(sandbox):
+    sandbox.fields = [field("mac", key_field="1"), field("owner", field_type="single", track_conflicts="1"),
+                      field("os", field_type="single", track_conflicts="1"), field("note", field_type="single")]
+    sandbox.add_source("a", [{"mac": "m1", "owner": "alice", "os": "linux", "note": "x"}, {"mac": "m2", "owner": "bob", "os": "linux", "note": "x"}])
+    sandbox.add_source("b", [{"mac": "m1", "owner": "carol", "os": "linux", "note": "y"}, {"mac": "m2", "owner": "bob", "os": "linux", "note": "y"}])
+    rows = {r["mac"][0]: r for r in sandbox.run()}
+    assert rows["m1"]["conflicts"] == ["owner"], rows["m1"]
+    assert not rows["m2"].get("conflicts"), rows["m2"]

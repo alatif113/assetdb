@@ -1,0 +1,52 @@
+<dashboard version="1.1">
+  <label>Review</label>
+  <description>Run health, clusters that were too large to merge, and assets whose sources disagree.</description>
+  <row>
+    <panel>
+      <title>Latest runs</title>
+      <table>
+        <search>
+          <query>| inputlookup assetdb_runs | sort 0 -run_time | head 20 | eval run_time=strftime(run_time, "%F %T") | table run_time status assets_out assets_prev rows_in null_keys overflow_assets junk_keys enrich_unmatched enrich_ambiguous</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Clusters too large to merge (from the last run)</title>
+      <html>
+        <p>Each row is a group of assets that chained together through shared keys into more than <i>Max Keys</i> keys, so it was left out of the asset database. This is usually one shared key (a NAT address, a golden image host name): add it to the Key Blocklist on the Settings tab. <code>asset</code> shows up to 20 of the keys.</p>
+      </html>
+      <table>
+        <search>
+          <query>| inputlookup assetdb_overflow | sort 0 -cluster_rows | table asset cluster_keys cluster_rows source source_lookup</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Assets whose sources disagree</title>
+      <html>
+        <p>Fields marked <i>Flag Conflicts</i> that had more than one different value across the sources of an asset (first 200 assets).</p>
+      </html>
+      <table>
+        <search>
+          <query>| inputlookup assetdb | search conflicts=* | head 200 | table _key asset conflicts source</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+</dashboard>

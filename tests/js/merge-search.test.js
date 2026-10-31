@@ -161,9 +161,9 @@ test('latest keeps _time through the first stats so the second stats can order b
 
 test('max_keys comes from the general stanza, default 25, invalid values fall back', () => {
 	const withKeys = (v) => gen([single('f')], { name: 'general', content: { lookups: general.content.lookups, max_keys: v } });
-	assert.match(withKeys('40'), /\| adbmerge max_keys=40 max_key_share=50\n/);
-	assert.match(withKeys('500'), /\| adbmerge max_keys=100 max_key_share=50\n/, 'hard cap');
-	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25 max_key_share=50\n/, String(bad));
+	assert.match(withKeys('40'), /\| adbmerge max_keys=40 max_key_share=50 overflow=emit\n/);
+	assert.match(withKeys('500'), /\| adbmerge max_keys=100 max_key_share=50 overflow=emit\n/, 'hard cap');
+	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit\n/, String(bad));
 });
 
 test('last_seen is the max source _time, carried through both stats and written to the output', () => {
@@ -378,10 +378,10 @@ test('an explicit key_blocklist replaces the defaults, and an empty one disables
 
 test('max_key_share is passed to adbmerge unless it is 0', () => {
 	const withShare = (v) => gen([single('mac', { key_field: '1' })], { name: 'general', content: { lookups: general.content.lookups, max_key_share: v } });
-	assert.match(withShare(undefined), /\| adbmerge max_keys=25 max_key_share=50\n/);
-	assert.match(withShare('200'), /\| adbmerge max_keys=25 max_key_share=200\n/);
-	assert.match(withShare('0'), /\| adbmerge max_keys=25\n/);
-	assert.match(withShare('abc'), /max_key_share=50\n/);
+	assert.match(withShare(undefined), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit\n/);
+	assert.match(withShare('200'), /\| adbmerge max_keys=25 max_key_share=200 overflow=emit\n/);
+	assert.match(withShare('0'), /\| adbmerge max_keys=25 overflow=emit\n/);
+	assert.match(withShare('abc'), /max_key_share=50 overflow=emit\n/);
 });
 
 // --- scope (site / tenant) ---------------------------------------------------------------
@@ -417,7 +417,7 @@ test('the search records each run and refuses to overwrite assetdb when the coun
 	assert.ok(spl.includes('inputlookup assetdb_runs | where status="ok" | sort 0 -run_time | head 1'), spl);
 	assert.ok(spl.includes('| sort 0 -run_time | head 50 | outputlookup assetdb_runs | where 1=0]'), spl);
 	assert.ok(spl.includes('status=case(isnull(assets_out) OR assets_out=0, "empty", guard=1, "blocked_low_count", true(), "ok")'), spl);
-	assert.ok(spl.indexOf('| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0') < spl.indexOf('| table _key'), 'helper rows and refused runs are dropped before the table');
+	assert.ok(spl.indexOf('| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0') < spl.indexOf('| table _key, asset'), 'helper rows and refused runs are dropped before the table');
 	assert.ok(spl.indexOf('assetdb_runs | sort') < spl.indexOf('adb_guard=0'), 'the run is recorded even when the write is refused');
 	assert.ok(/\| outputlookup override_if_empty=false assetdb$/.test(spl), 'an empty result never wipes the collection');
 	assert.ok(spl.includes('max(adb_total) as adb_total'), 'adbmerge counters are carried through the final stats');
@@ -430,4 +430,24 @@ test('min_ratio and runs_to_keep fall back to defaults and are clamped', () => {
 	for (const bad of ['2', '-1', 'abc']) assert.ok(cfg({ min_ratio: bad }).includes('adb_prev * 0.5'), bad);
 	assert.ok(cfg({}).includes('head 200 | outputlookup assetdb_runs'), 'default 200 runs');
 	assert.ok(cfg({ runs_to_keep: '999999' }).includes('head 5000 | outputlookup assetdb_runs'), 'capped');
+});
+
+// --- overflow review and conflict flags --------------------------------------------------
+
+test('overflow clusters are emitted by adbmerge, saved for review and kept out of assetdb', () => {
+	const spl = gen([single('mac', { key_field: '1' })]);
+	assert.ok(/\| adbmerge max_keys=25 max_key_share=50 overflow=emit\n/.test(spl), spl);
+	const after = spl.split('overflow=emit')[1];
+	assert.ok(after.includes('| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now()'), after);
+	assert.ok(after.includes('| outputlookup assetdb_overflow | where 1=0]'), 'zero overflow rows clear the old list');
+	assert.ok(after.indexOf('| where isnull(adb_overflow)') < after.indexOf('| eval _key = md5(mvjoin(mvsort(asset)'), 'overflow rows never reach the md5 step');
+});
+
+test('tracked single fields flag a conflict when their sources disagree', () => {
+	const spl = gen([single('owner', { track_conflicts: '1' }), single('os', { track_conflicts: '1', merge_method: 'max' }), single('plain'), mvField('ip', { track_conflicts: '1' })]);
+	assert.ok(spl.includes('values(owner) as owner__v') && spl.includes('values(owner__v) as owner__v'), spl);
+	assert.ok(spl.includes('| eval conflicts = mvappend(if(mvcount(owner__v) > 1, "owner", null()), if(mvcount(os__v) > 1, "os", null()))'), spl);
+	assert.ok(!spl.includes('plain__v') && !spl.includes('ip__v'), 'only tracked single value fields');
+	assert.ok(spl.includes('last_seen, conflicts, '), 'conflicts is written to assetdb');
+	assert.ok(!gen([single('owner')]).includes('conflicts'), 'nothing without tracking');
 });

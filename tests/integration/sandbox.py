@@ -36,7 +36,7 @@ class Sandbox(object):
         self._cleanup.append(lambda: self.splunk.delete(self.ns + "/storage/collections/config/" + self.kv))
         r = self.splunk.post(self.ns + "/data/transforms/lookups", {
             "name": self.kv, "external_type": "kvstore", "collection": self.kv,
-            "fields_list": ",".join(["_key", "asset", "source", "source_lookup", "last_seen", "scope"] + columns)})
+            "fields_list": ",".join(["_key", "asset", "source", "source_lookup", "last_seen", "scope", "conflicts"] + columns)})
         assert r.status_code in (200, 201), r.text
         self._cleanup.append(lambda: self.splunk.delete(self.ns + "/data/transforms/lookups/" + self.kv))
         self.runs = self.kv + "_runs"
@@ -48,6 +48,15 @@ class Sandbox(object):
             "fields_list": "_key,run_time,status,assets_out,assets_prev,rows_in,null_keys,overflow_assets,enrich_unmatched,enrich_ambiguous,junk_keys,junk_rows,min_ratio"})
         assert r.status_code in (200, 201), r.text
         self._cleanup.append(lambda: self.splunk.delete(self.ns + "/data/transforms/lookups/" + self.runs))
+        self.overflow = self.kv + "_overflow"
+        r = self.splunk.post(self.ns + "/storage/collections/config", {"name": self.overflow})
+        assert r.status_code in (200, 201), r.text
+        self._cleanup.append(lambda: self.splunk.delete(self.ns + "/storage/collections/config/" + self.overflow))
+        r = self.splunk.post(self.ns + "/data/transforms/lookups", {
+            "name": self.overflow, "external_type": "kvstore", "collection": self.overflow,
+            "fields_list": "_key,asset,cluster_keys,cluster_rows,source,source_lookup,run_time"})
+        assert r.status_code in (200, 201), r.text
+        self._cleanup.append(lambda: self.splunk.delete(self.ns + "/data/transforms/lookups/" + self.overflow))
 
     def add_source(self, name, rows, header=None, **options):
         """rows: list of dicts. A `source_lookup` column is added like output_adb_lookup does."""
@@ -96,6 +105,9 @@ class Sandbox(object):
                 if isinstance(v, str) and k not in ("_key",):
                     r[k] = [v]
         return rows
+
+    def overflow_rows(self):
+        return self.splunk.search("| inputlookup max=100000 %s" % self.overflow)
 
     def runs_rows(self):
         rows = self.splunk.search("| inputlookup max=100000 %s | sort 0 run_time" % self.runs)
