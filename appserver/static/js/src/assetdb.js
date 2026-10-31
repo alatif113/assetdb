@@ -748,7 +748,7 @@ require([
 	}
 	function chipError(id, v) {
 		if (id === 'allowed' || id === 'order') return S.sources.some((s) => s.name === v) ? '' : `“${v}” is not one of your sources.`;
-		if (v.startsWith('re:')) { if (v.length === 3) return 'Enter a pattern after re:'; try { new RegExp(v.slice(3)); } catch (e) { return `“${v.slice(3)}” is not a valid regular expression.`; } }
+		if (v.startsWith('re:')) { if (v.length === 3) return 'Enter a pattern after re:'; try { new RegExp(v.slice(3)); } catch { return `“${v.slice(3)}” is not a valid regular expression.`; } }
 		if (v.startsWith('cidr:') && !/^[0-9a-fA-F:.]+\/\d{1,3}$/.test(v.slice(5))) return 'Use a network like 10.0.0.0/8.';
 		return '';
 	}
@@ -906,7 +906,7 @@ require([
 		if (create) { const e = fieldNameError(x.name.trim()); if (e) fail('fd-name', e); }
 		if (x.fillnull && x.key) fail('fd-fill', 'Fill null cannot be used on a key field, it would merge unrelated assets');
 		else if (x.fillnull && !/^[a-zA-Z0-9-_]+$/.test(x.fillnull)) fail('fd-fill', 'Fill null can only use alphanumeric characters and underscores');
-		if (x.validation) { try { new RegExp(x.validation); } catch (e) { fail('fd-validation', 'Invalid regular expression'); } }
+		if (x.validation) { try { new RegExp(x.validation); } catch { fail('fd-validation', 'Invalid regular expression'); } }
 		if (x.key && !x.cs && x.keepCase && ['hostname', 'fqdn', 'user', 'email', 'os'].includes(x.norm === 'default' ? (S.general.default_normalizer || 'none') : x.norm)) fail('sw-keepCase', 'Keep original case cannot be combined with a normalizer that lowercases the value.');
 		if (x.evalExpr) {
 			try { checkEvalExpression(x.evalExpr); } catch (e) { fail('fd-eval', e.message); }
@@ -1092,7 +1092,7 @@ require([
 			attnClear: () => { ui.attnOnly = false; renderPane(); },
 			chipMore: () => { ui.chipsOpen.has(id) ? ui.chipsOpen.delete(id) : ui.chipsOpen.add(id); refreshChips(id); },
 			preview: runPreview,
-			copy: () => { try { navigator.clipboard.writeText(LINES.map((l) => l.text).join('\n')); toast('Search copied.'); } catch (er) { toast('Copying is not available in this browser.'); } },
+			copy: () => { try { navigator.clipboard.writeText(LINES.map((l) => l.text).join('\n')); toast('Search copied.'); } catch { toast('Copying is not available in this browser.'); } },
 			mapAdd: () => { const st = S.stats[ui.drawer.draft.lookup] || {}; ui.drawer.draft.map.push({ to: '', from: (st.columns || [])[0] || '' }); rerender(); },
 			mapDel: () => { ui.drawer.draft.map.splice(+a.dataset.i, 1); rerender(); },
 			retry: () => { ui.banner = null; renderBanner(); if (ui.retry) ui.retry(); },
