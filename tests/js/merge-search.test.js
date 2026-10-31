@@ -81,7 +81,7 @@ test('non-JSON conf response does not throw', () => {
 	assert.doesNotThrow(() => makeMergeSearch([]));
 });
 
-// --- escaping / validation of config values (F-03, F-10, F-11, F-12, F-14) ----------
+// --- escaping / validation of config values ----------
 
 function single(name, extra) {
 	return mvField(name, Object.assign({ field_type: 'single' }, extra));
@@ -140,7 +140,7 @@ test('fillnull is not applied to key fields', () => {
 	assert.ok(/isnull\(v\)/.test(spl), spl);
 });
 
-// --- single aggregation of merge methods (F-04) --------------------------------------
+// --- single aggregation of merge methods --------------------------------------
 
 test('avg is computed from sums and counts, not an average of averages', () => {
 	const spl = gen([single('score', { merge_method: 'avg' })]);

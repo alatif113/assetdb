@@ -32,7 +32,7 @@ export COPYFILE_DISABLE=1   # macOS: no AppleDouble ._ files / xattr entries in 
 
 # Paths (relative to the repo root) that never ship. Hidden files are excluded separately.
 EXCLUDES=(
-  '.*' node_modules node_modules.nosync tests scripts docs mockups dist local local.meta
+  '.*' node_modules node_modules.nosync tests scripts docs dist local local.meta
   '*.pyc' __pycache__ '*.swp' '*~' '.DS_Store'
   CLAUDE.md package.json package-lock.json babel.config.json Makefile
   pytest.ini requirements-dev.txt coverage eslint.config.js pyproject.toml
@@ -96,7 +96,7 @@ verify_archive() { # file
   tops=$(tar -tzf "$f" | awk -F/ '{print $1}' | sort -u)
   [[ "$tops" == "$id" ]] || die "$EX_FAIL" "Archive must have exactly one top-level dir '$id'; found: $tops"
   tar -tzf "$f" | grep -qx "$id/default/app.conf" || die "$EX_FAIL" "default/app.conf missing from archive"
-  bad=$(tar -tzf "$f" | grep -E '(^|/)(\.[^/]+|__pycache__|node_modules|local)(/|$)|\.pyc$|/\._|/[^/]* [0-9]+(\.[^/]*)?$|/(tests|scripts|docs|mockups|dist)(/|$)' || true)
+  bad=$(tar -tzf "$f" | grep -E '(^|/)(\.[^/]+|__pycache__|node_modules|local)(/|$)|\.pyc$|/\._|/[^/]* [0-9]+(\.[^/]*)?$|/(tests|scripts|docs|dist)(/|$)' || true)
   [[ -z "$bad" ]] || die "$EX_FAIL" "Forbidden entries in archive:"$'\n'"$bad"
   local tmp; tmp=$(mktemp -d)
   tar -xzf "$f" -C "$tmp" "$id/default/app.conf"
