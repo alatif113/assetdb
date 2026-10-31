@@ -55,6 +55,7 @@ Every key field gets an index in the KV store collection (the collection allows 
 - *Max Key Share* (Settings, default 50, 0 turns it off): a key found in more than this many input rows is not used to match, which catches shared keys you did not think of, such as a NAT address or a golden-image host name. The skipped keys are listed in the `adbmerge` log (`python.log`). Rows left without any key are dropped.
 Source lookups are read with the `input_adb_lookup` macro, which sets `source_lookup` to the lookup name when the lookup has no `source_lookup` column (lookups written by `output_adb_lookup` already carry it). `source` is derived from `source_lookup`.
 
+- **Add CIM fields**: Click *Add CIM Fields* to add the missing fields of the CIM-shaped asset schema in one step: `ip`, `mac`, `nt_host`, `dns` (keys, with normalizers and validation), `owner` (conflicts flagged), `priority`, `bunit`, `category`, `city`, `country`, `pci_domain` and `is_expected`. It only uses the names and sensible defaults; it needs neither the CIM add-on nor Enterprise Security. Fields that already exist are left alone.
 - **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
 
 - **Edit field**: Click the *Edit Field* button to edit an existing field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 

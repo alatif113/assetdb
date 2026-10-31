@@ -261,6 +261,51 @@ require([
 	}
 
 	/**
+	 * Add several fields at once (the field name is the stanza name; one transforms update lists all of them).
+	 *
+	 * @param {Array}	fieldArray		Array of field data from assetdb.conf
+	 * @param {Array}	items			[{name, content}] to add
+	 *
+	 * @return {Promise} 				Jquery promise
+	 */
+	function addFields(fieldArray, items) {
+		const writes = items.map((item) => setConf('conf-assetdb/', Object.assign({ name: item.name }, item.content)));
+		const fieldNames = fieldArray.filter((e) => e.name !== 'general').map((e) => e.name);
+		items.forEach((item) => { if (!fieldNames.includes(item.name)) fieldNames.push(item.name); });
+		writes.push(setConf('conf-transforms/assetdb', { fields_list: fieldNames.concat(['_key', 'asset', 'source', 'source_lookup', 'last_seen', 'scope', 'conflicts']).join(',') }));
+		return $.when(...writes).then(() => syncCollection());
+	}
+
+	/**
+	 * Offer the CIM-shaped asset fields that are not configured yet.
+	 */
+	function addCimFields(fieldArray) {
+		const existing = fieldArray.map((e) => e.name);
+		const missing = Generator.cimPresetFields().filter((f) => !existing.includes(f.name));
+		const $body = $('<div></div>');
+		if (!missing.length) {
+			$body.text('All the CIM asset fields are already configured.');
+		} else {
+			$body.append($('<p></p>').text('These fields will be added with sensible defaults (keys, normalizers and validation for the identifiers). You can edit or delete any of them afterwards:'));
+			const $list = $('<ul></ul>');
+			missing.forEach((f) => $list.append($('<li></li>').append($('<b></b>').text(f.name)).append(document.createTextNode(` - ${f.content.description}${f.content.key_field === '1' ? ' (key)' : ''}`))));
+			$body.append($list);
+		}
+		const modal = new Modal({
+			wide: false,
+			title: 'Add CIM Fields',
+			primaryButton: missing.length ? 'Add' : 'Close',
+			onRemove: function () {},
+			onPrimaryBtnClick: function () {
+				if (!missing.length) return this.hide();
+				finishChange(addFields(fieldArray, missing), 'section-fields', this);
+			},
+		});
+		modal.setBody($body);
+		modal.show();
+	}
+
+	/**
 	 * Update a field within assetdb.conf
 	 *
 	 * @param {Array}	fieldArray		Array of field data from assetdb.conf
@@ -1361,6 +1406,7 @@ require([
 					<section data-section-id="section-fields">
 						<p><i class="icon-info-circle"></i> Configure asset fields and how they are merged across individual lookups.</p>
 						<a href="#" class="btn btn-primary btn-add-field">Add Field</a>
+						<a href="#" class="btn btn-add-cim-fields">Add CIM Fields</a>
 						<table class="fields-table table table-striped table-chrome table-row-expanding table-hover">
 							<thead>
 								<tr>
@@ -1416,6 +1462,7 @@ require([
 			buildSettings($('.settings-form', $container), fieldArray);
 
 			$('.btn-add-field', $container).on('click', () => editAddField(fieldArray));
+			$('.btn-add-cim-fields', $container).on('click', () => addCimFields(fieldArray));
 			$('.btn-add-lookup', $container).on('click', () => addLookup(lookupArray));
 
 			lookupArray.forEach(function (lookup) {

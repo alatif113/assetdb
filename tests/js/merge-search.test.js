@@ -451,3 +451,20 @@ test('tracked single fields flag a conflict when their sources disagree', () => 
 	assert.ok(spl.includes('last_seen, conflicts, '), 'conflicts is written to assetdb');
 	assert.ok(!gen([single('owner')]).includes('conflicts'), 'nothing without tracking');
 });
+
+// --- CIM presets -------------------------------------------------------------------------
+
+test('CIM preset fields are valid for the generator, use CIM names and keep within the index limit', () => {
+	const { cimPresetFields, isReservedFieldName, FIELD_NAME_RE } = require('./load-generator').loadGenerator();
+	const presets = cimPresetFields();
+	const names = presets.map((f) => f.name);
+	assert.equal(new Set(names).size, names.length, 'unique names');
+	for (const n of ['ip', 'mac', 'nt_host', 'dns', 'owner', 'priority', 'bunit', 'category']) assert.ok(names.includes(n), n);
+	for (const f of presets) {
+		assert.ok(FIELD_NAME_RE.test(f.name) && !isReservedFieldName(f.name), f.name);
+		assert.ok(f.content.description, `${f.name} has a description`);
+	}
+	assert.ok(presets.filter((f) => f.content.key_field === '1').length <= 9, 'at most 9 key fields (KV index limit)');
+	const spl = gen(presets);
+	assert.ok(spl.includes('`normalize_mac(mac)`') && spl.includes('`normalize_hostname(nt_host)`') && spl.includes('mvfilter(match(mac'), spl);
+});

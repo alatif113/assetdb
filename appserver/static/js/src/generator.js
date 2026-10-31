@@ -231,6 +231,29 @@ define([], function () {
 	}
 	
 	/**
+	 * CIM-shaped asset fields (the names of the Splunk Common Information Model / ES asset schema) with sensible
+	 * defaults. Only names and defaults: nothing here needs the CIM add-on or Enterprise Security.
+	 */
+	function cimPresetFields() {
+		const base = { key_field: '0', case_sensitive: '1', ignore_values: '[]', fillnull: '', validation: '', field_type: 'single', merge_method: 'latest', merge_order: '', max_values: '10', eval_expression: '', mv_order: 'recent', normalizer: 'default', validation_type: 'none', value_type: 'string', keep_case: '0', key_scope: 'global', inherit_ignore: '1', allowed_sources: '', track_conflicts: '0', description: '' };
+		const make = (name, description, extra) => ({ name, content: Object.assign({}, base, { description }, extra) });
+		return [
+			make('ip', 'IP addresses of the asset', { key_field: '1', case_sensitive: '0', field_type: 'multivalue', normalizer: 'ip', validation_type: 'ip' }),
+			make('mac', 'MAC addresses of the asset', { key_field: '1', case_sensitive: '0', field_type: 'multivalue', normalizer: 'mac', validation_type: 'mac' }),
+			make('nt_host', 'Short host name (NetBIOS / Windows host name)', { key_field: '1', case_sensitive: '0', field_type: 'multivalue', normalizer: 'hostname' }),
+			make('dns', 'Fully qualified DNS names', { key_field: '1', case_sensitive: '0', field_type: 'multivalue', normalizer: 'fqdn' }),
+			make('owner', 'Person or team that owns the asset', { track_conflicts: '1' }),
+			make('priority', 'Business priority: low, medium, high, critical', { case_sensitive: '0' }),
+			make('bunit', 'Business unit', { case_sensitive: '0' }),
+			make('category', 'Categories the asset belongs to (server, desktop, ...)', { case_sensitive: '0', field_type: 'multivalue' }),
+			make('city', 'City where the asset is located'),
+			make('country', 'Country where the asset is located'),
+			make('pci_domain', 'PCI domains the asset is part of', { case_sensitive: '0', field_type: 'multivalue' }),
+			make('is_expected', 'Whether the asset is expected to be seen (true or false)', { case_sensitive: '0' }),
+		];
+	}
+
+	/**
 	 * Build the merge search as typed lines {kind: 'comment' | 'command', text} from the field array
 	 * (the entries of the assetdb.conf REST listing, including the [general] stanza).
 	 */
@@ -549,6 +572,7 @@ define([], function () {
 		parseMaxValues: parseMaxValues,
 		FIELD_NAME_RE: FIELD_NAME_RE,
 		NORMALIZERS: NORMALIZERS,
+		cimPresetFields: cimPresetFields,
 		VALIDATION_TYPES: VALIDATION_TYPES,
 		VALUE_TYPES: VALUE_TYPES,
 		HARD_MAX_KEYS: HARD_MAX_KEYS,

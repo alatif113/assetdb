@@ -19,6 +19,10 @@ const savedSearch = async () => (await rest('/servicesNS/nobody/assetdb/saved/se
 const fieldsList = async () => (await rest('/servicesNS/nobody/assetdb/configs/conf-transforms/assetdb')).entry[0].content.fields_list;
 let originalSearch;
 let originalLookups;
+let originalFieldsList;
+let originalMacro;
+const presetNames = ['ip', 'mac', 'nt_host', 'dns', 'owner', 'priority', 'bunit', 'category', 'city', 'country', 'pci_domain', 'is_expected'];
+let presetsAdded = false;
 const generalConf = async () => (await conf()).find((e) => e.name === 'general').content;
 const modal = () => page.locator('.modal:visible');
 
@@ -28,6 +32,8 @@ try {
 
   originalSearch = await savedSearch();
   originalLookups = (await generalConf()).lookups;
+  originalFieldsList = await fieldsList();
+  originalMacro = (await rest('/servicesNS/nobody/assetdb/data/macros/adb_enrich_outputs')).entry[0].content.definition;
 
   // F-08: cancelling Remove Lookup must not change anything
   const lookupsBefore = (await conf()).find((e) => e.name === 'general').content.lookups;
@@ -62,6 +68,20 @@ try {
   check(demo.max_age === '45d' && demo.filter === 'priority>0' && demo.columns.owner === 'Owner Name' && demo.enabled === true, 'source options stored in the lookups JSON');
   check((await savedSearch()).includes('relative_time(now(), "-45d")'), 'saved search applies the max age');
   check((await savedSearch()).includes('"e2e_site"') && (await savedSearch()).includes('| eval scope = lower(case('), 'saved search assigns the source scope');
+
+  // CIM presets: one click adds the missing CIM fields (removed again by the cleanup below)
+  await page.click('#ab_config a.tab-label:has-text("Asset Fields")');
+  await page.click('#ab_config .btn-add-cim-fields');
+  await modal().waitFor();
+  check((await modal().innerText()).includes('nt_host'), 'the CIM dialog lists the fields it will add');
+  presetsAdded = true;
+  await page.click('.modal:visible .btn-primary');
+  await page.waitForSelector('#ab_config tr[data-name="mac"]', { timeout: 60000 });
+  const afterPresets = (await conf()).map((e) => e.name);
+  check(presetNames.every((n) => afterPresets.includes(n)), 'all CIM fields were added to assetdb.conf');
+  check((await savedSearch()).includes('`normalize_mac(mac)`'), 'saved search uses the preset normalizers');
+  const accel = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb')).entry[0].content;
+  check(['ip', 'mac', 'nt_host', 'dns'].every((n) => accel[`accelerated_fields.${n}`]), 'the four CIM key fields are indexed');
 
   // Settings: max keys is validated against the hard cap, valid values are saved, and the original is restored
     const originalMaxKeys = (await generalConf()).max_keys;
@@ -153,6 +173,19 @@ try {
   if (stray) {
     console.log(`cleaning up leftover field ${name}`);
     await ctx.request.delete(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/configs/conf-assetdb/${name}`).catch(() => {});
+  }
+  const csrfForCleanup = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
+  if (presetsAdded && csrfForCleanup) {
+    const hdr = { 'X-Splunk-Form-Key': csrfForCleanup.value, 'X-Requested-With': 'XMLHttpRequest' };
+    const root = `${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb`;
+    const present = (await conf().catch(() => [])).map((e) => e.name);
+    for (const n of presetNames.filter((x) => present.includes(x))) await ctx.request.delete(`${root}/configs/conf-assetdb/${n}`, { headers: hdr }).catch(() => {});
+    if (originalFieldsList !== undefined) await ctx.request.post(`${root}/configs/conf-transforms/assetdb`, { headers: hdr, form: { fields_list: originalFieldsList } }).catch(() => {});
+    if (originalMacro !== undefined) await ctx.request.post(`${root}/data/macros/adb_enrich_outputs`, { headers: hdr, form: { definition: originalMacro } }).catch(() => {});
+    const clear = {};
+    for (const n of presetNames) { clear[`accelerated_fields.${n}`] = ''; clear[`field.${n}`] = ''; }
+    await ctx.request.post(`${root}/storage/collections/config/assetdb`, { headers: hdr, form: clear }).catch(() => {});
+    check(!(await conf().catch(() => [])).some((e) => presetNames.includes(e.name)), 'CIM fields cleaned up');
   }
   // the UI regenerates the saved search on every change; put back what was there before
   const csrf = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
