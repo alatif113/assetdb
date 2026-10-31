@@ -23,7 +23,8 @@ def templates():
 
 
 def test_there_are_templates():
-    assert set(templates()) == {"assetdb-src-splunk-hosts", "assetdb-src-dhcp-cim", "assetdb-src-vulnerabilities-cim", "assetdb-src-ad-computers"}
+    assert set(templates()) == {"assetdb-src-splunk-hosts", "assetdb-src-dhcp-cim", "assetdb-src-vulnerabilities-cim", "assetdb-src-ad-computers",
+                                "assetdb-src-crowdstrike-devices", "assetdb-src-defender-machines", "assetdb-src-tenable-assets"}
 
 
 def test_every_template_is_disabled_unscheduled_and_documented():
@@ -42,7 +43,7 @@ def test_every_template_writes_a_csv_through_the_output_macro_with_a_matching_na
 
 def test_templates_use_the_field_names_of_the_cim_presets():
     allowed = {"ip", "mac", "nt_host", "dns", "owner", "os", "priority", "bunit", "category", "city", "country", "pci_domain", "is_expected",
-               "vuln_signatures", "max_cvss", "_time", "last_seen"}
+               "vuln_signatures", "max_cvss", "_time", "last_seen", "cs_device_id", "defender_id", "tenable_id"}
     for name, s in templates().items():
         tables = re.findall(r"\| table ([^|]+)\|", s["search"])
         for t in tables:

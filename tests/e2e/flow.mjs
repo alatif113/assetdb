@@ -51,6 +51,7 @@ try {
   await page.click('#ab_config a.tab-label:has-text("Asset Fields")');
   await page.click('#ab_config .btn-add-cim-fields');
   await modal().waitFor();
+  await modal().getByText('nt_host').first().waitFor({ timeout: 10000 }).catch(() => {});
   check((await modal().innerText()).includes('nt_host'), 'the CIM dialog lists the fields it will add');
   presetsAdded = true;
   await page.click('.modal:visible .btn-primary');
@@ -69,13 +70,21 @@ try {
   exploreKey = testKey;
   await ctx.request.post(kvRoot, { headers: kvHdr, data: { _key: testKey, asset: ['110.0.0.4', 'inspector_mac_32@mlatif.com'], source: ['demo_assets'], ip: ['110.0.0.4'] } });
   const explore = await ctx.newPage();
-  await explore.setViewportSize({ width: 1280, height: 1600 });
-  await explore.goto(`${base}/en-US/app/assetdb/explore?q=110.0.0.4`);
-  await explore.waitForSelector('#ab_explore .adb-results table', { timeout: 60000 });
-  check((await explore.locator('#ab_explore .adb-results tbody tr').count()) === 1, 'Explore finds the asset by one of its keys');
-  await explore.waitForSelector('#ab_explore .adb-detail table', { timeout: 120000 });
-  const detail = await explore.locator('#ab_explore .adb-detail').innerText();
-  check(/source rows? from 1 source/.test(detail) && detail.includes('demo_assets') && detail.includes('110.0.0.4'), 'Explore lists the source rows behind the asset');
+  await explore.setViewportSize({ width: 1500, height: 1500 });
+  await explore.goto(`${base}/en-US/app/assetdb/explore`);
+  // Dashboard Studio: the Configure page rewrote the view so the source panel runs the current generated pipeline
+  await explore.waitForSelector('#input_term', { timeout: 60000 });
+  await explore.locator('#input_term').fill('110.0.0.4');
+  await explore.locator('#input_term').press('Enter');
+  await explore.getByText('inspector_mac_32@mlatif.com').first().waitFor({ timeout: 90000 });
+  check(true, 'Explore (Dashboard Studio) finds the asset by one of its keys');
+  await explore.getByText('inspector_mac_32@mlatif.com').first().click();
+  await explore.waitForFunction(() => document.body.innerText.includes('assetdb_demo_assets.csv'), null, { timeout: 120000 }).catch(async () => {
+    await explore.screenshot({ path: 'dist/e2e-explore-failed.png' });
+    console.log('explore text:', (await explore.locator('body').innerText()).slice(0, 1500));
+  });
+  const body = await explore.locator('body').innerText();
+  check(body.includes('assetdb_demo_assets.csv') && body.includes('110.0.0.4'), 'Explore lists the source rows behind the selected asset');
   await explore.screenshot({ path: 'dist/e2e-explore.png' });
   await explore.close();
   await ctx.request.delete(`${kvRoot}/${testKey}`, { headers: kvHdr }).catch(() => {});

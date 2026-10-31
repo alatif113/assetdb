@@ -1,0 +1,41 @@
+"""More than 50,000 assets: the merge, the safety check and the change history on a real Splunk.
+
+SPL cannot generate more than 50,000 rows per makeresults, so the sources are appended from several parts. These tests take a
+few minutes; they are the evidence that nothing in the pipeline is capped at 50,000 assets.
+"""
+import pytest
+
+from sandbox import Sandbox, field
+
+N = 120000
+
+
+@pytest.fixture
+def box(splunk, run_id):
+    b = Sandbox(splunk, run_id, "scale")
+    yield b
+    b.close()
+
+
+def test_a_hundred_and_twenty_thousand_assets_merge_and_their_changes_are_recorded(box):
+    box.general = {"change_history": "kv", "history_rows": "200000", "key_blocklist": "[]", "max_key_share": "0"}
+    box.fields = [field("mac", key_field="1"), field("owner", field_type="single"), field("ip")]
+    box.add_generated_source("big", N, 'mac="m".n, owner="owner".n, ip="10.".floor(n/65536).".".(floor(n/256)%256).".".(n%256)')
+    first = box.run()
+    assert len(first) == N                                              # nothing is cut off at 50,000
+    first_rows = box.change_rows()
+    assert len(first_rows) == N and {r["change"] for r in first_rows} == {"added"}
+    first_time = first_rows[0]["run_time"]
+    assert box.runs_rows()[-1]["assets_out"] == str(N)
+
+    # second run: 300 assets disappear, 500 are new, 200 change their owner
+    box.rewrite_generated_source("big", N, 'mac=if(n<=300, "gone".n, "m".n), owner=if(n%600=0, "newowner".n, "owner".n), ip="10.".floor(n/65536).".".(floor(n/256)%256).".".(n%256)')
+    second = box.run()
+    assert len(second) == N
+    later = [r for r in box.change_rows() if r["run_time"] != first_time]
+    counts = {}
+    for r in later:
+        counts[r["change"]] = counts.get(r["change"], 0) + 1
+    assert counts == {"added": 300, "removed": 300, "changed": 200}, counts
+    changed = [r for r in later if r["change"] == "changed"]
+    assert all(r["changed_fields"] in ("owner", ["owner"]) for r in changed)

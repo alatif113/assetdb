@@ -515,14 +515,52 @@ test('change history is off by default; kv and index modes build the diff agains
 	const cfg = (g) => gen([single('mac', { key_field: '1' }), single('owner'), mvField('ip')], { name: 'general', content: Object.assign({ lookups: general.content.lookups }, g) });
 	assert.ok(!cfg({}).includes('assetdb_changes'), 'off by default');
 	const kv = cfg({ change_history: 'kv', history_rows: '500' });
-	assert.ok(kv.includes('| append [| inputlookup assetdb | eval adb_side="old"'), kv);
+	assert.ok(kv.includes('| appendpipe [| eval adb_side="new" | inputlookup append=true assetdb | eval adb_side=coalesce(adb_side, "old"), adbh_mac='), kv);
+	assert.ok(!/append \[\| inputlookup assetdb(?![_\w])/.test(kv), 'no subsearch: it would silently stop at 50000 rows');
 	assert.ok(kv.includes('adbh_mac=md5(coalesce(mvjoin(mvsort(mac), "|"), ""))'), kv);
 	assert.ok(kv.includes('| inputlookup append=true assetdb_changes | sort 0 -run_time | head 500 | outputlookup assetdb_changes | where 1=0]'), kv);
-	assert.ok(kv.includes('adb_n_old < 50000'), 'skipped when the previous assetdb may have been cut off by the KV read limit');
 	assert.ok(kv.indexOf('assetdb_changes') > kv.indexOf('adb_guard=0'), 'only for runs that are written');
 	const idx = cfg({ change_history: 'index', history_index: 'assetdb_history' });
 	assert.ok(idx.includes('| eval _time=run_time | collect index=assetdb_history sourcetype="assetdb:change" source="assetdb"'), idx);
 	assert.throws(() => cfg({ change_history: 'index' }), /index name/i);
 	assert.throws(() => cfg({ change_history: 'index', history_index: 'a b; delete' }), /index name/i);
 	assert.throws(() => cfg({ change_history: 'sometimes' }), /change history mode/i);
+});
+
+
+// --- Explore as a Dashboard Studio dashboard ------------------------------------------------
+
+test('the Explore dashboard definition wires the inputs, the drilldown token and the generated pipeline', () => {
+	const { buildExploreDashboard, exploreViewXml } = require('./load-generator').loadGenerator();
+	const lines = JSON.parse(JSON.stringify(load().makeMergeSearchLines([general, single('mac', { key_field: '1', case_sensitive: '0', normalizer: 'mac', validation: '^[0-9a-f:]+$' }), single('owner')])));
+	const d = JSON.parse(JSON.stringify(buildExploreDashboard(lines, ['mac', 'owner'])));
+	assert.deepEqual(Object.keys(d.inputs).sort(), ['input_scope', 'input_term']);
+	assert.equal(d.inputs.input_term.options.token, 'adb_term');
+	assert.deepEqual(d.visualizations.viz_assets.eventHandlers[0].options.tokens, [{ token: 'adb_keys', key: 'row.adb_keys.value' }]);
+	const q1 = d.dataSources.ds_assets.options.query;
+	assert.ok(q1.includes('$adb_term|s$') && q1.includes('lookup assetdb asset AS c OUTPUTNEW `adb_enrich_outputs`'), q1);
+	assert.ok(q1.endsWith('| table adb_keys, asset_source, last_seen, asset_mac, asset_owner'), q1);
+	const q2 = d.dataSources.ds_sources.options.query;
+	assert.ok(q2.includes('split($adb_keys|s$, "|")') && q2.includes('| search [| makeresults'), q2);
+	assert.ok(q2.includes('`normalize_mac(mac)`'), 'the generated pipeline is embedded');
+	assert.ok(q2.includes('^[0-9a-f:]+$$'), 'literal dollar signs are escaped for Studio tokens: ' + q2);
+	assert.ok(!/[^$]\$[^$|a-z_]/.test(q2.replace(/\$\$/g, '').replace(/\$[a-z_|]+\$/g, '')), 'no stray single dollar sign is left');
+	for (const q of [q1, q2]) assert.ok(!/outputlookup|collect|delete/.test(q), 'read only');
+	const xml = exploreViewXml(d);
+	assert.match(xml, /^<dashboard version="2" theme="light">/);
+	const json = JSON.parse(xml.match(/<!\[CDATA\[\n([\s\S]*)\n\]\]>/)[1]);
+	assert.equal(json.title, 'Explore');
+});
+
+test('without key fields the Explore dashboard explains why the source panel is empty', () => {
+	const { buildExploreDashboard } = require('./load-generator').loadGenerator();
+	const d = buildExploreDashboard(null, []);
+	assert.ok(d.visualizations.viz_help.options.markdown.includes('not available yet'), d.visualizations.viz_help.options.markdown);
+	assert.ok(d.dataSources.ds_sources.options.query.includes('where 1=0'));
+});
+
+test('the shipped explore.xml is exactly the generated placeholder (it cannot drift from the generator)', () => {
+	const { buildExploreDashboard, exploreViewXml } = require('./load-generator').loadGenerator();
+	const shipped = require('node:fs').readFileSync(path.join(__dirname, '..', '..', 'default', 'data', 'ui', 'views', 'explore.xml'), 'utf8');
+	assert.equal(shipped, exploreViewXml(buildExploreDashboard(null, [])));
 });

@@ -50,7 +50,7 @@ Every key field gets an index in the KV store collection (the collection allows 
 - **KV store collection** (`assetdb_changes`): the newest *History Rows* records (default 20,000) are kept, so it is bounded. The Review dashboard shows the latest.
 - **Index**: each change is a `sourcetype=assetdb:change` event written with `collect` into an index you name. It must exist first (on Splunk Cloud an admin creates it); use this when you want long retention.
 
-Limits to know: the comparison reads the previous `assetdb` with the KV read limit (50,000 rows), so it is skipped when the collection holds that many assets; an asset's identity is its `_key`, which is derived from its keys, so an asset whose keys change is recorded as one removal and one addition.
+Limits to know: the previous `assetdb` is read in full on every run, so the cost grows with the number of assets (it was tested with 120,000); an asset's identity is its `_key`, which is derived from its keys, so an asset whose keys change is recorded as one removal and one addition.
 
 **Overflow and conflicts.** Clusters larger than Max Keys are not written to `assetdb`; they are listed in the `assetdb_overflow` collection (replaced on every run, so it only shows the last run) with a sample of their keys, their size and the sources involved. A field with *Flag Conflicts* turned on records its name in the asset's `conflicts` field when the sources disagree. The **Review** dashboard shows the latest runs, the overflow clusters and the assets with conflicts.
 
@@ -125,7 +125,9 @@ Only the first needs no add-on and is tested end to end; the CIM ones are checke
 
 ### Explore: find an asset and see where its data came from
 
-The **Explore** dashboard has two panels. The first finds assets by any key value: type an IP address, MAC address, host name, user name ... (matching is lowercase and also tries the normalized form of MAC addresses, the short form of host names and the user part of `DOMAIN\user` and `user@domain`; add a scope when keys are scoped; `*` is a wildcard) and shows the matching merged assets. Select one and the second panel lists every source row, from every source lookup, that carries one of the asset's keys, with what that source supplied for each field, so each value in the merged asset can be traced back to its source. The rows are produced by the same generated pipeline as the merge (after column mapping, normalizing, ignore lists, allowed sources and row filters), so they show what the merge saw, not the raw lookup. At most 1000 rows are shown. Wildcard searches read the first 50,000 assets of the collection.
+**Explore** is a native Dashboard Studio dashboard (you can open it in the Studio editor, export it, or change its layout like any other). Type an IP address, MAC address, host name or user name into *Key value*: it is matched in lowercase, and the normalized form of a MAC address, the short form of a host name and the user part of `DOMAIN\user` or `user@domain` are tried too (add a *Scope* when keys are scoped). Each candidate is looked up through the index of the `assetdb` collection, so it is fast at any size. Select a matching asset and the second table lists every source row, from every source lookup, that carries one of the asset's keys, with what that source supplied for each field, so each value of the merged asset can be traced back to its source. The rows come from the same generated pipeline as the merge (after column mapping, normalizing, ignore lists, allowed sources and row filters), so they show what the merge saw rather than the raw lookup. At most 1000 rows are shown.
+
+Because the second table embeds the generated pipeline, the Configure page rewrites the dashboard (`local/data/ui/views/explore.xml`) whenever the configuration changes. Edits you make to the dashboard in Studio are therefore overwritten by the next configuration change: save your own variation under another name.
 
 ### Using the asset database: enrichment macros
 
@@ -159,7 +161,7 @@ Merging is done via a custom command `adbmerge` and saved search `assetdb-lookup
 ### Operational notes
 
 - **Rewrite window.** The merge search ends with `outputlookup assetdb`, which replaces the collection. Measured on Splunk 10.4.2 with a 45,000 row collection rewritten in about 2 seconds while six readers polled it, roughly 1 in 70 reads returned no results during a rewrite. Searches that use `| lookup assetdb` during the nightly run (default `0 0 * * *`, with a 60 minute schedule window) can therefore miss matches briefly. Schedule the search outside the hours that matter.
-- **Read limit.** `| inputlookup assetdb` returns at most `max_rows_per_query` rows (50,000 by default, `limits.conf` `[kvstore]`). Raise it if you list the whole collection; `| lookup assetdb ...` is not affected.
+- **Reading the collection.** `| inputlookup assetdb` returns every asset (tested with 150,000), but a subsearch does not: `append [| inputlookup assetdb]` silently stops at 50,000 results (`maxout` in `limits.conf` `[subsearch]`). Use `| inputlookup append=true assetdb` instead, which is what the generated search does, or `| lookup assetdb ...` for lookups.
 - **Splunk versions.** The `adbmerge` command runs on Python 3.13 (`python.required = 3.13`, splunk-sdk 3.x), so it needs a Splunk version that provides it (tested on 10.4.2); Splunk 10.0 runs commands on Python 3.9 and is not supported.
 
 ## Testing

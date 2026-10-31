@@ -89,6 +89,33 @@ class Sandbox(object):
         searches["current"] = searches["current"].replace("assetdb", self.kv)
         return dict((name, self.splunk.search(spl)) for name, spl in searches.items())
 
+    def add_generated_source(self, name, rows, expr, **options):
+        """A large source built inside Splunk (SPL can generate at most 50,000 rows per makeresults, so it appends parts).
+        `expr` is an eval fragment that may use `n` (1..rows) and must set the columns, e.g. 'mac="m".n, owner="o".n'."""
+        lookup = "%s%s.csv" % (self.prefix, name)
+        self._write_generated(lookup, rows, expr)
+        self._cleanup.append(lambda: self.splunk.delete(self.ns + "/data/lookup-table-files/" + lookup))
+        entry = {"name": name, "lookup": lookup}
+        entry.update(options)
+        self.sources.append(entry)
+        return lookup
+
+    def rewrite_generated_source(self, name, rows, expr):
+        lookup = [e for e in self.sources if e["name"] == name][0]["lookup"]
+        self._write_generated(lookup, rows, expr)
+
+    def _write_generated(self, lookup, rows, expr):
+        parts = []
+        remaining, offset = rows, 0
+        while remaining > 0:
+            size = min(50000, remaining)
+            parts.append("[| makeresults count=%d | streamstats count as n | eval n=n+%d]" % (size, offset))
+            remaining -= size
+            offset += size
+        spl = "| makeresults count=1 | where 1=0 " + " ".join("| append %s" % p for p in parts)
+        spl += ' | eval %s, source_lookup="%s" | fields - _time n | outputlookup %s' % (expr, lookup, lookup)
+        self.splunk.search_job(spl)
+
     def explain(self, keys):
         out = subprocess.check_output(["node", os.path.join(ROOT, "tests", "integration", "gen_explain.js"), json.dumps(keys)],
                                       input=json.dumps(self.fieldarray()).encode(), cwd=ROOT)
@@ -121,7 +148,7 @@ class Sandbox(object):
         return self.rows()
 
     def rows(self):
-        rows = self.splunk.search("| inputlookup max=100000 %s" % self.kv)
+        rows = self.splunk.search("| inputlookup max=1000000 %s" % self.kv)
         for r in rows:
             for k, v in list(r.items()):
                 if isinstance(v, str) and k not in ("_key",):
@@ -129,13 +156,13 @@ class Sandbox(object):
         return rows
 
     def change_rows(self):
-        return self.splunk.search("| inputlookup max=100000 %s | sort 0 run_time" % self.changes)
+        return self.splunk.search("| inputlookup max=1000000 %s | sort 0 run_time" % self.changes)
 
     def overflow_rows(self):
-        return self.splunk.search("| inputlookup max=100000 %s" % self.overflow)
+        return self.splunk.search("| inputlookup max=1000000 %s" % self.overflow)
 
     def runs_rows(self):
-        rows = self.splunk.search("| inputlookup max=100000 %s | sort 0 run_time" % self.runs)
+        rows = self.splunk.search("| inputlookup max=1000000 %s | sort 0 run_time" % self.runs)
         return rows
 
     def close(self):

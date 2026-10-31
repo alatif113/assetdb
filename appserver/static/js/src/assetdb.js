@@ -448,6 +448,24 @@ require([
 		return $.when(promise).then((query) => {
 			let data = { search: query };
 			return setConf(endpoint, data);
+		}).then(() => syncExploreView());
+	}
+
+	/**
+	 * Rewrite the Explore dashboard (Dashboard Studio) so its source-rows panel runs the current generated pipeline.
+	 */
+	function syncExploreView() {
+		return $.when(getConf('conf-assetdb')).then((data) => {
+			const fields = safeParse(data, {}).entry || [];
+			const names = fields.filter((e) => e.name !== 'general').map((e) => e.name);
+			let lines = null;
+			try {
+				lines = Generator.buildSearchLines(fields);
+			} catch {
+				lines = null;
+			}
+			const xml = Generator.exploreViewXml(Generator.buildExploreDashboard(lines, names));
+			return SERVICE.post('/servicesNS/nobody/assetdb/data/ui/views/explore', { 'eai:data': xml }).promise();
 		});
 	}
 
@@ -1293,7 +1311,7 @@ require([
 				{ label: 'Index', value: 'index' },
 			],
 			value: general.change_history || 'off',
-			help: 'Record which assets were added, removed or changed (and which fields) on every run, by comparing with the previous asset database. Not recorded for runs blocked by the safety check, or when assetdb holds 50,000 assets or more (the KV read limit). An asset whose keys change shows up as removed and added',
+			help: 'Record which assets were added, removed or changed (and which fields) on every run, by comparing with the previous asset database. Not recorded for runs blocked by the safety check. An asset whose keys change shows up as removed and added',
 		});
 		const historyIndexInput = new TextInput({
 			id: 'inputHistoryIndex',
