@@ -14,3 +14,4 @@ coverage
 *.swp
 .idea
 .vscode
+node_modules.nosync/

@@ -32,7 +32,7 @@ export COPYFILE_DISABLE=1   # macOS: no AppleDouble ._ files / xattr entries in 
 
 # Paths (relative to the repo root) that never ship. Hidden files are excluded separately.
 EXCLUDES=(
-  '.*' node_modules tests scripts docs mockups dist local local.meta
+  '.*' node_modules node_modules.nosync tests scripts docs mockups dist local local.meta
   '*.pyc' __pycache__ '*.swp' '*~' '.DS_Store'
   CLAUDE.md package.json package-lock.json babel.config.json Makefile
   pytest.ini requirements-dev.txt coverage eslint.config.js pyproject.toml
