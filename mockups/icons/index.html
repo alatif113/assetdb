@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AssetDB icon directions</title>
+<style>
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #f6f5f2; color: #1b1d1f; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+  h1 { font-size: 24px; } h2 { font-size: 18px; margin: 40px 0 4px; } p { max-width: 70ch; margin: 4px 0 16px; color: #4f5359; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .bg { border: 1px solid #dad6ce; border-radius: 8px; padding: 20px; display: flex; gap: 28px; align-items: flex-end; flex-wrap: wrap; }
+  .light { background: #fff; } .dark { background: #1b1f23; color: #e8e6e1; }
+  figure { margin: 0; } figcaption { font-size: 12px; opacity: .75; margin-top: 6px; }
+  .rec { display: inline-block; background: #0b7a85; color: #fff; padding: 1px 10px; border-radius: 999px; font-size: 12px; margin-left: 8px; vertical-align: middle; }
+  @media (max-width: 800px) { .row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body><main>
+<h1>AssetDB: three mark directions</h1>
+<p>Splunk shows the app icon at 36px (72px on high-DPI) and the logo at 160x40, on both light and dark surfaces. Each direction is shown at those sizes on both backgrounds. SVG masters are in this folder; the final PNGs (appIcon.png 36, appIcon_2x.png 72, appLogo.png 160x40, appLogo_2x.png 320x80) are exported from them in Stage 2. Wordmark text is live text here and is converted to outlines at export.</p>
+<script>
+const D = [
+  ['a-converge', 'A. Converge', 'Three records run in from the left and land in one node. A literal picture of what the app does: many source lines become one asset. Solid accent tile, so it holds on any background. The same glyph is the status-header mark in the UI.', true],
+  ['b-stack', 'B. Stack', 'Faded record cards fold into one solid card. Reads as "records", but is closer to a generic database or files icon, and the detail (row lines) gets muddy at 36px.', false],
+  ['c-link', 'C. Link', 'Two overlapping rings with a filled overlap: correlation as a Venn. No tile, so it sits lightly on any surface, but it is a very common motif, says nothing about assets, and shows only two sources.', false],
+];
+for (const [k, name, why, rec] of D) {
+  document.querySelector('main').insertAdjacentHTML('beforeend', `<h2>${name}${rec ? '<span class="rec">Recommended</span>' : ''}</h2><p>${why}</p><div class="row">${['light', 'dark'].map((m) => `<div class="bg ${m}">
+    <figure><img src="mark-${k}.svg" width="36" height="36" alt="${name} at 36px"><figcaption>36px</figcaption></figure>
+    <figure><img src="mark-${k}.svg" width="72" height="72" alt="${name} at 72px"><figcaption>72px</figcaption></figure>
+    <figure><img src="logo-${k}-${m}.svg" width="160" height="40" alt="${name} logo"><figcaption>160x40 logo (${m} surface)</figcaption></figure></div>`).join('')}</div>`);
+}
+</script>
+</main></body></html>

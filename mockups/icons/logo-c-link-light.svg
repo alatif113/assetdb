@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40" width="160" height="40" role="img" aria-label="AssetDB">
+<g transform="translate(4 4) scale(.4444)"><defs><clipPath id="lens-light"><circle cx="28" cy="36" r="17"/></clipPath></defs>
+<circle cx="44" cy="36" r="17" fill="#1796A3" clip-path="url(#lens-light)"/>
+<g fill="none" stroke-width="5"><circle cx="28" cy="36" r="17" stroke="#8A8F96"/><circle cx="44" cy="36" r="17" stroke="#1796A3"/></g></g>
+<text x="44" y="27" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="-.3" fill="#1B1D1F">AssetDB</text>
+</svg>

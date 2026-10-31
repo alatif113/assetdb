@@ -376,6 +376,8 @@ define([], function () {
 		for (const field of fieldArray) {
 			const {name, content} = field;
 			if (name == 'general') continue;
+			// A disabled field (enabled=0) is left out of the merge but keeps its settings; configs without the property are enabled.
+			if (['0', 'false', 'no'].includes(String(content.enabled).toLowerCase())) continue;
 			if (!FIELD_NAME_RE.test(name)) throw new Error(`Invalid field name "${name}"`);
 			if (content.merge_method && !MERGE_METHODS.includes(content.merge_method)) throw new Error(`Invalid merge method "${content.merge_method}" for field ${name}`);
 

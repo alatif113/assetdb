@@ -33,9 +33,10 @@ const noop = new Proxy(function () {}, {
 function load({ confEntries = [] } = {}) {
 	let source = fs.readFileSync(SRC, 'utf8');
 	if (!source.includes('module.exports')) {
-		const tail = /(\n\tbuildContent\(\);\s*\n\}\);\s*)$/;
-		if (!tail.test(source)) throw new Error('assetdb.js no longer ends with buildContent(); update load-generator.js');
-		source = source.replace(tail, '\n\tmodule.exports = { makeMergeSearch, makeMergeSearchLines, getLookupArray, isReservedFieldName, formatIgnoreValues, describeError, checkEvalExpression };$1');
+		const tail = /(\n\tinit\(\);\s*\n\}\);\s*)$/;
+		if (!tail.test(source)) throw new Error('assetdb.js no longer ends with init(); update load-generator.js');
+		// searchText/searchLines are the pure, synchronous builders behind the page's makeMergeSearch()/makeMergeSearchLines()
+		source = source.replace(tail, '\n\tmodule.exports = { makeMergeSearch: searchText, makeMergeSearchLines: searchLines, getLookupArray, isReservedFieldName, describeError, checkEvalExpression };$1');
 	}
 
 	// Synchronous stand-in for jQuery deferreds: $.when(x).then(cb) => cb(x).
@@ -51,7 +52,7 @@ function load({ confEntries = [] } = {}) {
 	const service = { get: () => ({ promise: () => JSON.stringify({ entry: confEntries }) }), post: () => noop, del: () => noop };
 	const mvc = { createService: () => service };
 
-	const sandbox = { module: { exports: {} }, console };
+	const sandbox = { module: { exports: {} }, console, document: noop, window: noop, CSS: { escape: (x) => x }, getComputedStyle: () => ({ backgroundColor: '' }) };
 	// Hand each dependency its stub by name, so adding or reordering modules in assetdb.js cannot misalign the arguments.
 	sandbox.require = (deps, fn) => fn(...deps.map((dep) => {
 		if (dep === 'underscore') return underscore;
@@ -61,7 +62,10 @@ function load({ confEntries = [] } = {}) {
 		return noop;
 	}));
 	vm.runInNewContext(source, sandbox, { filename: SRC });
-	return sandbox.module.exports;
+	// With no field array the page reads the config from the server; here that is confEntries.
+	const exp = sandbox.module.exports;
+	const withConf = (fn) => (fieldArray = []) => fn(fieldArray.length ? fieldArray : confEntries);
+	return Object.assign({}, exp, { makeMergeSearch: withConf(exp.makeMergeSearch), makeMergeSearchLines: withConf(exp.makeMergeSearchLines) });
 }
 
 module.exports = { load, loadGenerator };

@@ -513,3 +513,10 @@ test('change history is off by default; kv and index modes build the diff agains
 	assert.throws(() => cfg({ change_history: 'index', history_index: 'a b; delete' }), /index name/i);
 	assert.throws(() => cfg({ change_history: 'sometimes' }), /change history mode/i);
 });
+
+test('a disabled field (enabled=0) is left out of the merge, a field without the property is not', () => {
+	const spl = gen([single('mac', { key_field: '1' }), single('owner', { enabled: '0' }), single('site')]);
+	assert.ok(spl.includes('mac') && spl.includes('site'));
+	assert.ok(!/\bowner\b/.test(spl), 'the disabled field does not appear anywhere in the search');
+	assert.equal(gen([single('mac', { key_field: '1' }), single('owner')]), gen([single('mac', { key_field: '1' }), single('owner', { enabled: '1' })]), 'enabled=1 is the same as no property');
+});

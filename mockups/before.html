@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AssetDB Configure: current flow (before)</title>
+<style>
+  /* A faithful-in-structure replica of the CURRENT Configure page, for click counting. Not a design to keep. */
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 "Splunk Platform Sans", Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #3c444d; }
+  .bar { background: #1a1c20; color: #fff; padding: 10px 20px; font-weight: 700; }
+  .container { width: 940px; margin: 0 auto; padding: 16px 0 120px; }
+  h1 { font-size: 22px; font-weight: 400; margin: 8px 0 14px; }
+  ul.tabs { list-style: none; margin: 0 0 16px; padding: 0; display: flex; border-bottom: 1px solid #c3cbd4; }
+  ul.tabs li a { display: block; padding: 8px 18px; text-decoration: none; color: #3863a0; }
+  ul.tabs li.active a { color: #3c444d; border-bottom: 3px solid #5cc05c; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e1e6eb; }
+  th { background: #f2f4f5; }
+  a { color: #3863a0; cursor: pointer; }
+  .btn { border: 1px solid #c3cbd4; background: #f2f4f5; padding: 5px 12px; border-radius: 3px; font: inherit; cursor: pointer; }
+  .btn.p { background: #5cc05c; border-color: #5cc05c; color: #fff; }
+  .scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); display: grid; place-items: start center; padding-top: 40px; overflow: auto; }
+  .modal { background: #fff; width: 760px; border-radius: 4px; max-height: 80vh; display: flex; flex-direction: column; }
+  .modal header { padding: 12px 16px; border-bottom: 1px solid #c3cbd4; display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; }
+  .modal .body { padding: 16px; overflow: auto; }
+  .modal footer { padding: 10px 16px; border-top: 1px solid #c3cbd4; text-align: right; }
+  .cg { display: grid; grid-template-columns: 180px 1fr; gap: 8px; margin-bottom: 12px; align-items: start; }
+  .cg label { font-weight: 700; padding-top: 4px; }
+  .cg small { grid-column: 2; color: #6b7480; }
+  input[type=text], select, textarea { width: 100%; padding: 4px 6px; border: 1px solid #c3cbd4; border-radius: 3px; font: inherit; }
+  .rad button { border: 1px solid #c3cbd4; background: #f2f4f5; padding: 4px 10px; margin-right: -1px; }
+  .rad button.active { background: #3863a0; color: #fff; }
+  .mk { position: fixed; right: 12px; bottom: 12px; background: #fff7d6; border: 1px solid #c9a400; padding: 10px 12px; border-radius: 4px; max-width: 280px; font-size: 12px; }
+  .mk b { font-size: 18px; }
+  .sec { margin-top: 20px; }
+</style>
+</head>
+<body>
+<div class="bar">Splunk &gt; AssetDB &nbsp; <span style="font-weight:400">Search &nbsp; Configure</span> &nbsp; <a href="index.html" style="color:#9fd">Open the new flow</a></div>
+<div class="container" id="root"></div>
+<div class="mk"><strong>Before: current UI</strong><br>Clicks so far: <b id="n">0</b> <button class="btn" id="reset" type="button">Reset</button><br>Try: (A) add a field called <i>region</i>, (B) make <i>owner</i> case-insensitive, (C) find the last run's result. Then compare with the new flow. The modal here has 21 inputs; the live one has 22.</div>
+<script>
+let n = 0, tab = 'lookups', modal = null;
+const fields = ['hostname', 'ip', 'mac', 'serial', 'os', 'owner', 'site', 'vuln_count'];
+const CTRLS = ['Name|text', 'Description|text', 'Field type|select:single,multi', 'Key field|rad:Yes,No', 'Key scope|select:global,scoped', 'Case sensitive|rad:Yes,No', 'Keep original case|rad:Yes,No', 'Normalizer|select:default,none,hostname,mac,ip', 'Ignore values|text', 'Inherit global ignore|rad:Yes,No', 'Validation (regex)|text', 'Validation type|select:none,ipv4,mac', 'Allowed sources|multi', 'Merge method|select:latest,earliest,min,max,avg,sum,coalesce', 'Merge order|multi', 'Max values|text', 'Multivalue order|rad:Most recent,Alphabetical', 'Value type|select:string,number', 'Eval expression|text', 'Fill nulls with|text', 'Track conflicts|rad:Yes,No'];
+const ctl = (c) => { const [l, t] = c.split('|'); let h = '<input type="text">'; if (t.startsWith('select')) h = `<select>${t.slice(7).split(',').map((o) => `<option>${o}</option>`).join('')}</select>`; if (t.startsWith('rad')) h = `<span class="rad">${t.slice(4).split(',').map((o, i) => `<button type="button" aria-pressed="false" class="${i ? '' : 'active'}">${o}</button>`).join('')}</span>`; if (t === 'multi') h = '<select multiple size="2"><option>ad_computers</option><option>dhcp_leases</option></select>'; return `<div class="cg"><label>${l}</label>${h}</div>`; };
+function render() {
+  const t = (id, l) => `<li class="${tab === id ? 'active' : ''}"><a href="#" data-tab="${id}">${l}</a></li>`;
+  let body = '';
+  if (tab === 'lookups') body = `<p><button class="btn p" data-m="addLookup">Add Lookup</button></p><table><tr><th>Name</th><th>Lookup</th><th>Actions</th></tr>${['ad_computers', 'dhcp_leases', 'crowdstrike_hosts', 'nessus_findings'].map((s) => `<tr><td>${s}</td><td>${s}</td><td><a data-m="edit">Edit</a> | <a data-m="del">Delete</a></td></tr>`).join('')}</table>`;
+  if (tab === 'fields') body = `<p><button class="btn p" data-m="addField">Add Field</button> <button class="btn" data-m="cim">Add CIM Fields</button></p><table><tr><th>Field</th><th>Key</th><th>Merge</th><th>Actions</th></tr>${fields.map((f) => `<tr><td>${f}</td><td>${['hostname', 'ip', 'mac', 'serial'].includes(f) ? 'yes' : ''}</td><td>latest</td><td><a data-m="editField" data-f="${f}">Edit</a> | <a data-m="del">Delete</a></td></tr>`).join('')}</table>`;
+  if (tab === 'search') body = `<p><button class="btn" data-m="preview">Preview Merge</button> <button class="btn p" data-m="run">Run Search</button></p><pre style="background:#f2f4f5;padding:12px;overflow:auto;max-height:380px">| \`input_adb_lookup(ad_computers)\`\n| append [| \`input_adb_lookup(dhcp_leases)\`]\n… (generated search, about 40 to 80 lines)</pre>`;
+  if (tab === 'settings') body = `${['Max keys', 'Max rows sharing a key', 'Key blocklist', 'Global ignore list', 'Minimum size vs last run', 'Runs to keep', 'Scope field', 'Default case rule', 'Default normalizer', 'Change history', 'History index', 'History rows', 'Default merge method', 'Default field type'].map((l) => `<div class="cg"><label>${l}</label><input type="text"></div>`).join('')}<div class="sec"><h3>Recent runs</h3><table><tr><th>When</th><th>Status</th><th>Assets</th></tr><tr><td>Today 03:10</td><td>ok</td><td>41,872</td></tr><tr><td>Yesterday 03:10</td><td>ok</td><td>41,660</td></tr></table></div>`;
+  const m = modal ? `<div class="scrim"><div class="modal" role="dialog"><header><span>${modal.title}</span><a data-m="close" aria-hidden="true">×</a></header><div class="body">${modal.body}</div><footer><button class="btn" data-m="close">Cancel</button> <button class="btn p" data-m="save">Save</button></footer></div></div>` : '';
+  document.getElementById('root').innerHTML = `<h1>Configure</h1><ul class="tabs">${t('lookups', 'Asset Lookups')}${t('fields', 'Asset Fields')}${t('search', 'Asset Merge Search')}${t('settings', 'Settings')}</ul>${body}${m}`;
+}
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.mk')) { if (e.target.id === 'reset') { n = 0; document.getElementById('n').textContent = 0; } return; }
+  n++; document.getElementById('n').textContent = n;
+  const tb = e.target.closest('[data-tab]'); if (tb) { e.preventDefault(); tab = tb.dataset.tab; render(); return; }
+  const a = e.target.closest('[data-m]'); if (!a) return; const k = a.dataset.m;
+  if (k === 'close' || k === 'save') modal = null;
+  else if (k === 'addField') modal = { title: 'Add Field', body: CTRLS.map(ctl).join('') };
+  else if (k === 'editField') modal = { title: 'Edit Field: ' + a.dataset.f, body: CTRLS.map(ctl).join('') };
+  else if (k === 'addLookup') modal = { title: 'Add Lookup', body: '<div class="cg"><label>App</label><select><option>search</option></select></div><div class="cg"><label>Lookup</label><select><option>dhcp_leases</option></select></div><div class="cg"><label>Name</label><input type="text"></div>' };
+  else if (k === 'del') modal = { title: 'Delete', body: 'Are you sure you want to delete this item?' };
+  else if (k === 'run') { modal = null; alert('Opens the Search app in a NEW browser tab (context switch).'); }
+  else modal = { title: 'Dialog', body: '…' };
+  render();
+});
+render();
+</script>
+</body>
+</html>

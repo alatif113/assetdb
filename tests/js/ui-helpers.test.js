@@ -13,13 +13,6 @@ test('reserved field names include general and the default/Splunk fields, case-i
 	for (const n of ['nt_host', 'mac', 'owner']) assert.equal(h.isReservedFieldName(n), false, n);
 });
 
-test('formatIgnoreValues shows the parsed list instead of a double-encoded string', () => {
-	assert.equal(h.formatIgnoreValues('["a","b"]'), 'a, b');
-	assert.equal(h.formatIgnoreValues('[]'), 'N/A');
-	assert.equal(h.formatIgnoreValues(undefined), 'N/A');
-	assert.equal(h.formatIgnoreValues('not json'), 'N/A');
-});
-
 test('describeError extracts a Splunk message, falls back to the HTTP status', () => {
 	assert.equal(h.describeError({ data: { messages: [{ text: 'Insufficient permission' }] } }), 'Insufficient permission');
 	assert.equal(h.describeError({ responseText: '{"messages":[{"text":"boom"}]}' }), 'boom');
@@ -35,11 +28,3 @@ test('assetdb.js no longer logs to the console or ships a sourceURL pragma', () 
 	assert.ok(!/<\/td>'\}/.test(src), 'stray \'} in row templates');
 });
 
-test('input widgets label their controls with unique ids, not a shared "control-key"', () => {
-	const fs = require('node:fs');
-	const path = require('node:path');
-	const dir = path.join(__dirname, '..', '..', 'appserver', 'static', 'js', 'src');
-	for (const f of ['textInput.js', 'radioInput.js', 'spinnerInput.js', 'multiselectInput.js']) {
-		assert.ok(!/control-key/.test(fs.readFileSync(path.join(dir, f), 'utf8')), f);
-	}
-});

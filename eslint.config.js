@@ -2,7 +2,7 @@ const js = require('@eslint/js');
 const globals = require('globals');
 
 module.exports = [
-	{ ignores: ['**/*.min*.js', 'node_modules/**', 'lib/**', 'dist/**', '.venv/**'] },
+	{ ignores: ['**/*.min*.js', 'mockups/**', 'node_modules/**', 'lib/**', 'dist/**', '.venv/**'] },
 	js.configs.recommended,
 	{
 		files: ['appserver/static/js/src/**/*.js'],

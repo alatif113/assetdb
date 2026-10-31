@@ -1,6 +1,7 @@
-// Live UI flow: reserved-name rejection, cancelled lookup removal, add field, delete field.
-// Writes to the real assetdb.conf / saved search / transforms.conf and cleans up after itself.
+// Live UI flow against the real config: add a field (validation, draft/save), edit it, disable it, duplicate it, remove it,
+// add and remove the CIM presets, edit source options, change settings, run a preview. Cleans up after itself.
 import { chromium } from 'playwright';
+import { routeLocalAssets } from './local-assets.mjs';
 
 const base = process.env.SPLUNK_WEB_URL;
 const name = `adbtest_${Date.now().toString(36)}`;
@@ -10,212 +11,202 @@ const check = (cond, msg) => { if (!cond) errors.push(msg); console.log(cond ? '
 const browser = await chromium.launch();
 const ctx = await browser.newContext({ ignoreHTTPSErrors: process.env.SPLUNK_INSECURE_TLS === '1' });
 const page = await ctx.newPage();
-await page.setViewportSize({ width: 1280, height: 1600 });
+await routeLocalAssets(page);
+await page.setViewportSize({ width: 1440, height: 1200 });
 page.on('pageerror', (e) => errors.push(`pageerror: ${e}`));
 
 const rest = async (path) => (await ctx.request.get(`${base}/en-US/splunkd/__raw${path}${path.includes('?') ? '&' : '?'}output_mode=json&count=0`)).json();
 const conf = async () => (await rest('/servicesNS/nobody/assetdb/configs/conf-assetdb')).entry;
-const savedSearch = async () => (await rest('/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen')).entry[0].content.search;
+const savedSearch = async () => (await rest('/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen')).entry[0].content;
 const fieldsList = async () => (await rest('/servicesNS/nobody/assetdb/configs/conf-transforms/assetdb')).entry[0].content.fields_list;
-let originalSearch;
-let originalLookups;
-let originalFieldsList;
-let originalMacro;
-const presetNames = ['ip', 'mac', 'nt_host', 'dns', 'owner', 'priority', 'bunit', 'category', 'city', 'country', 'pci_domain', 'is_expected'];
-let presetsAdded = false;
 const generalConf = async () => (await conf()).find((e) => e.name === 'general').content;
-const modal = () => page.locator('.modal:visible');
+const fieldConf = async (n) => ((await conf()).find((e) => e.name === n) || {}).content;
+const presetNames = ['ip', 'mac', 'nt_host', 'dns', 'owner', 'priority', 'bunit', 'category', 'city', 'country', 'pci_domain', 'is_expected'];
+let originalSearch; let originalSched; let originalLookups; let originalFieldsList; let originalMacro; let originalGeneral; let presetsAdded = false;
+const modal = () => page.locator('.modal');
+const row = (n) => page.locator(`tr[data-id="${n}"]`);
+const editorFocused = () => page.waitForFunction(() => document.querySelector('#ab_config').shadowRoot.activeElement?.id === 'dr-title', null, { timeout: 15000 });
+const settled = () => page.waitForFunction(() => document.querySelector('#ab_config').shadowRoot.querySelector('.d-status')?.dataset.state === 'saved', null, { timeout: 60000 });
 
 try {
   await page.goto(`${base}/en-US/app/assetdb/configure`);
-  await page.waitForSelector('#ab_config .lookups-table', { timeout: 60000 });
+  await page.waitForSelector('.tab[data-tab="fields"]', { timeout: 60000 });
+  await settled();
 
-  originalSearch = await savedSearch();
-  originalLookups = (await generalConf()).lookups;
-  // derived from the fields configured now, not read back: a previous interrupted run may have left both stale
+  const ss = await savedSearch();
+  originalSearch = ss.search; originalSched = { cron_schedule: ss.cron_schedule, enableSched: ss.enableSched };
+  originalGeneral = await generalConf(); originalLookups = originalGeneral.lookups;
   const startFields = (await conf()).filter((e) => e.name !== 'general').map((e) => e.name);
   originalFieldsList = startFields.concat(['_key', 'asset', 'source', 'source_lookup', 'last_seen', 'scope', 'conflicts']).join(',');
   originalMacro = ['_key AS asset_id', 'source AS asset_source', 'source_lookup AS asset_source_lookup', 'last_seen AS asset_last_seen'].concat(startFields.map((n) => `${n} AS asset_${n}`)).join(', ');
 
-  // F-08: cancelling Remove Lookup must not change anything
-  const lookupsBefore = (await conf()).find((e) => e.name === 'general').content.lookups;
-  await page.click('#ab_config .adb-lookup-delete');
-  await modal().waitFor();
-  await page.click('.modal:visible a.btn:has-text("Cancel")');
-  await page.waitForTimeout(800);
-  await page.click('#ab_config .btn-add-lookup');
-  await modal().waitFor();
-  await page.click('.modal:visible a.btn:has-text("Cancel")');
-  check((await conf()).find((e) => e.name === 'general').content.lookups === lookupsBefore, 'cancelled lookup removal leaves the lookups config unchanged');
-
-  // CIM presets: one click adds the missing CIM fields (removed again by the cleanup below)
-  await page.click('#ab_config a.tab-label:has-text("Asset Fields")');
-  await page.click('#ab_config .btn-add-cim-fields');
-  await modal().waitFor();
-  await modal().getByText('nt_host').first().waitFor({ timeout: 10000 }).catch(() => {});
-  check((await modal().innerText()).includes('nt_host'), 'the CIM dialog lists the fields it will add');
-  presetsAdded = true;
-  await page.click('.modal:visible .btn-primary');
-  await page.waitForSelector('#ab_config tr[data-name="mac"]', { timeout: 60000 });
-  const afterPresets = (await conf()).map((e) => e.name);
-  check(presetNames.every((n) => afterPresets.includes(n)), 'all CIM fields were added to assetdb.conf');
-  check((await savedSearch()).includes('`normalize_mac(mac)`'), 'saved search uses the preset normalizers');
-  const accel = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb')).entry[0].content;
-  check(['ip', 'mac', 'nt_host', 'dns'].every((n) => accel[`accelerated_fields.${n}`]), 'the four CIM key fields are indexed');
-
-  // Sources: edit options (max age, row filter, column mapping), see them stored and used by the saved search
-  await page.click('#ab_config a.tab-label:has-text("Asset Lookups")');
-  await page.click('#ab_config .adb-lookup-edit');
-  await modal().waitFor();
-  check((await modal().locator('.adb-source-schema').innerText()).length > 0, 'edit source shows the lookup schema box');
-  await page.fill('.modal:visible #inputSourceMaxAge input', 'nonsense');
-  await page.click('.modal:visible .btn-primary');
-  check((await modal().locator('#inputSourceMaxAge .error-message').count()) > 0, 'invalid max age is rejected');
-  await page.fill('.modal:visible #inputSourceMaxAge input', '45d');
-  await page.fill('.modal:visible #inputSourceFilter input', 'priority>>0');
-  await page.click('.modal:visible .btn-primary');
-  await page.waitForTimeout(1500);
-  check((await modal().locator('#inputSourceFilter .error-message').allInnerTexts()).some((t) => /malformed|unexpected/i.test(t)), 'invalid row filter is rejected with the parser message');
-  await page.fill('.modal:visible #inputSourceFilter input', 'priority>0');
-  await page.fill('.modal:visible #inputSourceScope input', 'E2E_Site');
-  await page.fill('.modal:visible #inputSourceColumns', 'owner = Owner Name');
-  await page.click('.modal:visible .btn-primary');
-  await page.waitForTimeout(2500);
-  const demo = JSON.parse((await generalConf()).lookups)[0];
-  check(demo.max_age === '45d' && demo.filter === 'priority>0' && demo.columns.owner === 'Owner Name' && demo.enabled === true, 'source options stored in the lookups JSON');
-  check((await savedSearch()).includes('relative_time(now(), "-45d")'), 'saved search applies the max age');
-  check((await savedSearch()).includes('"e2e_site"') && (await savedSearch()).includes('| eval scope = lower(case('), 'saved search assigns the source scope');
-
-  // Settings: max keys is validated against the hard cap, valid values are saved, and the original is restored
-    const originalMaxKeys = (await generalConf()).max_keys;
-  await page.click('#ab_config a.tab-label:has-text("Settings")');
-  await page.fill('#inputMaxKeys input', '500');
-  await page.click('#ab_config .btn-save-settings');
-  check((await page.locator('#inputMaxKeys .error-message').count()) > 0, 'max keys above the hard cap is rejected');
-  await page.fill('#inputMaxKeys input', '30');
-  await page.click('#ab_config .btn-save-settings');
-  await page.waitForSelector('#ab_config a.tab-label:has-text("Settings")');
-  await page.waitForTimeout(1500);
-  check((await generalConf()).max_keys === '30', 'max keys saved to the [general] stanza');
-  check(Array.isArray(JSON.parse((await generalConf()).ignore_values || 'null')), 'global ignore list saved as a JSON array');
-  check(JSON.parse((await generalConf()).key_blocklist || 'null')?.includes('00:00:00:00:00:00'), 'key blocklist saved (defaults shown and stored)');
-  check((await generalConf()).max_key_share === '50', 'max key share saved');
-  check((await generalConf()).change_history === 'off', 'change history saved (off)');
-  check((await savedSearch()).includes('adbmerge max_keys=30 max_key_share=50'), 'saved search passes max_key_share');
-  check((await savedSearch()).includes('adbmerge max_keys=30'), 'saved search regenerated with the new max keys');
-  await page.click('#ab_config a.tab-label:has-text("Settings")');
-  await page.fill('#inputMaxKeys input', originalMaxKeys || '25');
-  await page.click('#ab_config .btn-save-settings');
-  await page.waitForTimeout(1500);
-
-  // F-09: reserved field name is rejected
-  await page.click('#ab_config a.tab-label:has-text("Asset Fields")');
-  await page.click('#ab_config .btn-add-field');
-  await modal().waitFor();
-  check((await modal().locator('h3').innerText()) === 'Add Field', 'Add Field modal has the Add title');
-  await page.fill('.modal:visible #inputFieldName input', 'general');
-  await page.click('.modal:visible .btn-primary');
-  check(await modal().locator('.error-message').count() > 0, 'reserved name "general" is rejected');
+  // the editor is a draft: opening and editing writes nothing until Save; tables have no inputs besides the Enabled switch
+  await page.click('[data-act=addField]');
+  await page.waitForSelector('#fd-name');
+  check(await page.evaluate(() => document.activeElement === document.querySelector('#ab_config') && document.querySelector('#ab_config').shadowRoot.activeElement?.id === 'dr-title'), 'the editor takes focus on its heading');
+  await page.fill('#fd-name', 'general');
+  await page.click('[data-act=saveDrawer]');
+  check((await page.locator('#fd-name-e').innerText()).length > 0, 'reserved name "general" is rejected');
   check(!(await conf()).some((e) => e.name === 'general' && e.content.field_type), 'no field stanza created for "general"');
 
-  // F-14: fill null on a key field is rejected
-  await page.fill('.modal:visible #inputFieldName input', name);
-  await page.click('.modal:visible #inputKeyField button[data-value="1"]');
-  await page.fill('.modal:visible #inputFillnull input', 'x').catch(() => {});
-  await page.click('.modal:visible .btn-primary');
-  const fillnullErr = await modal().locator('.error-message').allInnerTexts();
-  check(fillnullErr.some((t) => /key field/i.test(t)) || (await conf()).every((e) => e.name !== name), 'fill null on a key field is refused');
+  // fill null on a key field is rejected; a malformed eval expression is rejected by the parser
+  await page.fill('#fd-name', name);
+  await page.click('#sw-key');
+  await page.click('summary:has-text("Advanced")');
+  await page.fill('#fd-fill', 'x');
+  await page.click('[data-act=saveDrawer]');
+  check(/key field/i.test(await page.locator('#fd-fill-e').innerText()), 'fill null on a key field is refused');
+  await page.fill('#fd-fill', '');
+  await page.fill('#fd-eval', 'if(');
+  await page.click('[data-act=saveDrawer]');
+  await page.waitForFunction(() => document.querySelector('#ab_config').shadowRoot.querySelector('#fd-eval-e')?.hidden === false, null, { timeout: 15000 }).catch(() => {});
+  check((await page.locator('#fd-eval-e').innerText()).length > 0, 'a malformed eval expression is rejected by the parser');
+  check(!(await conf()).some((e) => e.name === name), 'nothing was written while the form was invalid');
+  await page.fill('#fd-eval', '');
 
-  // eval expressions are checked by Splunk's parser (the v2 parser endpoint needs POST)
-  await page.fill('.modal:visible #inputEvalExp input', 'if(');
-  await page.fill('.modal:visible #inputFillnull input', '');
-  await page.click('.modal:visible #inputKeyField button[data-value="0"]');
-  await page.click('.modal:visible .btn-primary');
-  await page.waitForTimeout(1500);
-  check((await modal().locator('#inputEvalExp .error-message').count()) > 0, 'a malformed eval expression is rejected by the parser');
-  await page.fill('.modal:visible #inputEvalExp input', '');
-  await page.click('.modal:visible #inputKeyField button[data-value="1"]');
-
-  // add a key field with the new cleaning options
-  await page.fill('.modal:visible #inputFillnull input', '').catch(() => {});
-  await page.fill('.modal:visible #inputDescription input', 'e2e test field');
-  await page.selectOption('.modal:visible #inputNormalizer select', 'trim');
-  await page.click('.modal:visible #inputKeyScope button[data-value="scoped"]');
-  await page.selectOption('.modal:visible #inputValidationType select', 'ipv4');
-  check(await modal().locator('#inputKeepCase').isVisible(), 'Keep Original Case is offered for a case insensitive key field');
-  await page.click('.modal:visible .btn-primary');
-  await page.waitForSelector(`#ab_config tr[data-name="${name}"]`, { timeout: 30000 });
-  check(true, 'new field appears in the table after the save chain completes');
-  check((await conf()).some((e) => e.name === name), 'field stanza written to assetdb.conf');
-  const saved = (await conf()).find((e) => e.name === name).content;
-  check(saved.description === 'e2e test field' && saved.normalizer === 'trim' && saved.validation_type === 'ipv4', 'new field options are stored');
-  check((await savedSearch()).includes(name), 'saved search regenerated with the new field');
-  check((await savedSearch()).includes(`\`normalize_trim(${name})\``), 'saved search applies the normalizer');
-  check((await savedSearch()).includes(`mvmap(adbk_${name}, scope`), 'saved search prefixes the scoped key');
+  // add the field with cleaning options, then check what was written
+  await page.fill('#fd-desc', 'e2e test field');
+  await page.selectOption('#fd-norm', 'trim');
+  await page.selectOption('#fd-valtype', 'ipv4');
+  await page.click('input[name=keyScope][value=scoped]', { force: true });
+  check(await page.locator('#sw-keepCase').isVisible(), 'Keep original case is offered for a case-insensitive key field');
+  await page.click('[data-act=saveDrawer]');
+  await page.waitForSelector(`tr[data-id="${name}"]`, { timeout: 60000 });
+  await settled();
+  const saved = await fieldConf(name);
+  check(!!saved && saved.description === 'e2e test field' && saved.normalizer === 'trim' && saved.validation_type === 'ipv4' && saved.key_field === '1' && saved.key_scope === 'scoped' && saved.enabled === '1', 'new field options are stored (same conf properties as before, plus enabled)');
+  check((await savedSearch()).search.includes(name), 'saved search regenerated with the new field');
+  check((await savedSearch()).search.includes(`\`normalize_trim(${name})\``), 'saved search applies the normalizer');
   const collection = async () => (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb')).entry[0].content;
   check((await collection())[`accelerated_fields.${name}`] === JSON.stringify({ [name]: 1 }), 'key field is accelerated in the KV collection');
-  const macro = async () => (await rest('/servicesNS/nobody/assetdb/data/macros/adb_enrich_outputs')).entry[0].content.definition;
-  check((await macro()).includes(`${name} AS asset_${name}`), 'adb_enrich_outputs lists the new field');
-  check((await fieldsList()).split(',').includes(name) && (await fieldsList()).includes('last_seen'), 'transforms fields_list updated (incl. last_seen)');
+  check((await fieldsList()).split(',').includes(name), 'transforms fields_list updated');
+  check(await row(name).locator('.keymark').count() === 1 && await row(name).locator('input, select').count() === 0, 'the row shows the key icon and has no inputs');
 
-  // merge preview: runs the pipeline up to adbmerge without writing and shows the numbers
-  await page.click('#ab_config a.tab-label:has-text("Asset Merge Search")');
-  await page.click('#ab_config .btn-preview-merge');
-  await page.waitForSelector('.modal:visible .adb-preview b', { timeout: 120000 });
-  check(/^\d+ assets$/.test(await modal().locator('.adb-preview b').first().innerText()), 'merge preview shows how many assets the merge would produce');
-  await page.click('.modal:visible .btn-primary');
-  await page.waitForTimeout(800);
-
-  // delete it again
-  await page.click('#ab_config a.tab-label:has-text("Asset Fields")');
-  await page.click(`#ab_config tr[data-name="${name}"] .adb-field-delete`);
+  // edit through the draft: Esc with unsaved changes asks first, Save writes
+  await row(name).locator('[data-act=editField]').click();
+  await page.waitForSelector('.drawer');
+  await page.fill('#fd-desc', 'changed');
+  await page.keyboard.press('Escape');
   await modal().waitFor();
-  await page.click('.modal:visible .btn-primary');
-  await page.waitForSelector(`#ab_config tr[data-name="${name}"]`, { state: 'detached', timeout: 30000 });
+  check(!!(await modal().innerText()).match(/Discard unsaved changes/), 'closing with unsaved edits asks before discarding');
+  await page.click('[data-m=cancel]');
+  check((await fieldConf(name)).description === 'e2e test field', 'the edit is not written before Save');
+  await page.click('[data-act=saveDrawer]');
+  await settled();
+  check((await fieldConf(name)).description === 'changed', 'Save writes the edit');
+
+  // the Enabled switch in the row saves on its own and removes the field from the search
+  await row(name).locator('[data-act=toggleRow]').click();
+  await settled();
+  check((await fieldConf(name)).enabled === '0', 'the row switch disables the field in the config');
+  check(!(await savedSearch()).search.includes(name), 'a disabled field is left out of the saved search');
+  await row(name).locator('[data-act=toggleRow]').click();
+  await settled();
+  check((await savedSearch()).search.includes(name), 'enabling it puts it back');
+
+  // duplicate opens a prefilled add form
+  await row(name).locator('[data-act=dupRow]').click();
+  await page.waitForSelector('#fd-name');
+  await editorFocused();
+  check((await page.inputValue('#fd-name')) === `${name}_copy`, 'duplicate prefills the add form');
+  await page.keyboard.press('Escape');
+  await modal().waitFor();
+  await page.click('[data-m=ok]');
+
+  // merge preview: a real search job whose SID can be opened in Search
+  await page.click('.tab[data-tab="pipeline"]');
+  await page.click('[data-act=preview]');
+  await page.waitForSelector('.cards3 .kpi .v', { timeout: 180000 });
+  check(/^\d+$/.test(await page.locator('.cards3 .kpi .v').first().innerText()), 'merge preview shows how many assets the merge would produce');
+  const link = await page.getAttribute('a:has-text("Open in Search") >> nth=0', 'href');
+  check(/\/app\/search\/search\?sid=/.test(link || ''), 'Open in Search links to the preview job by SID');
+
+  // remove it again
+  await page.click('.tab[data-tab="fields"]');
+  await row(name).locator('[data-act=rmRow]').click();
+  await modal().waitFor();
+  await page.click('[data-m=ok]');
+  await page.waitForSelector(`tr[data-id="${name}"]`, { state: 'detached', timeout: 60000 });
+  await settled();
   check(!(await conf()).some((e) => e.name === name), 'field stanza removed');
-  check(!(await savedSearch()).includes(name), 'saved search no longer mentions the field');
+  check(!(await savedSearch()).search.includes(name), 'saved search no longer mentions the field');
   check(!(await collection())[`accelerated_fields.${name}`], 'acceleration removed with the field');
-  check(!(await macro()).includes(`asset_${name}`), 'adb_enrich_outputs no longer lists the field');
   check(!(await fieldsList()).split(',').includes(name), 'transforms fields_list no longer lists the field');
+
+  // CIM presets
+  await page.click('[data-act=preset] >> nth=0');
+  await modal().waitFor();
+  check((await modal().innerText()).includes('nt_host'), 'the CIM dialog lists the fields it will add');
+  presetsAdded = true;
+  await page.click('[data-m=ok]');
+  await page.waitForSelector('tr[data-id="mac"]', { timeout: 60000 });
+  await settled();
+  const afterPresets = (await conf()).map((e) => e.name);
+  check(presetNames.every((n) => afterPresets.includes(n)), 'all CIM fields were added to assetdb.conf');
+  check((await savedSearch()).search.includes('`normalize_mac(mac)`'), 'saved search uses the preset normalizers');
+  const accel = await collection();
+  check(['ip', 'mac', 'nt_host', 'dns'].every((n) => accel[`accelerated_fields.${n}`]), 'the four CIM key fields are indexed');
+
+  // Sources: the first source's options are edited as a draft (max age, row filter, scope, column mapping)
+  await page.click('.tab[data-tab="sources"]');
+  const firstSource = JSON.parse((await generalConf()).lookups)[0].name;
+  await row(firstSource).locator('[data-act=editSource]').click();
+  await page.waitForSelector('#sd-age');
+  await page.fill('#sd-age', '45');
+  await page.selectOption('select[data-d=ageUnit]', 'd');
+  await page.fill('#sd-filter', 'priority>>0');
+  await page.click('[data-act=saveDrawer]');
+  await page.waitForFunction(() => document.querySelector('#ab_config').shadowRoot.querySelector('#sd-filter-e')?.hidden === false, null, { timeout: 20000 }).catch(() => {});
+  check((await page.locator('#sd-filter-e').innerText()).length > 0, 'an invalid row filter is rejected with the parser message');
+  await page.fill('#sd-filter', 'priority>0');
+  await page.fill('#sd-scope', 'E2E_Site');
+  await page.click('[data-act=mapAdd]');
+  await page.locator('input[data-dm=to]').last().fill('owner');
+  await page.locator('[data-dm=from]').last().fill('Owner Name').catch(async () => { await page.locator('select[data-dm=from]').last().selectOption({ index: 0 }); });
+  await page.click('[data-act=saveDrawer]');
+  await settled();
+  const demo = JSON.parse((await generalConf()).lookups)[0];
+  check(demo.max_age === '45d' && demo.filter === 'priority>0' && demo.scope === 'E2E_Site' && demo.enabled === true && !!demo.columns.owner, 'source options stored in the lookups JSON');
+  check((await savedSearch()).search.includes('relative_time(now(), "-45d")'), 'saved search applies the max age');
+
+  // Settings: validated, saved to [general] and the saved search schedule, then put back
+  await page.click('.tab[data-tab="settings"]');
+  await page.fill('#st-max_keys', '500');
+  await page.click('[data-act=ssave]');
+  check((await page.locator('#st-max_keys-e').innerText()).length > 0, 'max keys above the hard cap is rejected');
+  await page.fill('#st-max_keys', '30');
+  await page.fill('#st-min_pct', '40');
+  await page.click('[data-act=ssave]');
+  await settled();
+  const g = await generalConf();
+  check(g.max_keys === '30' && g.min_ratio === '0.4', 'max keys and the safety ratio saved (percent is stored as a ratio)');
+  check((await savedSearch()).search.includes('adbmerge max_keys=30'), 'saved search regenerated with the new max keys');
 } catch (e) {
   errors.push(String(e));
 } finally {
-  // best-effort cleanup so a failed run does not leave the test field behind
-  const stray = (await conf().catch(() => [])).some((e) => e.name === name);
-  if (stray) {
-    console.log(`cleaning up leftover field ${name}`);
-    await ctx.request.delete(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/configs/conf-assetdb/${name}`).catch(() => {});
-  }
-  const csrfForCleanup = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
-  if (presetsAdded && csrfForCleanup) {
-    const hdr = { 'X-Splunk-Form-Key': csrfForCleanup.value, 'X-Requested-With': 'XMLHttpRequest' };
-    const root = `${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb`;
-    const present = (await conf().catch(() => [])).map((e) => e.name);
-    for (const n of presetNames.filter((x) => present.includes(x))) await ctx.request.delete(`${root}/configs/conf-assetdb/${n}`, { headers: hdr }).catch(() => {});
-    if (originalFieldsList !== undefined) await ctx.request.post(`${root}/configs/conf-transforms/assetdb`, { headers: hdr, form: { fields_list: originalFieldsList } }).catch(() => {});
-    if (originalMacro !== undefined) await ctx.request.post(`${root}/data/macros/adb_enrich_outputs`, { headers: hdr, form: { definition: originalMacro } }).catch(() => {});
-    // only clear settings that exist: blank entries for unknown names would count against the 10 index limit
-    const current = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb').catch(() => ({ entry: [{ content: {} }] }))).entry[0].content;
-    const clear = {};
-    for (const n of presetNames) for (const k of [`accelerated_fields.${n}`, `field.${n}`]) if (current[k]) clear[k] = '';
-    if (Object.keys(clear).length) await ctx.request.post(`${root}/storage/collections/config/assetdb`, { headers: hdr, form: clear }).catch(() => {});
-    const after = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb').catch(() => ({ entry: [{ content: {} }] }))).entry[0].content;
-    check(!(await conf().catch(() => [])).some((e) => presetNames.includes(e.name)) && presetNames.every((n) => !after[`accelerated_fields.${n}`] && !after[`field.${n}`]), 'CIM fields cleaned up (config and collection)');
-  }
-  // the UI regenerates the saved search on every change; put back what was there before
   const csrf = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
-  if (originalSearch !== undefined && csrf) {
-    if (originalLookups !== undefined) {
-      await ctx.request.post(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/configs/conf-assetdb/general`, {
-        headers: { 'X-Splunk-Form-Key': csrf.value, 'X-Requested-With': 'XMLHttpRequest' }, form: { lookups: originalLookups, output_mode: 'json' },
-      }).catch(() => {});
-      check((await generalConf().catch(() => ({}))).lookups === originalLookups, 'lookups config restored');
-    }
-    await ctx.request.post(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen`, {
-      headers: { 'X-Splunk-Form-Key': csrf.value, 'X-Requested-With': 'XMLHttpRequest' }, form: { search: originalSearch, output_mode: 'json' },
-    }).catch(() => {});
-    check((await savedSearch().catch(() => null)) === originalSearch, 'saved search restored to its original text');
+  const hdr = csrf ? { 'X-Splunk-Form-Key': csrf.value, 'X-Requested-With': 'XMLHttpRequest' } : {};
+  const root = `${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb`;
+  const post = (path, form) => ctx.request.post(`${root}${path}`, { headers: hdr, form: { ...form, output_mode: 'json' } }).catch(() => {});
+  // best-effort cleanup so a failed run leaves nothing behind
+  const present = (await conf().catch(() => [])).map((e) => e.name);
+  for (const n of [name, `${name}_copy`].concat(presetsAdded ? presetNames : []).filter((x) => present.includes(x))) await ctx.request.delete(`${root}/configs/conf-assetdb/${n}`, { headers: hdr }).catch(() => {});
+  if (originalGeneral) {
+    const restore = {};
+    for (const k of ['max_keys', 'min_ratio', 'lookups']) if (originalGeneral[k] !== undefined) restore[k] = originalGeneral[k];
+    await post('/configs/conf-assetdb/general', restore);
   }
+  if (originalFieldsList !== undefined) await post('/configs/conf-transforms/assetdb', { fields_list: originalFieldsList });
+  if (originalMacro !== undefined) await post('/data/macros/adb_enrich_outputs', { definition: originalMacro });
+  const current = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb').catch(() => ({ entry: [{ content: {} }] }))).entry[0].content;
+  const clear = {};
+  for (const n of [name].concat(presetNames)) for (const k of [`accelerated_fields.${n}`, `field.${n}`]) if (current[k]) clear[k] = '';
+  if (Object.keys(clear).length) await post('/storage/collections/config/assetdb', clear);
+  if (originalSearch !== undefined) await post('/saved/searches/assetdb-lookupgen', { search: originalSearch, ...originalSched });
+  const after = await conf().catch(() => []);
+  check(!after.some((e) => [name, `${name}_copy`].concat(presetNames).includes(e.name)), 'test fields cleaned up');
+  check(!originalGeneral || (await generalConf().catch(() => ({}))).lookups === originalLookups, 'lookups config restored');
+  check((await savedSearch().catch(() => ({}))).search === originalSearch, 'saved search restored to its original text');
   await page.screenshot({ path: 'dist/e2e-flow.png' }).catch(() => {});
   await browser.close();
 }

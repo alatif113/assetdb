@@ -4,15 +4,22 @@ AssetDB is a Splunk application that allows merging distinct data sources into a
 
 ## Usage
 
-Navigate to the "Configure" tab to configure AssetDB
+Open **Configure** to set AssetDB up. The page has four tabs, a status strip and a few conventions:
+
+- **Sources**, **Fields**, **Pipeline** and **Settings** tabs. Sources and Fields are read-only tables; each row has an *Enabled* switch (it saves on its own) and *Edit*, *Duplicate* and *Remove* icons. A warning icon beside a name explains a problem, for example a source whose lookup cannot be read, or a field that no enabled source supplies.
+- **Editing is draft-and-save.** The editor card beside the table holds your edits; nothing is written until you click *Save*, and closing with unsaved edits asks first. A save writes the configuration, updates the KV store collection and regenerates the merge search, and the status strip says which step failed if one does.
+- The **status strip** shows whether everything is saved, the last run (time, assets and change), the next scheduled run and the state of the merge search, with a *Run now* button and a *Run history* panel (runs, oversized clusters to review, recent changes).
+- Help text for each setting is in the **(i)** tooltip beside its label. The page follows Splunk's light or dark theme.
+
+The sections below keep the original names of the things you configure: the *Sources* tab is where lookups are added, *Fields* is where fields are configured, *Pipeline* shows the merge search and *Settings* the global values.
 
 ### Asset Lookups
 
 Create lookup files and corresponding lookup generation searches for each unique data source that provides asset information. 
 
- - **Add lookup file**: Click the *Add Lookup* button to add a lookup file to be used to populate the merged *Asset Database*. A demo lookup file, *assetdb_demo_assets.csv* is provided by default. 
+ - **Add lookup file**: Click *Add source* on the Sources tab to add a lookup file to be used to populate the merged *Asset Database*. A demo lookup file, *assetdb_demo_assets.csv* is provided by default. 
 
- - **Delete lookup file**: Click the *Delete* link next to an existing lookup file in the *Lookups Table* to remove the lookup and prevent its contents from being merged into the *Asset Database*.
+ - **Delete lookup file**: Click the *Remove* icon in the row of a source to remove the lookup and prevent its contents from being merged into the *Asset Database*.
 
 #### Source options
 
@@ -39,7 +46,7 @@ Create fields to be stored within the *Asset Database* and merged between all in
 Every merged asset also gets `last_seen`: the most recent `_time` of the source rows (empty when the source lookups have no `_time` column). Existing installs pick the field up in the `assetdb` lookup definition the next time a field is added or deleted in the UI.
 Every key field gets an index in the KV store collection (the collection allows 10 indexes, `asset` uses one, so at most 9 key fields are indexed). The **Settings** tab holds global settings, including the default case rule and default normalizer for fields that do not set their own. `Max Keys` (stored as `max_keys` in the `[general]` stanza, default 25, hard limit 100) is the largest merged asset: assets whose merged key set is larger are dropped and counted in `python.log`. The limit is hard because the merge command keeps every key set in memory. The tab also sets the cron schedule of the merge search and whether it is scheduled.
 
-**Run history and the safety check.** Every run of the merge search writes one record to the `assetdb_runs` KV collection: time, status, assets produced, assets in the last successful run, merge inputs (rows that have a key, identical key sets combined), rows without keys, dropped overflow assets, skipped shared keys and unmatched enrich rows. The Settings tab shows the latest runs.
+**Run history and the safety check.** Every run of the merge search writes one record to the `assetdb_runs` KV collection: time, status, assets produced, assets in the last successful run, merge inputs (rows that have a key, identical key sets combined), rows without keys, dropped overflow assets, skipped shared keys and unmatched enrich rows. The *Run history* panel shows the latest runs.
 
 - *Safety Check* (Settings, default 0.5): a run that produces fewer than that fraction of the assets of the last *successful* run is not written. The asset database stays as it was and the run is recorded as `blocked_low_count`. A run that produces no assets at all can never overwrite the asset database (recorded as `empty`). The usual cause is an upstream search that failed and left a source lookup empty. The disabled saved search `assetdb-run-alert` shows the latest run when it was not `ok`: enable it and attach an alert action.
 - *Runs to Keep* (default 200, at most 5000): every run rewrites the history to keep only the newest runs, so the collection cannot grow without bound.
@@ -62,12 +69,12 @@ Limits to know: the previous `assetdb` is read in full on every run, so the cost
 - *Max Key Share* (Settings, default 50, 0 turns it off): a key found in more than this many input rows is not used to match, which catches shared keys you did not think of, such as a NAT address or a golden-image host name. The skipped keys are listed in the `adbmerge` log (`python.log`). Rows left without any key are dropped.
 Source lookups are read with the `input_adb_lookup` macro, which sets `source_lookup` to the lookup name when the lookup has no `source_lookup` column (lookups written by `output_adb_lookup` already carry it). `source` is derived from `source_lookup`.
 
-- **Add CIM fields**: Click *Add CIM Fields* to add the missing fields of the CIM-shaped asset schema in one step: `ip`, `mac`, `nt_host`, `dns` (keys, with normalizers and validation), `owner` (conflicts flagged), `priority`, `bunit`, `category`, `city`, `country`, `pci_domain` and `is_expected`. It only uses the names and sensible defaults; it needs neither the CIM add-on nor Enterprise Security. Fields that already exist are left alone.
-- **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
+- **Add CIM fields**: Click *Add CIM preset* to add the missing fields of the CIM-shaped asset schema in one step: `ip`, `mac`, `nt_host`, `dns` (keys, with normalizers and validation), `owner` (conflicts flagged), `priority`, `bunit`, `category`, `city`, `country`, `pci_domain` and `is_expected`. It only uses the names and sensible defaults; it needs neither the CIM add-on nor Enterprise Security. Fields that already exist are left alone.
+- **Add field**: Click *Add field* on the Fields tab to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
 
-- **Edit field**: Click the *Edit Field* button to edit an existing field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
+- **Edit field**: Click the *Edit* icon in the row of a field to edit an existing field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
 
-- **Delete field**: Click the *Delete Field* button to delete an existing field from the *Asset Database*. Deleting a field, does not remove that field from any underlying lookup files. 
+- **Delete field**: Click the *Remove* icon in the row of a field to delete an existing field from the *Asset Database*. Deleting a field, does not remove that field from any underlying lookup files. 
 
 ### Field Properties
 
@@ -150,7 +157,7 @@ The columns come from the `adb_enrich_outputs` macro, which the Configure page k
 
 Merging is done via a custom command `adbmerge` and saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store. 
 
-**Preview.** The *Preview* button on this tab runs the merge up to the `adbmerge` command without saving anything and shows how many assets it would produce (next to what `assetdb` holds now), how many assets each source contributes, the largest merged assets and the counters (overflow clusters, rows without keys, skipped shared keys, unmatched enrich rows). Use it before changing key fields, normalizers or blocklists. It does the work of a real run minus the writes, so on a large inventory it takes about as long.
+**Preview.** The *Run preview* button on the Pipeline tab runs the merge up to the `adbmerge` command without saving anything and shows how many assets it would produce (next to what `assetdb` holds now). The preview runs as a search job, and *Open in Search* opens that job (by its search ID) in the Search app in a new window, how many assets each source contributes, the largest merged assets and the counters (overflow clusters, rows without keys, skipped shared keys, unmatched enrich rows). Use it before changing key fields, normalizers or blocklists. It does the work of a real run minus the writes, so on a large inventory it takes about as long.
 
 ### Operational notes
 
