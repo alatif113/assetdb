@@ -35,12 +35,10 @@ await page.waitForSelector('#ab_config', { timeout: 60000 });
 await page.waitForSelector('.tab[data-tab="sources"]', { timeout: 60000 });
 const stylesApplied = await page.evaluate(() => !!document.querySelector('#ab_config').shadowRoot.querySelector('link[rel=stylesheet]'));
 if (!stylesApplied) errors.push('the stylesheet is not attached to the Configure page');
-const theme = await page.getAttribute('#ab_config', 'data-theme');
-if (!['light', 'dark'].includes(theme)) errors.push(`theme was not detected: ${theme}`);
 // Pipeline: the generated search is listed stage by stage, links are built with the locale/root_endpoint prefix
 await page.click('.tab[data-tab="pipeline"]');
-await page.waitForSelector('.outline button', { timeout: 30000 });
-const stageCount = await page.locator('.outline button').count();
+await page.waitForSelector('.steps button', { timeout: 30000 });
+const stageCount = await page.locator('.steps button').count();
 if (stageCount < 3) errors.push(`expected the generated search in stages, found ${stageCount}`);
 const href = await page.getAttribute('a:has-text("Open merge search")', 'href');
 if (!/^\/[a-z]{2}-[A-Z]{2}\/app\/assetdb\/search\?/.test(href)) errors.push(`Open merge search link is not locale prefixed: ${href}`);

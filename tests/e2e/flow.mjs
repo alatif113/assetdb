@@ -137,6 +137,7 @@ try {
   // CIM presets
   await page.click('[data-act=preset] >> nth=0');
   await modal().waitFor();
+  await modal().locator('li').first().waitFor({ timeout: 10000 }).catch(() => {});
   check((await modal().innerText()).includes('nt_host'), 'the CIM dialog lists the fields it will add');
   presetsAdded = true;
   await page.click('[data-m=ok]');

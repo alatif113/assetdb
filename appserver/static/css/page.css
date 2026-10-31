@@ -1,0 +1,2 @@
+/* Let the page's own background show through Splunk's dashboard panel, so Configure sits on the same #f2f4f5 as the rest of Splunk Web. */
+.dashboard-body, .dashboard-row, .dashboard-panel, .dashboard-panel .panel-body, .dashboard-element, .dashboard-element.html { background: transparent !important; box-shadow: none !important; border: 0 !important; }

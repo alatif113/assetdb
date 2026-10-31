@@ -73,9 +73,8 @@ require([
 		min_pct: 'A run that produces fewer assets than this share of the last successful run is not written and is recorded as blocked_low_count. 0 turns the check off. A run that produces no assets never overwrites the asset database.',
 		empty: 'An empty search result would otherwise wipe the collection, so it is never written. This cannot be turned off.',
 		runs_to_keep: 'How many runs the run history keeps. Older runs are removed on every run, so it cannot grow without bound.',
-		change_history: 'Record which assets were added, removed or changed (and which fields) on every run. Not recorded for runs blocked by the safety check.',
-		history_index: 'Index mode: the index that receives the change events (sourcetype assetdb:change). It must already exist; on Splunk Cloud an admin creates it first.',
-		history_rows: 'KV store mode: how many change records are kept (100 to 200000). Older ones are removed on every run.',
+		change_history: 'Record which assets were added, removed or changed (and which fields) on every run, as events in an index. Not recorded for runs blocked by the safety check.',
+		history_index: 'The index that receives the change events (sourcetype assetdb:change). It must already exist; on Splunk Cloud an admin creates it first.',
 		default_cs: 'Used for new fields and for fields that do not set it themselves.',
 		default_norm: 'Applied to fields whose normalizer is Default.',
 		scope_field: 'A column in the source lookups that holds the site or tenant of each row, for sources without a fixed scope. Leave empty if you do not scope keys.',
@@ -309,9 +308,9 @@ require([
 			max_key_share: String(general.max_key_share === undefined ? Generator.DEFAULT_MAX_KEY_SHARE : general.max_key_share),
 			min_pct: String(Math.round((isNaN(ratio) ? Generator.DEFAULT_MIN_RATIO : ratio) * 10000) / 100),
 			runs_to_keep: String(general.runs_to_keep === undefined ? Generator.DEFAULT_RUNS_TO_KEEP : general.runs_to_keep),
-			change_history: general.change_history || 'off',
+			// the KV store mode is no longer offered: a config that still uses it is shown as Index (and needs an index name to be saved)
+			change_history: general.change_history === 'kv' ? 'index' : (general.change_history || 'off'),
 			history_index: general.history_index || '',
-			history_rows: String(general.history_rows === undefined ? Generator.DEFAULT_HISTORY_ROWS : general.history_rows),
 			default_cs: !!parseInt(general.default_case_sensitive) || false,
 			default_norm: general.default_normalizer || 'none',
 			scope_field: general.scope_field || '',
@@ -325,7 +324,7 @@ require([
 	/* ---------- State ---------- */
 	const S = { loaded: false, general: {}, entries: [], fields: [], sources: [], settings: null, sched: { cron: '', enabled: true, next: '' }, stats: {}, lookups: null, runs: null, overflow: null, changes: null };
 	const store = { get(k) { try { return localStorage.getItem('assetdb.' + k) === '1'; } catch { return false; } }, set(k, v) { try { localStorage.setItem('assetdb.' + k, v ? '1' : '0'); } catch { /* storage unavailable: the choice is just not remembered */ } } };
-	const ui = { attnOnly: false, chipsOpen: new Set(), cleanOpen: store.get('cleanOpen'), runsLoaded: false, runTimer: null, tab: 'fields', filter: '', drawer: null, save: 'idle', banner: null, running: false, searchStale: false, expanded: new Set(), retry: null, preview: { state: 'idle', sid: '', summary: null, counts: null, current: null, error: '' }, sdraft: null, advOpen: store.get('advOpen') };
+	const ui = { stageSel: -1, attnOnly: false, chipsOpen: new Set(), cleanOpen: store.get('cleanOpen'), runsLoaded: false, runTimer: null, tab: 'fields', filter: '', drawer: null, save: 'idle', banner: null, running: false, searchStale: false, expanded: new Set(), retry: null, preview: { state: 'idle', sid: '', summary: null, counts: null, current: null, error: '' }, sdraft: null, advOpen: store.get('advOpen') };
 
 	async function loadConf() {
 		const [data, sched, live] = await Promise.all([getConf('conf-assetdb'), getConf(SAVED).catch(() => null), P(SERVICE.get('/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen', { output_mode: 'json' }).promise()).catch(() => null)]);
@@ -359,12 +358,14 @@ require([
 	}
 
 	async function loadRuns() {
+		const mode = S.general.change_history || 'off'; const idx = S.general.history_index || '';
+		const changesBase = mode === 'index' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(idx) ? `search index=${idx} sourcetype="assetdb:change" earliest=-90d` : mode === 'kv' ? '| inputlookup assetdb_changes' : null;
 		const [runs, overflowCount, overflow, changeCounts, changes] = await Promise.all([
 			oneshot('| inputlookup assetdb_runs | sort 0 -run_time | head 10', 10).catch(() => null),
 			oneshot('| inputlookup assetdb_overflow | stats count', 1).catch(() => null),
 			oneshot('| inputlookup assetdb_overflow | head 5', 5).catch(() => null),
-			oneshot('| inputlookup assetdb_changes | eventstats max(run_time) as adb_last | where run_time=adb_last | stats count by change', 10).catch(() => null),
-			oneshot('| inputlookup assetdb_changes | sort 0 -run_time | head 5', 5).catch(() => null),
+			changesBase ? oneshot(`${changesBase} | eventstats max(run_time) as adb_last | where run_time=adb_last | stats count by change`, 10).catch(() => null) : Promise.resolve([]),
+			changesBase ? oneshot(`${changesBase} | sort 0 -run_time | head 5`, 5).catch(() => null) : Promise.resolve([]),
 		]);
 		S.runs = runs; S.overflow = overflow; S.overflowCount = overflowCount ? parseInt((overflowCount[0] || {}).count || 0) : null;
 		S.changes = changes; S.changeCounts = changeCounts; ui.runsLoaded = true;
@@ -421,14 +422,7 @@ require([
 		<symbol id="i-edit" viewBox="0 0 16 16"><path d="M3 13l.5-3L11 2.5 13.5 5 6 12.5z"/></symbol>
 	</defs></svg>
 	<div id="hdr"></div><main id="main" tabindex="-1"></main>
-	<div id="live" class="sr-only" role="status" aria-live="polite"></div><div class="toasts" id="toasts" aria-live="polite"></div>`;
-
-	/** Follow Splunk's own light or dark theme: the page background tells which one is active. */
-	function detectTheme() {
-		const rgb = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(document.body).backgroundColor || '');
-		const dark = rgb ? (0.2126 * rgb[1] + 0.7152 * rgb[2] + 0.0722 * rgb[3]) / 255 < 0.45 : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-		host.setAttribute('data-theme', dark ? 'dark' : 'light');
-	}
+	<div id="live" class="sr-only" role="status" aria-live="polite"></div><div class="toasts" id="toasts" aria-live="polite"></div><div class="gtip" id="gtip" role="tooltip" hidden></div>`;
 
 	const live = (m) => { const l = $q('#live'); l.textContent = ''; setTimeout(() => { l.textContent = m; }, 30); };
 	const fid = () => { const a = ROOT.activeElement; return a && a.dataset && a.dataset.fid ? a.dataset.fid : null; };
@@ -549,7 +543,7 @@ require([
 	}
 	function renderBanner() {
 		const b = $q('#banner'); if (!b) return; const x = ui.banner;
-		b.innerHTML = x ? `<div class="banner ${x.kind}" role="alert">${ico('alert')}<div class="grow"><b>${esc(x.title)}</b><div class="muted">${esc(x.text)}</div></div><button class="btn sm" type="button" data-act="${x.act}" data-fid="banner-act">${esc(x.action)}</button><button class="btn icon" type="button" data-act="dismissBanner" aria-label="Dismiss">${ico('x')}</button></div>` : '';
+		b.innerHTML = x ? `<div class="banner ${x.kind}" role="alert">${ico('alert')}<div class="grow"><b>${esc(x.title)}</b><div class="muted">${esc(x.text)}</div></div><button class="btn sm" type="button" data-act="${x.act}" data-fid="banner-act">${esc(x.action)}</button><button class="btn icon" type="button" data-act="dismissBanner" aria-label="Dismiss" data-tip="Dismiss">${ico('x')}</button></div>` : '';
 	}
 
 	/* ---------- Panes ---------- */
@@ -569,13 +563,13 @@ require([
 		$q('#head').innerHTML = S.loaded ? pageHead() : '';
 		p.innerHTML = !S.loaded ? skeleton() : ({ sources: paneSources, fields: paneFields, pipeline: panePipeline, settings: paneSettings })[ui.tab]();
 		$q('#layout').classList.toggle('with-drawer', !!ui.drawer);
-		refocus(before);
+		fitSteps(); refocus(before);
 	}
 	const skeleton = () => `<div class="panel" aria-busy="true">${Array.from({ length: 6 }, () => `<div style="display:flex;gap:24px;padding:16px 20px;border-top:1px solid var(--line)"><div style="flex:2"><div class="skel" style="width:140px"></div></div><div class="skel" style="flex:3"></div><div class="skel" style="flex:1"></div></div>`).join('')}</div>`;
 
 	const flag = (list) => { if (!list.length) return ''; const id = 'tip' + (++tipN); const sev = list.some((q) => q.sev === 'bad') ? 'bad' : 'warn'; return `<span class="tip"><button type="button" class="tip-b flag ${sev}" aria-label="Needs attention" aria-describedby="${id}">${ico('alert')}</button><span role="tooltip" id="${id}" class="tip-t">${esc(list.map((q) => q.text).join(' '))}</span></span>`; };
 	const enabledSwitch = (kind, id, name, on, editing) => `<td class="sw"><button class="switch" type="button" role="switch" aria-checked="${on}" aria-label="Enabled, ${kind} ${esc(name)}" data-act="toggleRow" data-kind="${kind}" data-id="${esc(id)}" data-fid="en-${kind}-${esc(id)}" ${editing ? 'disabled title="Being edited: change it in the editor"' : ''}></button></td>`;
-	const rowActions = (kind, id, name) => `<td class="act"><button class="btn icon" type="button" data-act="${kind === 'field' ? 'editField' : 'editSource'}" data-id="${esc(id)}" data-fid="${kind === 'field' ? 'fld' : 'src'}-${esc(id)}" aria-label="Edit ${kind} ${esc(name)}" title="Edit">${ico('edit')}</button><button class="btn icon" type="button" data-act="dupRow" data-kind="${kind}" data-id="${esc(id)}" aria-label="Duplicate ${kind} ${esc(name)}" title="Duplicate">${ico('dup')}</button><button class="btn icon danger" type="button" data-act="rmRow" data-kind="${kind}" data-id="${esc(id)}" aria-label="Remove ${kind} ${esc(name)}" title="Remove">${ico('trash')}</button></td>`;
+	const rowActions = (kind, id, name) => `<td class="act"><button class="btn icon" type="button" data-act="${kind === 'field' ? 'editField' : 'editSource'}" data-id="${esc(id)}" data-fid="${kind === 'field' ? 'fld' : 'src'}-${esc(id)}" aria-label="Edit ${kind} ${esc(name)}" data-tip="Edit">${ico('edit')}</button><button class="btn icon" type="button" data-act="dupRow" data-kind="${kind}" data-id="${esc(id)}" aria-label="Duplicate ${kind} ${esc(name)}" data-tip="Duplicate">${ico('dup')}</button><button class="btn icon danger" type="button" data-act="rmRow" data-kind="${kind}" data-id="${esc(id)}" aria-label="Remove ${kind} ${esc(name)}" data-tip="Remove">${ico('trash')}</button></td>`;
 
 	/** Rows shown when only the items that need attention are wanted. */
 	const attnBar = () => (ui.attnOnly ? `<div class="attnbar">${ico('alert')}Showing only the items that need attention. <button class="attnlink" type="button" data-act="attnClear" data-fid="attn-clear">Show all</button></div>` : '');
@@ -624,6 +618,13 @@ require([
 	function refreshLines() {
 		return makeMergeSearchLines(S.entries).then((lines) => { LINES = lines; LINES_ERR = ''; }, (err) => { LINES = []; LINES_ERR = describeError(err); });
 	}
+	/** The stage list follows the page while it is scrolled, but only when it fits the window (a taller list would hide its end). */
+	function fitSteps() {
+		const st = $q('.steps'); if (!st) return;
+		st.classList.toggle('sticky', st.scrollHeight <= window.innerHeight - 40);
+	}
+	window.addEventListener('resize', fitSteps);
+
 	/** The generator marks each section with a comment line; those become the stages. Code lines are numbered, comments are not. */
 	function stages() {
 		const out = []; let cur = null; let n = 0;
@@ -661,11 +662,12 @@ require([
 	}
 	function panePipeline() {
 		const st = stages(); const total = LINES.filter((l) => l.kind === 'command').length;
+		const sel = ui.stageSel;
 		return `${previewPanel()}
 		<div class="panel"><div class="toolbar"><h2>Merge search</h2><span class="muted">${total} lines in ${st.length} stages${ui.searchStale ? ' · out of date' : ''}</span><span class="grow"></span><button class="btn sm" type="button" data-act="copy" data-fid="copy">${ico('copy')}Copy</button><a class="btn sm" href="${esc(makeUrl('/app/assetdb/search') + '?s=%2FservicesNS%2Fnobody%2Fassetdb%2Fsaved%2Fsearches%2Fassetdb-lookupgen')}" target="_blank" rel="noopener">${ico('ext')}Open merge search</a></div>
 			${LINES_ERR ? `<p class="err" style="padding:0 20px 16px;margin:0">${ico('alert')}<span>The merge search cannot be built: ${esc(LINES_ERR)}</span></p>` : ''}
-			<div class="pipe"><nav class="outline" aria-label="Stages of the merge search">${st.map((s, i) => `<button type="button" data-act="jump" data-id="${i}" data-fid="stage-${i}" aria-current="${i === 0}"><span>${esc(s.title)}</span><span class="ct">${s.lines.length}</span></button>`).join('')}</nav>
-			<div class="code" role="region" tabindex="0" aria-label="Generated search">${st.map((s, i) => `<div class="stg" id="stg-${i}">${i + 1}. ${esc(s.title)}</div>${s.lines.map((l) => `<div class="ln"><i>${l.n}</i><span>${hl(l.text)}</span></div>`).join('')}`).join('')}</div></div></div>`;
+			<div class="pipe"><nav class="pane-l" aria-label="Stages of the merge search"><h3 id="steps-h">Stages, in the order they run</h3><ol class="steps" aria-labelledby="steps-h">${st.map((s, i) => `<li><button type="button" data-act="jump" data-id="${i}" data-fid="stage-${i}" aria-current="${i === sel}"><span class="no" aria-hidden="true">${i + 1}</span><span>${esc(s.title)}</span></button></li>`).join('')}</ol></nav>
+			<div class="code" role="region" tabindex="0" aria-label="Generated search">${st.map((s, i) => s.lines.map((l, k) => `<div class="ln${i === sel ? ' sel' : ''}" data-stage="${i}" ${k === 0 ? `id="stg-${i}"` : ''}><i>${l.n}</i><span>${hl(l.text)}</span></div>`).join('')).join('')}</div></div></div>`;
 	}
 
 	/**
@@ -707,7 +709,7 @@ require([
 		return `${group('Limits', 'Guards that stop bad data from merging unrelated assets.', num('max_keys', 'Max keys per asset', 1, Generator.HARD_MAX_KEYS) + num('max_key_share', 'Max rows sharing a key', 0, 1000000))}
 			${group('Run safety', 'Protects the asset list from a bad run.', num('min_pct', 'Minimum size versus last run', 0, 100, '%') + `<div class="srow2 center"><div class="lrow"><span class="l">Overwrite with an empty result</span>${tip(TIPS.empty, 'Overwrite with an empty result')}</div><div class="static">Never</div></div>`)}
 			${group('Schedule', 'When the merge search runs on its own.', sw('scheduled', 'Scheduled') + txt('cron', 'Schedule (cron)', { mono: true, w: 240 }))}
-			${group('History', 'How much run and change history is kept.', num('runs_to_keep', 'Runs to keep', 1, 5000) + sel('change_history', 'Change history', [['off', 'Off'], ['kv', 'KV store collection (assetdb_changes)'], ['index', 'Index']]) + (v.change_history === 'index' ? txt('history_index', 'History index', { mono: true, w: 240 }) : '') + (v.change_history === 'kv' ? num('history_rows', 'Change log rows', 100, 200000) : ''))}
+			${group('History', 'How much run and change history is kept.', num('runs_to_keep', 'Runs to keep', 1, 5000) + sel('change_history', 'Change history', [['off', 'Off'], ['index', 'Record in an index']]) + (v.change_history === 'index' ? txt('history_index', 'Index name', { mono: true, w: 240 }) : ''))}
 			${group('Matching defaults', 'Used by fields that do not set their own.', sw('default_cs', 'Case sensitive') + sel('default_norm', 'Normalizer', NORMALIZER_CHOICES) + txt('scope_field', 'Scope column', { mono: true, w: 240 }))}
 			${group('Values to ignore', 'Placeholder values that should never link or fill assets.', chips('blocklist', 'blocklist', 'Key blocklist', 'blocklist') + chips('globalIgnore', 'ignore', 'Global ignore list', 'gignore'))}
 			<div class="savebar"><span class="unsaved" ${dirty ? '' : 'hidden'}>Unsaved changes</span><button class="btn" type="button" data-act="sdiscard" ${dirty ? '' : 'disabled'}>Discard changes</button><button class="btn primary" type="button" data-act="ssave" data-fid="ssave" ${dirty && ui.save !== 'saving' ? '' : 'disabled'}>Save settings</button></div>`;
@@ -720,13 +722,12 @@ require([
 	async function saveSettings() {
 		const v = ui.sdraft; let bad = null; const fail = (id, msg) => { showErr(`#${id}`, `#${id}-e`, msg); if (!bad) bad = $q(`#${id}`); };
 		const whole = (x) => /^\d+$/.test(String(x).trim());
-		['max_keys', 'max_key_share', 'runs_to_keep', 'history_rows', 'min_pct', 'history_index', 'scope_field', 'cron'].forEach((k) => showErr(`#st-${k}`, `#st-${k}-e`, ''));
+		['max_keys', 'max_key_share', 'runs_to_keep', 'min_pct', 'history_index', 'scope_field', 'cron'].forEach((k) => showErr(`#st-${k}`, `#st-${k}-e`, ''));
 		if (!whole(v.max_keys) || parseInt(v.max_keys) < 1 || parseInt(v.max_keys) > Generator.HARD_MAX_KEYS) fail('st-max_keys', `Enter a whole number from 1 to ${Generator.HARD_MAX_KEYS}`);
 		if (!whole(v.max_key_share) || parseInt(v.max_key_share) > 1000000) fail('st-max_key_share', 'Enter a whole number from 0 to 1000000');
 		const pct = parseFloat(v.min_pct); if (isNaN(pct) || pct < 0 || pct > 100) fail('st-min_pct', 'Enter a number from 0 to 100');
 		if (!whole(v.runs_to_keep) || parseInt(v.runs_to_keep) < 1 || parseInt(v.runs_to_keep) > 5000) fail('st-runs_to_keep', 'Enter a whole number from 1 to 5000');
-		if (v.change_history === 'index' && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(v.history_index.trim())) fail('st-history_index', 'Enter the name of an existing index');
-		if (v.change_history === 'kv' && (!whole(v.history_rows) || parseInt(v.history_rows) < 100 || parseInt(v.history_rows) > 200000)) fail('st-history_rows', 'Enter a whole number from 100 to 200000');
+		if (v.change_history === 'index' && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(v.history_index.trim())) fail('st-history_index', 'Enter the name of an existing index to record the changes in');
 		if (v.scope_field.trim() && /['"\\|`[\]]/.test(v.scope_field)) fail('st-scope_field', 'That column name has a character that is not allowed');
 		if (!CRON_RE.test(v.cron)) fail('st-cron', 'Enter a cron expression with 5 fields, e.g. 0 0 * * *');
 		if (bad) { bad.focus(); return; }
@@ -737,7 +738,7 @@ require([
 			setConf('conf-assetdb/general/', {
 				max_keys: String(parseInt(draft.max_keys)), default_case_sensitive: draft.default_cs ? '1' : '0', default_normalizer: draft.default_norm, ignore_values: JSON.stringify(draft.ignore),
 				key_blocklist: JSON.stringify(draft.blocklist), max_key_share: String(parseInt(draft.max_key_share)), scope_field: draft.scope_field.trim(), change_history: draft.change_history,
-				history_index: draft.history_index.trim(), history_rows: String(parseInt(draft.history_rows)), min_ratio: String(Math.round(parseFloat(draft.min_pct) * 100) / 10000), runs_to_keep: String(parseInt(draft.runs_to_keep)),
+				history_index: draft.history_index.trim(), min_ratio: String(Math.round(parseFloat(draft.min_pct) * 100) / 10000), runs_to_keep: String(parseInt(draft.runs_to_keep)),
 			}),
 			setConf(SAVED, { cron_schedule: draft.cron.trim(), enableSched: draft.scheduled ? '1' : '0' }),
 		]);
@@ -755,7 +756,7 @@ require([
 	}
 	function chipHtml(id, v, i) {
 		const kind = v.startsWith('re:') ? 'regex' : v.startsWith('cidr:') ? 'cidr' : '';
-		return `<span class="chip">${kind ? `<span class="k">${kind}</span>` : ''}<span>${esc(kind ? v.slice(v.indexOf(':') + 1) : v)}</span><button type="button" data-chip-del="${id}" data-i="${i}" aria-label="Remove ${esc(v)}">${ico('x')}</button></span>`;
+		return `<span class="chip">${kind ? `<span class="k">${kind}</span>` : ''}<span>${esc(kind ? v.slice(v.indexOf(':') + 1) : v)}</span><button type="button" data-chip-del="${id}" data-i="${i}" aria-label="Remove ${esc(v)}" data-tip="Remove">${ico('x')}</button></span>`;
 	}
 	function chipError(id, v) {
 		if (id === 'allowed' || id === 'order') return S.sources.some((s) => s.name === v) ? '' : `“${v}” is not one of your sources.`;
@@ -789,7 +790,7 @@ require([
 		const dc = $q('#sec-clean'); if (dc) { ui.cleanOpen = dc.open; store.set('cleanOpen', dc.open); }
 		const da = $q('#sec-adv'); if (da) { ui.advOpen = da.open; store.set('advOpen', da.open); }
 		const o = editorModel(); const d = $q('#drawer'); d.hidden = false; const keep = $q('.drawer-body') ? $q('.drawer-body').scrollTop : 0;
-		d.innerHTML = `<div class="drawer" role="dialog" aria-modal="false" aria-labelledby="dr-title"><div class="drawer-h"><h2 id="dr-title" tabindex="-1">${o.title}</h2><span data-unsaved-pill>${draftDirty() ? '<span class="unsaved">Unsaved</span>' : ''}</span><button class="btn icon" type="button" data-act="closeDrawer" aria-label="Close editor (Esc)">${ico('x')}</button></div><div class="drawer-body">${o.body}</div>${o.footer}</div>`;
+		d.innerHTML = `<div class="drawer" role="dialog" aria-modal="false" aria-labelledby="dr-title"><div class="drawer-h"><h2 id="dr-title" tabindex="-1">${o.title}</h2><span data-unsaved-pill>${draftDirty() ? '<span class="unsaved">Unsaved</span>' : ''}</span><button class="btn icon" type="button" data-act="closeDrawer" aria-label="Close editor" data-tip="Close (Esc)">${ico('x')}</button></div><div class="drawer-body">${o.body}</div>${o.footer}</div>`;
 		$q('#layout').classList.add('with-drawer'); if (keep) $q('.drawer-body').scrollTop = keep;
 		if (!silent) setTimeout(focusTitle, 0);
 	}
@@ -866,7 +867,7 @@ require([
 			</fieldset>
 			<fieldset class="sec"><legend>Field mapping</legend>
 				<div>${labelRow('map-0', 'Lookup column → asset field', 'mapping')}
-				<div style="display:grid;gap:8px">${s.map.map((m, i) => `<div class="mapline">${cols.length ? `<select class="inp" aria-label="Lookup column ${i + 1}" data-dm="from" data-i="${i}">${opts((cols.includes(m.from) || !m.from ? cols : [m.from].concat(cols)).map((c) => [c, c]), m.from)}</select>` : `<input class="inp mono" aria-label="Lookup column ${i + 1}" value="${esc(m.from)}" data-dm="from" data-i="${i}">`}<span aria-hidden="true" class="muted">→</span><input class="inp mono" aria-label="Asset field ${i + 1}" value="${esc(m.to)}" list="fld-list" data-dm="to" data-i="${i}" id="map-${i}"><button class="btn icon danger" type="button" data-act="mapDel" data-i="${i}" aria-label="Remove mapping ${i + 1}">${ico('x')}</button></div>`).join('')}<datalist id="fld-list">${S.fields.map((x) => `<option value="${esc(x.name)}">`).join('')}</datalist></div><div class="err" id="map-e" hidden></div></div>
+				<div style="display:grid;gap:8px">${s.map.map((m, i) => `<div class="mapline">${cols.length ? `<select class="inp" aria-label="Lookup column ${i + 1}" data-dm="from" data-i="${i}">${opts((cols.includes(m.from) || !m.from ? cols : [m.from].concat(cols)).map((c) => [c, c]), m.from)}</select>` : `<input class="inp mono" aria-label="Lookup column ${i + 1}" value="${esc(m.from)}" data-dm="from" data-i="${i}">`}<span aria-hidden="true" class="muted">→</span><input class="inp mono" aria-label="Asset field ${i + 1}" value="${esc(m.to)}" list="fld-list" data-dm="to" data-i="${i}" id="map-${i}"><button class="btn icon danger" type="button" data-act="mapDel" data-i="${i}" aria-label="Remove mapping ${i + 1}" data-tip="Remove mapping">${ico('x')}</button></div>`).join('')}<datalist id="fld-list">${S.fields.map((x) => `<option value="${esc(x.name)}">`).join('')}</datalist></div><div class="err" id="map-e" hidden></div></div>
 				<div><button class="btn sm" type="button" data-act="mapAdd">${ico('plus')}Add mapping</button></div>
 			</fieldset>` : ''}`;
 		void lookups;
@@ -886,9 +887,9 @@ require([
 		const runsHtml = !ui.runsLoaded ? '<p class="hint">Loading…</p>' : S.runs === null ? '<p class="hint">The run history could not be read.</p>' : !S.runs.length ? '<p class="hint">No runs yet. The first scheduled or manual run creates the first record.</p>' : `<div class="runlist">${S.runs.map((r, i) => runItem(r, i === 0)).join('')}</div>`;
 		const over = S.overflowCount;
 		const overHtml = over === null || over === undefined ? '' : `<fieldset class="sec"><legend>Needs review</legend><p class="hint" style="margin:0 0 8px">${over ? `${fmt(over)} cluster${over === 1 ? ' was' : 's were'} too large to merge in the last run, usually because of a shared key.` : 'No oversized clusters in the last run.'}</p>${over && S.overflow && S.overflow.length ? `<ul class="minilist">${S.overflow.map((r) => `<li><b>${fmt(r.cluster_keys)}</b> keys in ${fmt(r.cluster_rows)} rows<div class="sub">${keysOf(r)}${r.source ? ` · ${esc([].concat(r.source).join(', '))}` : ''}</div></li>`).join('')}</ul><p class="shelf-actions"><a href="${esc(searchUrl('| inputlookup assetdb_overflow'))}" target="_blank" rel="noopener">Open all ${fmt(over)} in Search</a></p>` : ''}</fieldset>`;
-		const mode = S.settings ? S.settings.change_history : 'off';
+		const mode = S.general.change_history || 'off';
 		const counts = {}; (S.changeCounts || []).forEach((r) => { counts[r.change] = r.count; });
-		const changeHtml = mode === 'off' ? '<p class="hint" style="margin:0">Change history is off. Turn it on in Settings to record what changes between runs.</p>' : !S.changes || !S.changes.length ? '<p class="hint" style="margin:0">No changes recorded yet.</p>' : `<p class="hint" style="margin:0 0 8px">Last run: ${['added', 'removed', 'changed'].filter((k) => counts[k]).map((k) => `${fmt(counts[k])} ${k}`).join(', ') || 'no changes'}.</p><ul class="minilist">${S.changes.map((r) => `<li><span class="pill ${r.change === 'added' ? 'ok' : r.change === 'removed' ? 'bad' : 'warn'}">${esc(r.change)}</span> ${keysOf(r)}${r.changed_fields ? `<div class="sub">${esc([].concat(r.changed_fields).join(', '))}</div>` : ''}</li>`).join('')}</ul><p class="shelf-actions"><a href="${esc(searchUrl(mode === 'index' ? `index=${S.settings.history_index} sourcetype="assetdb:change"` : '| inputlookup assetdb_changes | sort 0 -run_time'))}" target="_blank" rel="noopener">Open all in Search</a></p>`;
+		const changeHtml = mode === 'off' ? '<p class="hint" style="margin:0">Change history is off. Turn it on in Settings to record what changes between runs.</p>' : S.changes === null ? `<p class="hint" style="margin:0">The change history could not be read. Check that the index ${esc(S.general.history_index || '')} exists.</p>` : !S.changes.length ? '<p class="hint" style="margin:0">No changes recorded yet.</p>' : `<p class="hint" style="margin:0 0 8px">Last run: ${['added', 'removed', 'changed'].filter((k) => counts[k]).map((k) => `${fmt(counts[k])} ${k}`).join(', ') || 'no changes'}.</p><ul class="minilist">${S.changes.map((r) => `<li><span class="pill ${r.change === 'added' ? 'ok' : r.change === 'removed' ? 'bad' : 'warn'}">${esc(r.change)}</span> ${keysOf(r)}${r.changed_fields ? `<div class="sub">${esc([].concat(r.changed_fields).join(', '))}</div>` : ''}</li>`).join('')}</ul><p class="shelf-actions"><a href="${esc(searchUrl(mode === 'index' ? `index=${S.general.history_index} sourcetype="assetdb:change"` : '| inputlookup assetdb_changes | sort 0 -run_time'))}" target="_blank" rel="noopener">Open all in Search</a></p>`;
 		const body = `<fieldset class="sec"><legend>Runs</legend>${runsHtml}</fieldset>${overHtml}<fieldset class="sec"><legend>Changes</legend>${changeHtml}</fieldset>`;
 		return { title: 'Run history', body, footer: '<div class="drawer-f"><button class="btn" type="button" data-act="closeDrawer">Close</button></div>' };
 	}
@@ -1053,7 +1054,16 @@ require([
 		tp.classList.add('on'); const r = b.getBoundingClientRect(); const h = t.offsetHeight;
 		t.style.left = Math.max(8, Math.min(r.left - 12, window.innerWidth - 268)) + 'px'; t.style.top = (r.top - h - 8 < 8 ? r.bottom + 8 : r.top - h - 8) + 'px';
 	}
-	const hideTips = () => $$('.tip.on').forEach((x) => x.classList.remove('on'));
+	const hideTips = () => { $$('.tip.on').forEach((x) => x.classList.remove('on')); const g = $q('#gtip'); if (g) g.hidden = true; };
+	function showButtonTip(el) {
+		const g = $q('#gtip'); g.textContent = el.dataset.tip || el.getAttribute('aria-label'); g.hidden = false;
+		const r = el.getBoundingClientRect(); const w = g.offsetWidth; const h = g.offsetHeight;
+		g.style.left = `${Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8))}px`; g.style.top = `${r.top - h - 8 < 8 ? r.bottom + 8 : r.top - h - 8}px`;
+	}
+	ROOT.addEventListener('mouseover', (e) => { const b = e.target.closest('[data-tip]'); if (b) showButtonTip(b); });
+	ROOT.addEventListener('mouseout', (e) => { if (e.target.closest('[data-tip]')) hideTips(); });
+	ROOT.addEventListener('focusin', (e) => { const b = e.target.closest('[data-tip]'); if (b) showButtonTip(b); });
+	ROOT.addEventListener('focusout', (e) => { if (e.target.closest('[data-tip]')) hideTips(); });
 	ROOT.addEventListener('mouseover', (e) => { const b = e.target.closest('.tip-b'); if (b) showTip(b); });
 	ROOT.addEventListener('mouseout', (e) => { if (e.target.closest('.tip-b')) hideTips(); });
 	ROOT.addEventListener('focusin', (e) => { const b = e.target.closest('.tip-b'); if (b) showTip(b); });
@@ -1086,7 +1096,12 @@ require([
 			sbool: () => { ui.sdraft[a.dataset.k] = !ui.sdraft[a.dataset.k]; renderPane(); refocus(a.dataset.fid); updateSaveState(); },
 			ssave: saveSettings,
 			sdiscard: () => { ui.sdraft = clone(S.settings); ui.sbase = itemSnapshot('settings', '', S.entries); renderPane(); updateSaveState(); toast('Discarded unsaved settings.'); },
-			jump: () => { const t = $q(`#stg-${id}`); if (t) { t.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash'); } $$('.outline button').forEach((b) => b.setAttribute('aria-current', b.dataset.id === id)); },
+			jump: () => {
+				ui.stageSel = +id;
+				$$('.steps button').forEach((b) => b.setAttribute('aria-current', b.dataset.id === id));
+				$$('.code .ln').forEach((l) => l.classList.toggle('sel', l.dataset.stage === id));
+				const t = $q(`#stg-${id}`); if (t) t.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' });
+			},
 			attn: () => { const t = S.sources.some((x) => problems('source', x).length) ? 'sources' : 'fields'; ui.attnOnly = true; if (ui.tab !== t) switchTab(t); else renderPane(); },
 			attnClear: () => { ui.attnOnly = false; renderPane(); },
 			chipMore: () => { ui.chipsOpen.has(id) ? ui.chipsOpen.delete(id) : ui.chipsOpen.add(id); refreshChips(id); },
@@ -1123,7 +1138,7 @@ require([
 
 	ROOT.addEventListener('keydown', (e) => {
 		const t = e.target;
-		if (e.key === 'Escape' && $q('.tip.on')) { hideTips(); e.stopPropagation(); return; }
+		if (e.key === 'Escape' && ($q('.tip.on') || ($q('#gtip') && !$q('#gtip').hidden))) { hideTips(); e.stopPropagation(); return; }
 		if (t.dataset && t.dataset.chipInput) {
 			const id = t.dataset.chipInput; const arr = chipArr(id); const err = $q(`[data-chip-err="${id}"]`);
 			const after = () => (id === 'order' || id === 'ignore' || id === 'allowed' ? rerender() : refreshChips(id));
@@ -1197,7 +1212,7 @@ require([
 	function init() {
 		const watch = () => { const w = host.getBoundingClientRect().width; host.toggleAttribute('data-narrow', w < 1100); host.toggleAttribute('data-compact', w < 760); };
 		if (window.ResizeObserver) new window.ResizeObserver(watch).observe(host);
-		watch(); detectTheme(); renderHeader(); renderMain();
+		watch(); renderHeader(); renderMain();
 		loadConf().then(() => { renderHeader(); renderMain(); inspectAll(); refreshLines(); loadRuns().then(() => { renderHeader(); }); })
 			.catch((err) => { $q('#main').innerHTML = `<div class="d-in"><div class="banner bad" role="alert">${ico('alert')}<div class="grow"><b>The configuration could not be read.</b><div class="muted">${esc(describeError(err))}</div></div></div></div>`; });
 	}
