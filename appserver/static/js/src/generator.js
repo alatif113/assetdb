@@ -250,6 +250,30 @@ define([], function () {
 	}
 
 	/**
+	 * Search listing every source row (as the merge sees it: normalized, filtered, scoped) that carries one of the
+	 * given asset keys, so each piece of an asset's information can be traced to the source that supplied it. It
+	 * reuses the generated pipeline up to the point where the match keys exist, so it can never drift from the merge.
+	 *
+	 * @param {Array}	lines		Lines from buildSearchLines
+	 * @param {Array}	keys		The `asset` keys of the merged asset
+	 * @param {Array}	fieldNames	Configured field names to show
+	 * @return {String}			SPL
+	 */
+	function buildExplainSearch(lines, keys, fieldNames) {
+		const keyLineAt = lines.findIndex((line) => line.kind === 'command' && line.text.startsWith('| search _key=*'));
+		const keyEval = lines.slice(0, keyLineAt).reverse().find((line) => line.kind === 'command' && line.text.startsWith('| eval _key = '));
+		if (keyLineAt < 0 || !keyEval) throw new Error('The merge search has no key fields to trace; add at least one key field');
+		const refs = keyEval.text.match(/adbk_[A-Za-z0-9_]+/g) || [];
+		if (!refs.length) throw new Error('The merge search has no key fields to trace; add at least one key field');
+		const quoted = keys.slice(0, 200).map(splQuote);
+		if (!quoted.length) throw new Error('No keys to look for');
+		const base = lines.slice(0, keyLineAt).filter((line) => line.kind === 'command').map((line) => line.text).join('\n');
+		const hasRole = base.includes('adb_auth=');
+		const shown = ['source', 'source_lookup'].concat(hasRole ? ['role'] : [], ['adb_time', 'adb_row_keys'], fieldNames);
+		return `${base}\n| eval adb_row_keys=${refs.length === 1 ? refs[0] : `mvdedup(mvappend(${Array.from(new Set(refs)).join(', ')}))`}\n| where mvcount(mvfilter(in(adb_row_keys, ${quoted.join(', ')}))) > 0\n| eval adb_time=if(isnotnull(_time), strftime(_time, "%F %T"), "")${hasRole ? ', role=if(adb_auth=0, "enrich only", "authoritative")' : ''}\n| sort 0 source adb_time\n| head 1000\n| table ${shown.join(', ')}`;
+	}
+
+	/**
 	 * CIM-shaped asset fields (the names of the Splunk Common Information Model / ES asset schema) with sensible
 	 * defaults. Only names and defaults: nothing here needs the CIM add-on or Enterprise Security.
 	 */
@@ -593,6 +617,7 @@ define([], function () {
 		NORMALIZERS: NORMALIZERS,
 		cimPresetFields: cimPresetFields,
 		buildPreviewSearches: buildPreviewSearches,
+		buildExplainSearch: buildExplainSearch,
 		VALIDATION_TYPES: VALIDATION_TYPES,
 		VALUE_TYPES: VALUE_TYPES,
 		HARD_MAX_KEYS: HARD_MAX_KEYS,

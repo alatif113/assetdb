@@ -80,6 +80,11 @@ class Sandbox(object):
         searches["current"] = searches["current"].replace("assetdb", self.kv)
         return dict((name, self.splunk.search(spl)) for name, spl in searches.items())
 
+    def explain(self, keys):
+        out = subprocess.check_output(["node", os.path.join(ROOT, "tests", "integration", "gen_explain.js"), json.dumps(keys)],
+                                      input=json.dumps(self.fieldarray()).encode(), cwd=ROOT)
+        return self.splunk.search(out.decode())
+
     def rewrite_source(self, name, rows, header=None):
         """Replace the rows of an existing source lookup (same file, new content)."""
         entry = [e for e in self.sources if e["name"] == name][0]

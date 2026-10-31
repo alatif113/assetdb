@@ -1,0 +1,11 @@
+<dashboard version="1.1" script="js/explore.min.js" stylesheet="css/assetdb.css">
+  <label>Explore</label>
+  <description>Find an asset by any key value and see which source supplied each piece of its information.</description>
+  <row>
+    <panel>
+      <html>
+        <div id="ab_explore"></div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

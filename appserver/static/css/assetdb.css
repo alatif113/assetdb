@@ -8,12 +8,14 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	width: 100% !important;
 }
 
-#ab_config table {
+#ab_config table,
+#ab_explore table {
 	background: transparent;
 	margin-top: 10px;
 }
 
-#ab_config .container {
+#ab_config .container,
+#ab_explore .container {
 	width: 940px;
 	margin: auto auto 40px;
 	-webkit-box-sizing: border-box;
@@ -28,16 +30,19 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	opacity: 0.5;
 }
 
-#ab_config .more-info {
+#ab_config .more-info,
+#ab_explore .more-info {
 	margin-top: 10px;
 }
 
-#ab_config .list-dotted dd {
+#ab_config .list-dotted dd,
+#ab_explore .list-dotted dd {
 	width: 100%;
 	word-break: break-word;
 }
 
-#ab_config .key-tag {
+#ab_config .key-tag,
+#ab_explore .key-tag {
 	padding: 4px 6px;
 	background: rgba(128, 128, 128, 0.85);
 	font-size: 10px;
@@ -49,16 +54,19 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	text-transform: uppercase;
 }
 
-#ab_config section {
+#ab_config section,
+#ab_explore section {
 	display: none;
 	padding: 20px;
 }
 
-#ab_config section.active {
+#ab_config section.active,
+#ab_explore section.active {
 	display: block;
 }
 
-#ab_config .query-container {
+#ab_config .query-container,
+#ab_explore .query-container {
 	border: 1px solid rgba(128, 128, 128, 0.45);
 	border-radius: 3px;
 	clear: both;
@@ -67,11 +75,13 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	margin-top: 10px;
 }
 
-#ab_config .raw-query {
+#ab_config .raw-query,
+#ab_explore .raw-query {
 	display: none !important;
 }
 
-#ab_config .formatted-query {
+#ab_config .formatted-query,
+#ab_explore .formatted-query {
 	display: table;
 	font-family: 'Splunk Platform Mono', Inconsolata, Consolas, 'Droid Sans Mono', Monaco, 'Courier New', Courier, monospace;
 	font-size: 14px;
@@ -81,14 +91,16 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	box-sizing: border-box;
 }
 
-#ab_config .row {
+#ab_config .row,
+#ab_explore .row {
 	display: table-row;
 	padding: 0;
 	counter-increment: line;
 	box-sizing: border-box;
 }
 
-#ab_config .gutter {
+#ab_config .gutter,
+#ab_explore .gutter {
 	background: rgba(128, 128, 128, 0.14);
 	height: 20px;
 	display: table-cell;
@@ -117,23 +129,28 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	box-sizing: border-box;
 }
 
-#ab_config .row:nth-child(2) {
+#ab_config .row:nth-child(2),
+#ab_explore .row:nth-child(2) {
 	counter-reset: line;
 	box-sizing: border-box;
 }
 
-#ab_config .row span.gutter:before {
+#ab_config .row span.gutter:before,
+#ab_explore .row span.gutter:before {
 	content: counter(line);
 	box-sizing: border-box;
 }
 
 #ab_config .row:first-child span.gutter:before,
-#ab_config .row:last-child span.gutter:before {
+#ab_config .row:last-child span.gutter:before,
+#ab_explore .row:first-child span.gutter:before,
+#ab_explore .row:last-child span.gutter:before {
 	content: '';
 	box-sizing: border-box;
 }
 
-#ab_config .formatted-query .code {
+#ab_config .formatted-query .code,
+#ab_explore .formatted-query .code {
 	padding-left: 1.5em;
 	padding-right: 10px;
 	text-indent: -1em;
@@ -147,41 +164,52 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	word-break: break-word;
 }
 
-#ab_config .query .code {
+#ab_config .query .code,
+#ab_explore .query .code {
 	padding-left: 40px;
 	text-indent: -30px;
 	box-sizing: border-box;
 }
 
-#ab_config .code span {
+#ab_config .code span,
+#ab_explore .code span {
 	transition: 0.25s ease;
 }
 
 #ab_config .row:first-child .gutter,
 #ab_config .row:last-child .gutter,
 #ab_config .row:first-child .code,
-#ab_config .row:last-child .code {
+#ab_config .row:last-child .code,
+#ab_explore .row:first-child .gutter,
+#ab_explore .row:last-child .gutter,
+#ab_explore .row:first-child .code,
+#ab_explore .row:last-child .code {
 	height: 9px;
 	box-sizing: border-box;
 }
 
-#ab_config span.comment {
+#ab_config span.comment,
+#ab_explore span.comment {
 	opacity: 0.7;
 }
 
-#ab_config span.keyword {
+#ab_config span.keyword,
+#ab_explore span.keyword {
 	color: #4d86ff;
 }
 
-#ab_config span.function {
+#ab_config span.function,
+#ab_explore span.function {
 	color: #d63fd6;
 }
 
-#ab_config span.operator-word {
+#ab_config span.operator-word,
+#ab_explore span.operator-word {
 	color: #f08a30;
 }
 
-#ab_config span.argument {
+#ab_config span.argument,
+#ab_explore span.argument {
 	color: #6fb21a;
 }
 
@@ -189,7 +217,8 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	color: #e5493a;
 }
 
-#ab_config .btn-edit-schedule {
+#ab_config .btn-edit-schedule,
+#ab_explore .btn-edit-schedule {
 	margin-left: 10px;
 }
 
@@ -211,4 +240,35 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	width: 100%;
 	box-sizing: border-box;
 	font-family: monospace;
+}
+
+#ab_explore .adb-panel {
+	margin-bottom: 20px;
+	padding: 20px;
+}
+
+#ab_explore .adb-search-row input {
+	margin-right: 8px;
+	vertical-align: middle;
+}
+
+#ab_explore .adb-term {
+	width: 45%;
+}
+
+#ab_explore .adb-scope {
+	width: 15%;
+}
+
+#ab_explore .adb-clickable {
+	cursor: pointer;
+}
+
+#ab_explore .adb-selected td {
+	background: rgba(77, 134, 255, 0.18);
+}
+
+#ab_explore .adb-detail,
+#ab_explore .adb-results {
+	overflow-x: auto;
 }

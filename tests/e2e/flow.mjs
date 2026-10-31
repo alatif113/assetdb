@@ -23,6 +23,7 @@ let originalFieldsList;
 let originalMacro;
 const presetNames = ['ip', 'mac', 'nt_host', 'dns', 'owner', 'priority', 'bunit', 'category', 'city', 'country', 'pci_domain', 'is_expected'];
 let presetsAdded = false;
+let exploreKey;
 const generalConf = async () => (await conf()).find((e) => e.name === 'general').content;
 const modal = () => page.locator('.modal:visible');
 
@@ -46,6 +47,40 @@ try {
   await page.click('.modal:visible a.btn:has-text("Cancel")');
   check((await conf()).find((e) => e.name === 'general').content.lookups === lookupsBefore, 'cancelled lookup removal leaves the lookups config unchanged');
 
+  // CIM presets: one click adds the missing CIM fields (removed again by the cleanup below)
+  await page.click('#ab_config a.tab-label:has-text("Asset Fields")');
+  await page.click('#ab_config .btn-add-cim-fields');
+  await modal().waitFor();
+  check((await modal().innerText()).includes('nt_host'), 'the CIM dialog lists the fields it will add');
+  presetsAdded = true;
+  await page.click('.modal:visible .btn-primary');
+  await page.waitForSelector('#ab_config tr[data-name="mac"]', { timeout: 60000 });
+  const afterPresets = (await conf()).map((e) => e.name);
+  check(presetNames.every((n) => afterPresets.includes(n)), 'all CIM fields were added to assetdb.conf');
+  check((await savedSearch()).includes('`normalize_mac(mac)`'), 'saved search uses the preset normalizers');
+  const accel = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb')).entry[0].content;
+  check(['ip', 'mac', 'nt_host', 'dns'].every((n) => accel[`accelerated_fields.${n}`]), 'the four CIM key fields are indexed');
+
+  // Explore: find an asset by a key value and trace its source rows (a marked test asset is added to assetdb and removed again)
+  const csrfNow = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
+  const kvHdr = { 'X-Splunk-Form-Key': csrfNow.value, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json' };
+  const kvRoot = `${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/storage/collections/data/assetdb`;
+  const testKey = `adbtest_explore_${Date.now().toString(36)}`;
+  exploreKey = testKey;
+  await ctx.request.post(kvRoot, { headers: kvHdr, data: { _key: testKey, asset: ['110.0.0.4', 'inspector_mac_32@mlatif.com'], source: ['demo_assets'], ip: ['110.0.0.4'] } });
+  const explore = await ctx.newPage();
+  await explore.setViewportSize({ width: 1280, height: 1600 });
+  await explore.goto(`${base}/en-US/app/assetdb/explore?q=110.0.0.4`);
+  await explore.waitForSelector('#ab_explore .adb-results table', { timeout: 60000 });
+  check((await explore.locator('#ab_explore .adb-results tbody tr').count()) === 1, 'Explore finds the asset by one of its keys');
+  await explore.waitForSelector('#ab_explore .adb-detail table', { timeout: 120000 });
+  const detail = await explore.locator('#ab_explore .adb-detail').innerText();
+  check(/source rows? from 1 source/.test(detail) && detail.includes('demo_assets') && detail.includes('110.0.0.4'), 'Explore lists the source rows behind the asset');
+  await explore.screenshot({ path: 'dist/e2e-explore.png' });
+  await explore.close();
+  await ctx.request.delete(`${kvRoot}/${testKey}`, { headers: kvHdr }).catch(() => {});
+  exploreKey = undefined;
+
   // Sources: edit options (max age, row filter, column mapping), see them stored and used by the saved search
   await page.click('#ab_config a.tab-label:has-text("Asset Lookups")');
   await page.click('#ab_config .adb-lookup-edit');
@@ -68,20 +103,6 @@ try {
   check(demo.max_age === '45d' && demo.filter === 'priority>0' && demo.columns.owner === 'Owner Name' && demo.enabled === true, 'source options stored in the lookups JSON');
   check((await savedSearch()).includes('relative_time(now(), "-45d")'), 'saved search applies the max age');
   check((await savedSearch()).includes('"e2e_site"') && (await savedSearch()).includes('| eval scope = lower(case('), 'saved search assigns the source scope');
-
-  // CIM presets: one click adds the missing CIM fields (removed again by the cleanup below)
-  await page.click('#ab_config a.tab-label:has-text("Asset Fields")');
-  await page.click('#ab_config .btn-add-cim-fields');
-  await modal().waitFor();
-  check((await modal().innerText()).includes('nt_host'), 'the CIM dialog lists the fields it will add');
-  presetsAdded = true;
-  await page.click('.modal:visible .btn-primary');
-  await page.waitForSelector('#ab_config tr[data-name="mac"]', { timeout: 60000 });
-  const afterPresets = (await conf()).map((e) => e.name);
-  check(presetNames.every((n) => afterPresets.includes(n)), 'all CIM fields were added to assetdb.conf');
-  check((await savedSearch()).includes('`normalize_mac(mac)`'), 'saved search uses the preset normalizers');
-  const accel = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb')).entry[0].content;
-  check(['ip', 'mac', 'nt_host', 'dns'].every((n) => accel[`accelerated_fields.${n}`]), 'the four CIM key fields are indexed');
 
   // Settings: max keys is validated against the hard cap, valid values are saved, and the original is restored
     const originalMaxKeys = (await generalConf()).max_keys;
@@ -183,6 +204,9 @@ try {
     await ctx.request.delete(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/configs/conf-assetdb/${name}`).catch(() => {});
   }
   const csrfForCleanup = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
+  if (exploreKey && csrfForCleanup) {
+    await ctx.request.delete(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/storage/collections/data/assetdb/${exploreKey}`, { headers: { 'X-Splunk-Form-Key': csrfForCleanup.value, 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
+  }
   if (presetsAdded && csrfForCleanup) {
     const hdr = { 'X-Splunk-Form-Key': csrfForCleanup.value, 'X-Requested-With': 'XMLHttpRequest' };
     const root = `${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb`;

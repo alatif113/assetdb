@@ -485,3 +485,19 @@ test('preview searches stop at adbmerge, never write, and summarise the result',
 	assert.equal(p.current, '| inputlookup assetdb | stats count as assets');
 	assert.throws(() => buildPreviewSearches([{ kind: 'command', text: '| outputlookup assetdb' }]), /adbmerge/);
 });
+
+// --- explain (which source supplied what) ------------------------------------------------
+
+test('the explain search reuses the pipeline up to the match keys and filters to the asset keys', () => {
+	const { buildExplainSearch } = require('./load-generator').loadGenerator();
+	const sources = [{ name: 'cmdb', lookup: 'a.csv' }, { name: 'scan', lookup: 's.csv', role: 'enrich' }];
+	const lines = JSON.parse(JSON.stringify(load().makeMergeSearchLines([{ name: 'general', content: { lookups: JSON.stringify(sources) } }, single('mac', { key_field: '1', case_sensitive: '0', normalizer: 'mac' }), single('owner')])));
+	const spl = buildExplainSearch(lines, ['aa:bb:cc:dd:ee:ff', 'x"y'], ['mac', 'owner']);
+	assert.ok(spl.includes('`normalize_mac(mac)`'), 'rows are explained after normalization');
+	assert.ok(!/\| stats|adbmerge|outputlookup|search _key=\*/.test(spl), 'it stops before the shallow stats: ' + spl);
+	assert.ok(spl.includes('| where mvcount(mvfilter(in(adb_row_keys, "aa:bb:cc:dd:ee:ff", "x\\"y"))) > 0'), spl);
+	assert.ok(spl.includes('role=if(adb_auth=0, "enrich only", "authoritative")'), 'shows the source role when enrich sources exist');
+	assert.ok(spl.endsWith('| table source, source_lookup, role, adb_time, adb_row_keys, mac, owner'), spl);
+	assert.throws(() => buildExplainSearch(JSON.parse(JSON.stringify(load().makeMergeSearchLines([general, single('owner')]))), ['a'], []), /key field/i);
+	assert.throws(() => buildExplainSearch(lines, [], []), /No keys/i);
+});
