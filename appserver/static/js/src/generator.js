@@ -54,6 +54,7 @@ define([], function () {
 		email: 'normalize_email',
 		os: 'normalize_os',
 	};
+	const LOWERCASING_NORMALIZERS = ['hostname', 'fqdn', 'user', 'email', 'os'];
 	// Typed validation: values that do not match are dropped (anchored regexes, evaluated with SPL match()).
 	const IPV4 = '((25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1?\\d?\\d)';
 	const IPV6 = '(?=.*:.*:)[0-9a-fA-F:.]+(%\\w+)?';
@@ -253,7 +254,7 @@ define([], function () {
 	 * @return {Object}		{ summary, clusters, sources, current } SPL strings
 	 */
 	function buildPreviewSearches(lines) {
-		const at = lines.findIndex((line) => line.kind === 'command' && line.text.startsWith('| adbmerge '));
+		const at = lines.findIndex((line) => line.kind === 'command' && line.text.startsWith('| where (isnull(adb_light)'));
 		if (at < 0) throw new Error('The merge search has no adbmerge step to preview');
 		const base = lines.slice(0, at + 1).filter((line) => line.kind === 'command').map((line) => line.text).join('\n');
 		return {
@@ -507,6 +508,8 @@ define([], function () {
 			let normalizer = content.normalizer;
 			if (!normalizer || normalizer === 'default') normalizer = general.default_normalizer || 'none';
 			if (!(normalizer in NORMALIZERS)) throw new Error(`Invalid normalizer "${normalizer}" for field ${name}`);
+			// These presets lowercase every value, so they would silently destroy the original case that Keep Original Case promises.
+			if (keepCase && LOWERCASING_NORMALIZERS.includes(normalizer)) throw new Error(`Field ${name}: Keep Original Case cannot be combined with the ${normalizer} normalizer, which lowercases the value`);
 			if (NORMALIZERS[normalizer]) normalize.push(`| \`${NORMALIZERS[normalizer]}(${name})\``);
 
 			const validationType = content.validation_type || 'none';
@@ -608,10 +611,12 @@ define([], function () {
 					stats.push(`values(${name}) as ${name}`);
 					statsFinal.push(`values(${name}) as ${name}`);
 				} else {
-					// Most recent first: list() keeps arrival order and the rows are sorted by _time (newest first) before each stats.
+					// Most recent first without sorting anything: every value is prefixed with its zero padded row time, values()
+					// de-duplicates and has no size limit (list() stops at 100 entries, so duplicates could push real values out), and the
+					// prefixes sort chronologically. After the final stats the values are sorted newest first, de-duplicated and stripped.
 					recentMv = true;
-					stats.push(`list(${name}) as ${name}`);
-					statsFinal.push(`list(${name}) as ${name}`);
+					stats.push(`values(${name}) as ${name}`);
+					statsFinal.push(`values(${name}) as ${name}`);
 					dedupMv.push(name);
 				}
 				maxValues.push(`${name} = mvindex(${name},0,${parseMaxValues(content.max_values) - 1})`);
@@ -638,12 +643,20 @@ define([], function () {
 			command(`| eval scope = lower(case(${staticScopes.concat(['true()', scopeColumn ? `'${scopeColumn}'` : 'null()']).join(', ')}))`);
 		}
 		if (allowedSources.length) { section('Discard values from sources a field does not accept'); command(`| eval ${allowedSources.join(', ')}`); }
+		// Source lookups often have many columns the merge never uses. Drop them as early as possible; an eval expression may
+		// read any column, so with expressions the pruning waits until after they ran.
+		const keepColumns = () => `| fields ${['_time', 'source', 'source_lookup'].concat(usesScope ? ['scope'] : [], enrichLookups.length ? ['adb_auth'] : [], table).join(', ')}`;
+		if (!evalExp.length && table.length) { section('Keep only the columns the merge uses'); command(keepColumns()); }
 		if (multivalue.length) { section('Split multivalue fields'); command(`| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`); }
 		if (normalize.length) { section('Normalize values'); normalize.forEach(command); }
 		if (caseInsensitive.length) { section('Convert case insensitive fields to lowercase'); command(`| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`); }
 		if (validation.length) { section('Validate field values'); command(`| eval ${validation.join(', ')}`); }
 		if (ignoreValues.length) { section('Ignore values'); command(`| eval ${ignoreValues.join(', ')}`); }
-		if (evalExp.length) { section('Eval expression fields'); command(`| eval ${evalExp.join(', ')}`); }
+		if (evalExp.length) {
+			section('Eval expression fields');
+			command(`| eval ${evalExp.join(', ')}`);
+			if (table.length) { section('Keep only the columns the merge uses'); command(keepColumns()); }
+		}
 		if (typed.length) { section('Convert numeric fields'); command(`| eval ${typed.join(', ')}`); }
 		if (earliestEval.length) { section('Tag values with their time (for the earliest merge method)'); command(`| eval ${earliestEval.join(', ')}`); }
 		if (fieldSplit.length) { section('Create lookup specific fields for priority based coalesce'); command(`| eval ${fieldSplit.join(', ')}`); }
@@ -660,16 +673,24 @@ define([], function () {
 			command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvjoin(mvdedup(mvappend(${keyRefs.join(', ')})), "::")`));
 		}
 		command('| search _key=*');
-		// _time is carried through the first stats so that `latest` and the recent-first multivalue order still have a timestamp in the final stats
-		if (recentMv) { section('Sort newest first (multivalue fields keep their most recent values)'); command('| sort 0 -_time'); }
-		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(enrichLookups.length ? ['max(adb_auth) as adb_auth'] : [], keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
+		if (recentMv) {
+			section('Tag multivalue values with their time (so the most recent ones can be kept)');
+			command(`| eval ${dedupMv.map((n) => `${n} = mvmap(${n}, printf("%015.3f", coalesce(_time, 0)) . "|" . ${n})`).join(', ')}`);
+		}
+		// _time is carried through the first stats so that `latest` still has a timestamp in the final stats
+		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat(usesLatest ? ['latest(_time) as _time'] : []).concat(enrichLookups.length ? ['max(adb_auth) as adb_auth'] : [], keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
 		if (keys.length) { section('Deep merge assets with matching key fields (using custom command)'); command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvappend(${keyRefs.join(', ')})`)); }
-		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}${parseMaxKeyShare(general) ? ` max_key_share=${parseMaxKeyShare(general)}` : ''} overflow=emit`);
+		// adbmerge only needs the keys, so only the keys travel through the command (every column would otherwise be serialized
+		// twice, in and out, which was the largest single cost); its answer is joined back to the full rows by a row id.
+		section('Merge: only the keys go through adbmerge, the result is joined back by row id');
+		command('| streamstats count as adb_rid');
+		command(`| appendpipe [| fields adb_rid, _key, adb_auth | adbmerge max_keys=${parseMaxKeys(fieldArray)}${parseMaxKeyShare(general) ? ` max_key_share=${parseMaxKeyShare(general)}` : ''} overflow=emit | eval adb_light=1]`);
+		command(`| eventstats values(asset) as asset, ${RUN_COUNTERS.map((c) => `max(${c}) as ${c}`).join(', ')} by adb_rid`);
+		command('| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1');
 		section('Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb');
 		command('| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]');
 		command('| where isnull(adb_overflow)');
 		command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
-		if (recentMv) command('| sort 0 -_time');
 		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat(RUN_COUNTERS.map((c) => `max(${c}) as ${c}`), statsFinal).join(', ')} by _key`);
 		if (avgEval.length) { section('Calculate averages'); command(`| eval ${avgEval.join(', ')}`); }
 		if (conflictFields.length) {
@@ -678,8 +699,8 @@ define([], function () {
 		}
 		if (earliestFinal.length) { section('Pick the earliest values'); command(`| eval ${earliestFinal.join(', ')}`); }
 		if (coalesce.length) { section('Define coalesce fields based on lookup priority'); command(`| eval ${coalesce.join(', ')}`); }
+		if (dedupMv.length) { section('Newest values first: sort, de-duplicate and strip the time prefix'); command(`| eval ${dedupMv.map((n) => `${n} = mvdedup(mvmap(mvreverse(mvsort(${n})), replace(${n}, "^[^|]*\\|", "")))`).join(', ')}`); }
 		if (fillnull.length) { section('Fill null values (after the merge, only where an asset has no value at all)'); command(`| eval ${fillnull.join(', ')}`); }
-		if (dedupMv.length) { section('De-duplicate multivalue fields (order is kept)'); command(`| eval ${dedupMv.map((n) => `${n} = mvdedup(${n})`).join(', ')}`); }
 		if (maxValues.length) { section('Trim multivalue fields'); command(`| eval ${maxValues.join(', ')}`); }
 		if (stats.length) {
 			const minRatio = parseMinRatio(general);

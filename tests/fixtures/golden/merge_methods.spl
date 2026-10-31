@@ -2,11 +2,17 @@
 | `input_adb_lookup(lookupB.csv)`
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="lookupA.csv", "lookupA", source_lookup="lookupB.csv", "lookupB")
+```### Keep only the columns the merge uses ###```
+| fields _time, source, source_lookup, priority, risk, score, owner, os
 ```### Create lookup specific fields for priority based coalesce ###```
 | eval {source}_os = os
 | search _key=*
 | stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, max(priority) as priority, min(risk) as risk, sum(score) as score__sum, count(score) as score__count, latest(owner) as owner, latest(lookupB_os) as lookupB_os, latest(lookupA_os) as lookupA_os by _key
-| adbmerge max_keys=25 max_key_share=50 overflow=emit
+```### Merge: only the keys go through adbmerge, the result is joined back by row id ###```
+| streamstats count as adb_rid
+| appendpipe [| fields adb_rid, _key, adb_auth | adbmerge max_keys=25 max_key_share=50 overflow=emit | eval adb_light=1]
+| eventstats values(asset) as asset, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows by adb_rid
+| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1
 ```### Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb ###```
 | appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]
 | where isnull(adb_overflow)

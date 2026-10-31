@@ -39,3 +39,15 @@ def test_a_hundred_and_twenty_thousand_assets_merge_and_their_changes_are_record
     assert counts == {"added": 300, "removed": 300, "changed": 200}, counts
     changed = [r for r in later if r["change"] == "changed"]
     assert all(r["changed_fields"] in ("owner", ["owner"]) for r in changed)
+
+
+def test_clusters_whose_rows_are_far_apart_in_the_input_are_still_merged(box):
+    """Splunk hands a command its rows in chunks of ~20,000. Rows 1..60000 and 60001..120000 describe the same 60,000 assets
+    through different keys (a shared mac), so every asset spans two chunks; a per chunk merge leaves 120,000 fragments."""
+    box.general = {"min_ratio": "0", "key_blocklist": "[]", "max_key_share": "0"}
+    box.fields = [field("mac", key_field="1"), field("ip", key_field="1"), field("nt_host", key_field="1")]
+    expr = ('k=if(n<=60000, n, n-60000), mac="m".k, ip=if(n<=60000, "ip".k, null()), nt_host=if(n>60000, "h".k, null())')
+    box.add_generated_source("far", 120000, expr)
+    rows = box.run()
+    assert len(rows) == 60000, len(rows)
+    assert all(len(r["asset"]) == 3 for r in rows[:2000])

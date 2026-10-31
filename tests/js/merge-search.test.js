@@ -161,9 +161,9 @@ test('latest keeps _time through the first stats so the second stats can order b
 
 test('max_keys comes from the general stanza, default 25, invalid values fall back', () => {
 	const withKeys = (v) => gen([single('f')], { name: 'general', content: { lookups: general.content.lookups, max_keys: v } });
-	assert.match(withKeys('40'), /\| adbmerge max_keys=40 max_key_share=50 overflow=emit\n/);
-	assert.match(withKeys('500'), /\| adbmerge max_keys=100 max_key_share=50 overflow=emit\n/, 'hard cap');
-	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit\n/, String(bad));
+	assert.match(withKeys('40'), /\| adbmerge max_keys=40 max_key_share=50 overflow=emit /);
+	assert.match(withKeys('500'), /\| adbmerge max_keys=100 max_key_share=50 overflow=emit /, 'hard cap');
+	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit /, String(bad));
 });
 
 test('last_seen is the max source _time, carried through both stats and written to the output', () => {
@@ -184,16 +184,18 @@ test('fill null is applied after the merge, never per source row', () => {
 	assert.ok(after.indexOf('isnull(owner)') > after.indexOf('| stats values(asset)'), 'fill null comes after the final stats');
 });
 
-test('multivalue fields keep the most recent values by default and can opt into alphabetical', () => {
+test('multivalue fields keep the most recent values by default (time tagged values, no sorting) and can opt into alphabetical', () => {
 	const recent = gen([mvField('ip', { max_values: '3' })]);
-	assert.ok(recent.includes('| sort 0 -_time'), recent);
-	assert.ok(/list\(ip\) as ip/.test(recent), recent);
-	assert.ok(recent.includes('ip = mvdedup(ip)'), recent);
-	assert.ok(recent.indexOf('mvdedup(ip)') < recent.indexOf('mvindex(ip,0,2)'), 'de-duplicate before trimming');
-	assert.equal((recent.match(/\| sort 0 -_time/g) || []).length, 2, 'sorted before both stats');
+	assert.ok(!recent.includes('sort 0 -_time'), 'nothing is sorted by time: ' + recent);
+	assert.ok(!/list\(ip\)/.test(recent) && /values\(ip\) as ip/.test(recent), 'values() has no 100 entry cap: ' + recent);
+	assert.ok(recent.includes('| eval ip = mvmap(ip, printf("%015.3f", coalesce(_time, 0)) . "|" . ip)'), recent);
+	assert.ok(recent.indexOf('| search _key=*') < recent.indexOf('printf("%015.3f", coalesce(_time, 0)) . "|" . ip'), 'tagged after the match keys, so Explore shows plain values');
+	const decode = '| eval ip = mvdedup(mvmap(mvreverse(mvsort(ip)), replace(ip, "^[^|]*\\|", "")))';
+	assert.ok(recent.includes(decode), recent);
+	assert.ok(recent.indexOf(decode) < recent.indexOf('mvindex(ip,0,2)'), 'newest first and de-duplicated before trimming');
 
 	const alpha = gen([mvField('ip', { max_values: '3', mv_order: 'alpha' })]);
-	assert.ok(!alpha.includes('sort 0 -_time'), alpha);
+	assert.ok(!alpha.includes('printf("%015.3f"') && !alpha.includes('mvreverse'), alpha);
 	assert.ok(/values\(ip\) as ip/.test(alpha), alpha);
 });
 
@@ -351,7 +353,7 @@ test('enrich sources mark their rows and carry the flag through the first stats;
 	const spl = withSources([{ name: 'a', lookup: 'a.csv' }, { name: 'scan', lookup: 'scan.csv', role: 'enrich' }]);
 	assert.ok(spl.includes('| eval adb_auth=case(source_lookup="scan.csv", 0, true(), 1)'), spl);
 	assert.ok(spl.includes('max(adb_auth) as adb_auth'), spl);
-	assert.ok(!withSources([{ name: 'a', lookup: 'a.csv' }]).includes('adb_auth'), 'no flag without enrich sources');
+	assert.ok(!withSources([{ name: 'a', lookup: 'a.csv' }]).includes('adb_auth=') && !withSources([{ name: 'a', lookup: 'a.csv' }]).includes('max(adb_auth)'), 'no flag without enrich sources');
 	assert.throws(() => withSources([{ name: 'a', lookup: 'a.csv', role: 'boss' }]), /role/i);
 });
 
@@ -378,10 +380,10 @@ test('an explicit key_blocklist replaces the defaults, and an empty one disables
 
 test('max_key_share is passed to adbmerge unless it is 0', () => {
 	const withShare = (v) => gen([single('mac', { key_field: '1' })], { name: 'general', content: { lookups: general.content.lookups, max_key_share: v } });
-	assert.match(withShare(undefined), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit\n/);
-	assert.match(withShare('200'), /\| adbmerge max_keys=25 max_key_share=200 overflow=emit\n/);
-	assert.match(withShare('0'), /\| adbmerge max_keys=25 overflow=emit\n/);
-	assert.match(withShare('abc'), /max_key_share=50 overflow=emit\n/);
+	assert.match(withShare(undefined), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit /);
+	assert.match(withShare('200'), /\| adbmerge max_keys=25 max_key_share=200 overflow=emit /);
+	assert.match(withShare('0'), /\| adbmerge max_keys=25 overflow=emit /);
+	assert.match(withShare('abc'), /max_key_share=50 overflow=emit /);
 });
 
 // --- scope (site / tenant) ---------------------------------------------------------------
@@ -436,8 +438,9 @@ test('min_ratio and runs_to_keep fall back to defaults and are clamped', () => {
 
 test('overflow clusters are emitted by adbmerge, saved for review and kept out of assetdb', () => {
 	const spl = gen([single('mac', { key_field: '1' })]);
-	assert.ok(/\| adbmerge max_keys=25 max_key_share=50 overflow=emit\n/.test(spl), spl);
-	const after = spl.split('overflow=emit')[1];
+	assert.ok(/\| appendpipe \[\| fields adb_rid, _key, adb_auth \| adbmerge max_keys=25 max_key_share=50 overflow=emit \| eval adb_light=1\]/.test(spl), 'only the keys go through adbmerge: ' + spl);
+	assert.ok(spl.includes('| eventstats values(asset) as asset, max(adb_total) as adb_total') && spl.includes('by adb_rid'), 'joined back by row id');
+	const after = spl.split('| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1')[1];
 	assert.ok(after.includes('| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now()'), after);
 	assert.ok(after.includes('| outputlookup assetdb_overflow | where 1=0]'), 'zero overflow rows clear the old list');
 	assert.ok(after.indexOf('| where isnull(adb_overflow)') < after.indexOf('| eval _key = md5(mvjoin(mvsort(asset)'), 'overflow rows never reach the md5 step');
@@ -477,7 +480,7 @@ test('preview searches stop at adbmerge, never write, and summarise the result',
 	const p = buildPreviewSearches(lines);
 	for (const key of ['summary', 'clusters', 'sources']) {
 		assert.ok(p[key].includes('| adbmerge max_keys=25'), key);
-		assert.ok(!/outputlookup|collect|appendpipe/.test(p[key]), `${key} must not write: ${p[key]}`);
+		assert.ok(!/outputlookup|collect/.test(p[key]) && !/appendpipe \[(?!\| fields adb_rid)/.test(p[key]), `${key} must not write: ${p[key]}`);
 		assert.ok(!p[key].includes('```'), 'comment lines are not part of the search');
 	}
 	assert.ok(p.summary.endsWith('max(adb_enrich_ambiguous) as enrich_ambiguous'), p.summary);
@@ -563,4 +566,14 @@ test('the shipped explore.xml is exactly the generated placeholder (it cannot dr
 	const { buildExploreDashboard, exploreViewXml } = require('./load-generator').loadGenerator();
 	const shipped = require('node:fs').readFileSync(path.join(__dirname, '..', '..', 'default', 'data', 'ui', 'views', 'explore.xml'), 'utf8');
 	assert.equal(shipped, exploreViewXml(buildExploreDashboard(null, [])));
+});
+
+
+test('keep original case cannot be combined with a normalizer that lowercases', () => {
+	for (const n of ['hostname', 'fqdn', 'user', 'email', 'os']) {
+		assert.throws(() => gen([single('h', { key_field: '1', case_sensitive: '0', keep_case: '1', normalizer: n })]), /Keep Original Case/, n);
+	}
+	for (const n of ['none', 'trim', 'mac', 'ip']) assert.doesNotThrow(() => gen([single('h', { key_field: '1', case_sensitive: '0', keep_case: '1', normalizer: n })]), n);
+	const cfg = (g, f) => gen([f], { name: 'general', content: Object.assign({ lookups: general.content.lookups }, g) });
+	assert.throws(() => cfg({ default_normalizer: 'hostname' }, single('h', { key_field: '1', case_sensitive: '0', keep_case: '1' })), /Keep Original Case/, 'the global default counts too');
 });

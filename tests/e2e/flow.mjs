@@ -232,6 +232,8 @@ try {
     for (const n of presetNames) for (const k of [`accelerated_fields.${n}`, `field.${n}`]) if (current[k]) clear[k] = '';
     if (Object.keys(clear).length) await ctx.request.post(`${root}/storage/collections/config/assetdb`, { headers: hdr, form: clear }).catch(() => {});
     const after = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb').catch(() => ({ entry: [{ content: {} }] }))).entry[0].content;
+    // the Explore dashboard embeds the generated pipeline; drop the local copy so the shipped placeholder is back
+    await ctx.request.delete(`${root}/data/ui/views/explore`, { headers: hdr }).catch(() => {});
     check(!(await conf().catch(() => [])).some((e) => presetNames.includes(e.name)) && presetNames.every((n) => !after[`accelerated_fields.${n}`] && !after[`field.${n}`]), 'CIM fields cleaned up (config and collection)');
   }
   // the UI regenerates the saved search on every change; put back what was there before

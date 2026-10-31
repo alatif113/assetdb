@@ -1,23 +1,28 @@
 | `input_adb_lookup(a.csv)`
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="a.csv", "a")
+```### Keep only the columns the merge uses ###```
+| fields _time, source, source_lookup, os, owner, empty
 ```### Split multivalue fields ###```
 | foreach os, owner, empty [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Ignore values ###```
 | eval os = mvfilter(NOT (in(os, "null", "none", "unknown"))), owner = mvfilter(NOT (in(owner, "say \"hi\"", "<b>&", "it's")))
 | search _key=*
-```### Sort newest first (multivalue fields keep their most recent values) ###```
-| sort 0 -_time
-| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, list(os) as os, list(owner) as owner, list(empty) as empty by _key
-| adbmerge max_keys=25 max_key_share=50 overflow=emit
+```### Tag multivalue values with their time (so the most recent ones can be kept) ###```
+| eval os = mvmap(os, printf("%015.3f", coalesce(_time, 0)) . "|" . os), owner = mvmap(owner, printf("%015.3f", coalesce(_time, 0)) . "|" . owner), empty = mvmap(empty, printf("%015.3f", coalesce(_time, 0)) . "|" . empty)
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, values(os) as os, values(owner) as owner, values(empty) as empty by _key
+```### Merge: only the keys go through adbmerge, the result is joined back by row id ###```
+| streamstats count as adb_rid
+| appendpipe [| fields adb_rid, _key, adb_auth | adbmerge max_keys=25 max_key_share=50 overflow=emit | eval adb_light=1]
+| eventstats values(asset) as asset, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows by adb_rid
+| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1
 ```### Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb ###```
 | appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]
 | where isnull(adb_overflow)
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| sort 0 -_time
-| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows, list(os) as os, list(owner) as owner, list(empty) as empty by _key
-```### De-duplicate multivalue fields (order is kept) ###```
-| eval os = mvdedup(os), owner = mvdedup(owner), empty = mvdedup(empty)
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows, values(os) as os, values(owner) as owner, values(empty) as empty by _key
+```### Newest values first: sort, de-duplicate and strip the time prefix ###```
+| eval os = mvdedup(mvmap(mvreverse(mvsort(os)), replace(os, "^[^|]*\|", ""))), owner = mvdedup(mvmap(mvreverse(mvsort(owner)), replace(owner, "^[^|]*\|", ""))), empty = mvdedup(mvmap(mvreverse(mvsort(empty)), replace(empty, "^[^|]*\|", "")))
 ```### Trim multivalue fields ###```
 | eval os = mvindex(os,0,4), owner = mvindex(owner,0,4), empty = mvindex(empty,0,4)
 ```### Run safety: how many assets did the last successful run produce? ###```

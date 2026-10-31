@@ -528,7 +528,7 @@ require([
 				{ label: 'No', value: 0 },
 			],
 			value: field?.content?.keep_case || 0,
-			help: 'Key fields only: store the original value and lowercase it only when matching assets. Values that differ only by case are then kept separately',
+			help: 'Key fields only: store the original value and lowercase it only when matching assets. Values that differ only by case are then kept separately. Not available with the host name, FQDN, user name, email and operating system normalizers, which lowercase the value',
 		});
 
 		let descriptionInput = new TextInput({

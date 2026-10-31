@@ -2,6 +2,8 @@
 | `input_adb_lookup(nessus.csv)`
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="crowdstrike.csv", "crowdstrike", source_lookup="nessus.csv", "nessus")
+```### Keep only the columns the merge uses ###```
+| fields _time, source, source_lookup, mac, nt_host, ip
 ```### Split multivalue fields ###```
 | foreach mac, nt_host, ip [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Convert case insensitive fields to lowercase ###```
@@ -13,20 +15,23 @@
 ```### Shallow merge assets with matching key fields (using basic stats) ###```
 | eval _key = mvjoin(mvdedup(mvappend(adbk_mac, adbk_nt_host)), "::")
 | search _key=*
-```### Sort newest first (multivalue fields keep their most recent values) ###```
-| sort 0 -_time
-| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, values(adbk_mac) as adbk_mac, values(adbk_nt_host) as adbk_nt_host, list(mac) as mac, list(nt_host) as nt_host, list(ip) as ip by _key
+```### Tag multivalue values with their time (so the most recent ones can be kept) ###```
+| eval mac = mvmap(mac, printf("%015.3f", coalesce(_time, 0)) . "|" . mac), nt_host = mvmap(nt_host, printf("%015.3f", coalesce(_time, 0)) . "|" . nt_host), ip = mvmap(ip, printf("%015.3f", coalesce(_time, 0)) . "|" . ip)
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, values(adbk_mac) as adbk_mac, values(adbk_nt_host) as adbk_nt_host, values(mac) as mac, values(nt_host) as nt_host, values(ip) as ip by _key
 ```### Deep merge assets with matching key fields (using custom command) ###```
 | eval _key = mvappend(adbk_mac, adbk_nt_host)
-| adbmerge max_keys=25 max_key_share=50 overflow=emit
+```### Merge: only the keys go through adbmerge, the result is joined back by row id ###```
+| streamstats count as adb_rid
+| appendpipe [| fields adb_rid, _key, adb_auth | adbmerge max_keys=25 max_key_share=50 overflow=emit | eval adb_light=1]
+| eventstats values(asset) as asset, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows by adb_rid
+| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1
 ```### Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb ###```
 | appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]
 | where isnull(adb_overflow)
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| sort 0 -_time
-| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows, list(mac) as mac, list(nt_host) as nt_host, list(ip) as ip by _key
-```### De-duplicate multivalue fields (order is kept) ###```
-| eval mac = mvdedup(mac), nt_host = mvdedup(nt_host), ip = mvdedup(ip)
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows, values(mac) as mac, values(nt_host) as nt_host, values(ip) as ip by _key
+```### Newest values first: sort, de-duplicate and strip the time prefix ###```
+| eval mac = mvdedup(mvmap(mvreverse(mvsort(mac)), replace(mac, "^[^|]*\|", ""))), nt_host = mvdedup(mvmap(mvreverse(mvsort(nt_host)), replace(nt_host, "^[^|]*\|", ""))), ip = mvdedup(mvmap(mvreverse(mvsort(ip)), replace(ip, "^[^|]*\|", "")))
 ```### Trim multivalue fields ###```
 | eval mac = mvindex(mac,0,4), nt_host = mvindex(nt_host,0,4), ip = mvindex(ip,0,4)
 ```### Run safety: how many assets did the last successful run produce? ###```

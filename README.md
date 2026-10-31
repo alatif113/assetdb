@@ -129,6 +129,19 @@ Only the first needs no add-on and is tested end to end; the CIM ones are checke
 
 Because the second table embeds the generated pipeline, the Configure page rewrites the dashboard (`local/data/ui/views/explore.xml`) whenever the configuration changes. Edits you make to the dashboard in Studio are therefore overwritten by the next configuration change: save your own variation under another name.
 
+### Performance notes
+
+Measured on a 15 field, 3 source configuration with 300,000 source rows (30,000 assets, 30 unused columns per lookup) the generated search runs in about 14 seconds, 45% faster than before these changes, with the same assets. What changed:
+
+- **The merge command only receives the keys.** It was the largest single cost (41% of the run) because every column was serialized into the command and back; now the result is joined back to the full rows by a row id.
+- **Recent-first multivalue fields no longer sort.** Values carry their time as a prefix, `values()` de-duplicates them and they are ordered after the merge. This replaced two global sorts and also removed a cap: the previous `list()` stopped at 100 entries, so many repeats of a few values could push distinct older values out.
+- **Unused columns are dropped** right after the sources are read (after eval expressions when a field has one, since an expression may read any column).
+- **`adbmerge` merges across all of its input.** Splunk delivers the rows to a command in chunks of a few ten thousand and calls it once per chunk. The command used to merge each chunk on its own, so with more than one chunk a cluster whose rows landed in different chunks was never joined. It now collects every chunk and merges once, in the last one.
+
+Things that still cost time and are worth knowing: each *Earliest* field and each *Flag Conflicts* field adds an aggregate; *Change History* hashes every field of every asset twice and reads the whole previous `assetdb`; Explore and Preview run the generated pipeline up to the match keys.
+
+`latest` needs a time: a source lookup without `_time` (or a Time Column) gives every row the same time, and then the first row wins, not the last. Give such sources a time column if the order matters.
+
 ### Using the asset database: enrichment macros
 
 Add the merged asset to any event with a macro (they are exported to all apps):

@@ -193,11 +193,12 @@ def test_every_run_is_recorded_with_its_counters(sandbox):
     sandbox.run()
     runs = sandbox.runs_rows()
     assert [r["status"] for r in runs] == ["ok", "ok"], runs
-    first = runs[0]
+    # both runs can start in the same second, so identify them by what they compared with, not by their time
+    first = [r for r in runs if r.get("assets_prev") in (None, "")]
+    second = [r for r in runs if r.get("assets_prev") == "2"]
+    assert len(first) == 1 and len(second) == 1, runs
     # rows_in counts what reached the merge command: rows with a key, identical key sets combined (the keyless row never gets there)
-    assert (first["assets_out"], first["rows_in"], first["null_keys"]) == ("2", "2", "0"), first
-    assert first.get("assets_prev") in (None, ""), "no previous run to compare with"
-    assert runs[1]["assets_prev"] == "2"
+    assert (first[0]["assets_out"], first[0]["rows_in"], first[0]["null_keys"]) == ("2", "2", "0"), first[0]
 
 
 def test_a_collapsed_run_is_blocked_and_assetdb_is_left_as_it_was(sandbox):
@@ -338,3 +339,26 @@ def test_change_history_is_off_by_default_and_bounded(sandbox):
     sandbox.rewrite_source("a", [{"mac": "n%d" % i} for i in range(130)])
     sandbox.run()
     assert len(sandbox.change_rows()) == box_rows
+
+
+# --- multivalue recency without losing values -----------------------------------------------------------
+
+def test_recent_multivalue_keeps_distinct_older_values_even_when_newer_rows_repeat_a_few(sandbox):
+    sandbox.general = {"min_ratio": "0", "key_blocklist": "[]", "max_key_share": "0"}
+    sandbox.fields = [field("mac", key_field="1"), field("ip", max_values="11")]
+    # 12 distinct addresses: 10 old ones, then 120 newer rows that only repeat two of them. A list() capped at 100 entries would return just those two.
+    rows = [{"_time": 1700000000 + i, "mac": "m1", "ip": "10.9.9.%d" % i} for i in range(10)]
+    rows += [{"_time": 1700001000 + i, "mac": "m1", "ip": "10.0.0.%d" % (i % 2)} for i in range(120)]
+    sandbox.add_source("a", rows, header=["_time", "mac", "ip"])
+    r = only(sandbox.run())
+    assert len(r["ip"]) == 11, r
+    assert {"10.0.0.0", "10.0.0.1"} <= set(r["ip"]), "the newest values come first and are kept"
+    assert "10.9.9.9" in r["ip"] and "10.9.9.0" not in r["ip"], "then the newest of the older ones: 11 of 12, only the oldest is cut"
+
+
+def test_columns_the_merge_does_not_use_never_reach_the_result_and_expressions_may_read_them(sandbox):
+    sandbox.fields = [field("mac", key_field="1"), field("label", field_type="single", eval_expression='upper(raw_name)')]
+    sandbox.add_source("a", [{"mac": "m1", "raw_name": "web", "padding": "x" * 50, "other": "y"}])
+    r = only(sandbox.run())
+    assert r["label"] == ["WEB"], r           # an expression can still read a column that is not a field
+    assert "padding" not in r and "raw_name" not in r
