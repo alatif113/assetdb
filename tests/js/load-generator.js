@@ -12,7 +12,16 @@ const path = require('node:path');
 const vm = require('node:vm');
 const underscore = require('underscore');
 
-const SRC = path.join(__dirname, '..', '..', 'appserver', 'static', 'js', 'src', 'assetdb.js');
+const SRC_DIR = path.join(__dirname, '..', '..', 'appserver', 'static', 'js', 'src');
+const SRC = path.join(SRC_DIR, 'assetdb.js');
+
+// The generator is a pure AMD module (define([], fn)); evaluate it for real.
+function loadGenerator() {
+	let exported;
+	const file = path.join(SRC_DIR, 'generator.js');
+	vm.runInNewContext(fs.readFileSync(file, 'utf8'), { define: (deps, fn) => { exported = fn(); } }, { filename: file });
+	return exported;
+}
 
 // Callable, indexable no-op that absorbs any jQuery / Splunk UI call.
 const noop = new Proxy(function () {}, {
@@ -43,9 +52,9 @@ function load({ confEntries = [] } = {}) {
 	const mvc = { createService: () => service };
 
 	const sandbox = { module: { exports: {} }, console };
-	sandbox.require = (deps, fn) => fn(underscore, $, mvc, noop, noop, noop, noop, noop, noop, noop, noop, noop);
+	sandbox.require = (deps, fn) => fn(underscore, $, mvc, noop, noop, noop, noop, noop, noop, noop, loadGenerator(), noop, noop);
 	vm.runInNewContext(source, sandbox, { filename: SRC });
 	return sandbox.module.exports;
 }
 
-module.exports = { load };
+module.exports = { load, loadGenerator };
