@@ -23,7 +23,6 @@ let originalFieldsList;
 let originalMacro;
 const presetNames = ['ip', 'mac', 'nt_host', 'dns', 'owner', 'priority', 'bunit', 'category', 'city', 'country', 'pci_domain', 'is_expected'];
 let presetsAdded = false;
-let exploreKey;
 const generalConf = async () => (await conf()).find((e) => e.name === 'general').content;
 const modal = () => page.locator('.modal:visible');
 
@@ -63,34 +62,6 @@ try {
   check((await savedSearch()).includes('`normalize_mac(mac)`'), 'saved search uses the preset normalizers');
   const accel = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb')).entry[0].content;
   check(['ip', 'mac', 'nt_host', 'dns'].every((n) => accel[`accelerated_fields.${n}`]), 'the four CIM key fields are indexed');
-
-  // Explore: find an asset by a key value and trace its source rows (a marked test asset is added to assetdb and removed again)
-  const csrfNow = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
-  const kvHdr = { 'X-Splunk-Form-Key': csrfNow.value, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json' };
-  const kvRoot = `${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/storage/collections/data/assetdb`;
-  const testKey = `adbtest_explore_${Date.now().toString(36)}`;
-  exploreKey = testKey;
-  await ctx.request.post(kvRoot, { headers: kvHdr, data: { _key: testKey, asset: ['110.0.0.4', 'inspector_mac_32@mlatif.com'], source: ['demo_assets'], ip: ['110.0.0.4'] } });
-  const explore = await ctx.newPage();
-  await explore.setViewportSize({ width: 1500, height: 1500 });
-  await explore.goto(`${base}/en-US/app/assetdb/explore`);
-  // Dashboard Studio: the Configure page rewrote the view so the source panel runs the current generated pipeline
-  await explore.waitForSelector('#input_term', { timeout: 60000 });
-  await explore.locator('#input_term').fill('110.0.0.4');
-  await explore.locator('#input_term').press('Enter');
-  await explore.getByText('inspector_mac_32@mlatif.com').first().waitFor({ timeout: 90000 });
-  check(true, 'Explore (Dashboard Studio) finds the asset by one of its keys');
-  await explore.getByText('inspector_mac_32@mlatif.com').first().click();
-  await explore.waitForFunction(() => document.body.innerText.includes('assetdb_demo_assets.csv'), null, { timeout: 120000 }).catch(async () => {
-    await explore.screenshot({ path: 'dist/e2e-explore-failed.png' });
-    console.log('explore text:', (await explore.locator('body').innerText()).slice(0, 1500));
-  });
-  const body = await explore.locator('body').innerText();
-  check(body.includes('assetdb_demo_assets.csv') && body.includes('110.0.0.4'), 'Explore lists the source rows behind the selected asset');
-  await explore.screenshot({ path: 'dist/e2e-explore.png' });
-  await explore.close();
-  await ctx.request.delete(`${kvRoot}/${testKey}`, { headers: kvHdr }).catch(() => {});
-  exploreKey = undefined;
 
   // Sources: edit options (max age, row filter, column mapping), see them stored and used by the saved search
   await page.click('#ab_config a.tab-label:has-text("Asset Lookups")');
@@ -216,9 +187,6 @@ try {
     await ctx.request.delete(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/configs/conf-assetdb/${name}`).catch(() => {});
   }
   const csrfForCleanup = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
-  if (exploreKey && csrfForCleanup) {
-    await ctx.request.delete(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/storage/collections/data/assetdb/${exploreKey}`, { headers: { 'X-Splunk-Form-Key': csrfForCleanup.value, 'X-Requested-With': 'XMLHttpRequest' } }).catch(() => {});
-  }
   if (presetsAdded && csrfForCleanup) {
     const hdr = { 'X-Splunk-Form-Key': csrfForCleanup.value, 'X-Requested-With': 'XMLHttpRequest' };
     const root = `${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb`;
@@ -232,8 +200,6 @@ try {
     for (const n of presetNames) for (const k of [`accelerated_fields.${n}`, `field.${n}`]) if (current[k]) clear[k] = '';
     if (Object.keys(clear).length) await ctx.request.post(`${root}/storage/collections/config/assetdb`, { headers: hdr, form: clear }).catch(() => {});
     const after = (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb').catch(() => ({ entry: [{ content: {} }] }))).entry[0].content;
-    // the Explore dashboard embeds the generated pipeline; drop the local copy so the shipped placeholder is back
-    await ctx.request.delete(`${root}/data/ui/views/explore`, { headers: hdr }).catch(() => {});
     check(!(await conf().catch(() => [])).some((e) => presetNames.includes(e.name)) && presetNames.every((n) => !after[`accelerated_fields.${n}`] && !after[`field.${n}`]), 'CIM fields cleaned up (config and collection)');
   }
   // the UI regenerates the saved search on every change; put back what was there before

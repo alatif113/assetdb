@@ -266,125 +266,6 @@ define([], function () {
 	}
 
 	/**
-	 * Search listing every source row (as the merge sees it: normalized, filtered, scoped) that carries one of the
-	 * given asset keys, so each piece of an asset's information can be traced to the source that supplied it. It
-	 * reuses the generated pipeline up to the point where the match keys exist, so it can never drift from the merge.
-	 *
-	 * @param {Array}	lines		Lines from buildSearchLines
-	 * @param {Array}	keys		The `asset` keys of the merged asset
-	 * @param {Array}	fieldNames	Configured field names to show
-	 * @return {String}			SPL
-	 */
-	function explainParts(lines, fieldNames) {
-		const keyLineAt = lines.findIndex((line) => line.kind === 'command' && line.text.startsWith('| search _key=*'));
-		const keyEval = lines.slice(0, keyLineAt).reverse().find((line) => line.kind === 'command' && line.text.startsWith('| eval _key = '));
-		if (keyLineAt < 0 || !keyEval) throw new Error('The merge search has no key fields to trace; add at least one key field');
-		const refs = Array.from(new Set(keyEval.text.match(/adbk_[A-Za-z0-9_]+/g) || []));
-		if (!refs.length) throw new Error('The merge search has no key fields to trace; add at least one key field');
-		const base = lines.slice(0, keyLineAt).filter((line) => line.kind === 'command').map((line) => line.text).join('\n');
-		const hasRole = base.includes('adb_auth=');
-		const shown = ['source', 'source_lookup'].concat(hasRole ? ['role'] : [], ['adb_time', 'adb_row_keys'], fieldNames);
-		return {
-			rowKeys: `${base}\n| eval adb_row_keys=${refs.length === 1 ? refs[0] : `mvdedup(mvappend(${refs.join(', ')}))`}`,
-			tail: `\n| eval adb_time=if(isnotnull(_time), strftime(_time, "%F %T"), "")${hasRole ? ', role=if(adb_auth=0, "enrich only", "authoritative")' : ''}\n| sort 0 source adb_time\n| head 1000\n| table ${shown.join(', ')}`,
-		};
-	}
-
-	function buildExplainSearch(lines, keys, fieldNames) {
-		const parts = explainParts(lines, fieldNames);
-		const quoted = keys.slice(0, 200).map(splQuote);
-		if (!quoted.length) throw new Error('No keys to look for');
-		return `${parts.rowKeys}\n| where mvcount(mvfilter(in(adb_row_keys, ${quoted.join(', ')}))) > 0${parts.tail}`;
-	}
-
-	/**
-	 * The Explore page as a Dashboard Studio definition (the JSON of a version 2 dashboard). Panel 1 turns the typed value
-	 * into the keys it could be (normalized MAC, short host name, user part, optional scope prefix), looks each one up in
-	 * assetdb through its index and lists the matching assets; selecting one sets a token with the asset's keys. Panel 2
-	 * runs the generated merge pipeline up to the match keys, keeps the rows that carry one of those keys, and shows what each
-	 * source supplied. Panel 2's search is generated from the same lines as the merge, so it is rewritten whenever the
-	 * configuration changes. Without key fields it shows a hint instead.
-	 *
-	 * @param {Array|null}	lines		Lines from buildSearchLines, or null when there is nothing to trace
-	 * @param {Array}		fieldNames	Configured field names
-	 */
-	function buildExploreDashboard(lines, fieldNames) {
-		let panel2;
-		let hint = '';
-		try {
-			const parts = explainParts(lines || [], fieldNames);
-			// Studio treats $name$ as a token: a literal dollar sign (regex anchors) must be written $$
-			const escaped = parts.rowKeys.replace(/\$/g, '$$$$');
-			panel2 = `${escaped}\n| search [| makeresults | eval adb_row_keys=split($adb_keys|s$, "|") | mvexpand adb_row_keys | table adb_row_keys]${parts.tail.replace(/\$/g, '$$$$')}`;
-		} catch (e) {
-			hint = e.message;
-			panel2 = '| makeresults | where 1=0 | eval source="", note=""';
-		}
-		const candidates = [
-			'| makeresults',
-			'| eval q=lower(trim($adb_term|s$)), sc=lower(trim($adb_scope|s$))',
-			'| where len(q) > 0',
-			'| eval c=mvappend(q, if(match(q, "^[0-9a-f]{2}([^0-9a-f]?[0-9a-f]{2}){5}$$"), replace(replace(q, "[^0-9a-f]", ""), "(..)(?=.)", "\\\\1:"), null()), if(match(q, "\\\\.") AND NOT match(q, "^\\\\d+(\\\\.\\\\d+){3}$$"), mvindex(split(q, "."), 0), null()), if(match(q, "\\\\\\\\"), replace(q, "^.*\\\\\\\\", ""), null()), if(match(q, "@"), mvindex(split(q, "@"), 0), null()))',
-			'| mvexpand c',
-			'| eval c=if(len(sc) > 0, sc . "|" . c, c)',
-			'| lookup assetdb asset AS c OUTPUTNEW `adb_enrich_outputs`',
-			'| where isnotnull(asset_id)',
-			'| dedup asset_id',
-			'| lookup assetdb _key AS asset_id OUTPUT asset AS adb_keys_mv',
-			'| eval adb_keys=mvjoin(adb_keys_mv, "|"), last_seen=strftime(asset_last_seen, "%F %T")',
-			`| table adb_keys, asset_source, last_seen${fieldNames.map((n) => `, asset_${n}`).join('')}`,
-		].join('\n');
-		const help = '**Find an asset** by any key value (IP address, MAC address, host name, user name ...). Matching is lowercase; MAC addresses, short host names and the user part of `DOMAIN\\user` / `user@domain` are tried too, and keys that are scoped need the scope. **Select a row** to see which source supplied each piece of its information.' + (hint ? `\n\n*Source rows are not available yet: ${hint}.*` : '');
-		return {
-			title: 'Explore',
-			description: 'Find an asset by any key value and see which source supplied each piece of its information.',
-			visualizations: {
-				viz_help: { type: 'splunk.markdown', options: { markdown: help, fontSize: 'default' } },
-				viz_assets: {
-					type: 'splunk.table',
-					title: 'Matching assets (select one)',
-					dataSources: { primary: 'ds_assets' },
-					options: { count: 10, dataOverlayMode: 'none', showRowNumbers: false },
-					eventHandlers: [{ type: 'drilldown.setToken', options: { tokens: [{ token: 'adb_keys', key: 'row.adb_keys.value' }] } }],
-				},
-				viz_sources: {
-					type: 'splunk.table',
-					title: 'Source data behind the selected asset',
-					description: 'Every source row that carries one of the asset\'s keys, as the merge sees it (after column mapping, normalizing, ignore lists and filters).',
-					dataSources: { primary: 'ds_sources' },
-					options: { count: 20, dataOverlayMode: 'none', showRowNumbers: false },
-				},
-			},
-			dataSources: {
-				ds_assets: { type: 'ds.search', name: 'Matching assets', options: { query: candidates, queryParameters: { earliest: '-1m', latest: 'now' } } },
-				ds_sources: { type: 'ds.search', name: 'Source rows', options: { query: panel2, queryParameters: { earliest: '-1m', latest: 'now' } } },
-			},
-			inputs: {
-				input_term: { type: 'input.text', title: 'Key value', options: { defaultValue: ' ', token: 'adb_term' } },
-				input_scope: { type: 'input.text', title: 'Scope (optional)', options: { defaultValue: ' ', token: 'adb_scope' } },
-			},
-			layout: {
-				type: 'grid',
-				options: { width: 1440, height: 1100 },
-				structure: [
-					{ item: 'viz_help', type: 'block', position: { x: 0, y: 0, w: 1440, h: 110 } },
-					{ item: 'viz_assets', type: 'block', position: { x: 0, y: 110, w: 1440, h: 380 } },
-					{ item: 'viz_sources', type: 'block', position: { x: 0, y: 490, w: 1440, h: 560 } },
-				],
-				globalInputs: ['input_term', 'input_scope'],
-			},
-		};
-	}
-
-	/**
-	 * The Simple XML wrapper of a Dashboard Studio (version 2) view.
-	 */
-	function exploreViewXml(definition) {
-		const json = JSON.stringify(definition, null, 2).replace(/]]>/g, ']]]]><![CDATA[>');
-		return `<dashboard version="2" theme="light">\n  <label>Explore</label>\n  <description>${definition.description}</description>\n  <definition><![CDATA[\n${json}\n]]></definition>\n</dashboard>\n`;
-	}
-
-	/**
 	 * CIM-shaped asset fields (the names of the Splunk Common Information Model / ES asset schema) with sensible
 	 * defaults. Only names and defaults: nothing here needs the CIM add-on or Enterprise Security.
 	 */
@@ -778,9 +659,6 @@ define([], function () {
 		NORMALIZERS: NORMALIZERS,
 		cimPresetFields: cimPresetFields,
 		buildPreviewSearches: buildPreviewSearches,
-		buildExplainSearch: buildExplainSearch,
-		buildExploreDashboard: buildExploreDashboard,
-		exploreViewXml: exploreViewXml,
 		VALIDATION_TYPES: VALIDATION_TYPES,
 		VALUE_TYPES: VALUE_TYPES,
 		HARD_MAX_KEYS: HARD_MAX_KEYS,

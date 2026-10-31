@@ -189,7 +189,7 @@ test('multivalue fields keep the most recent values by default (time tagged valu
 	assert.ok(!recent.includes('sort 0 -_time'), 'nothing is sorted by time: ' + recent);
 	assert.ok(!/list\(ip\)/.test(recent) && /values\(ip\) as ip/.test(recent), 'values() has no 100 entry cap: ' + recent);
 	assert.ok(recent.includes('| eval ip = mvmap(ip, printf("%015.3f", coalesce(_time, 0)) . "|" . ip)'), recent);
-	assert.ok(recent.indexOf('| search _key=*') < recent.indexOf('printf("%015.3f", coalesce(_time, 0)) . "|" . ip'), 'tagged after the match keys, so Explore shows plain values');
+	assert.ok(recent.indexOf('| search _key=*') < recent.indexOf('printf("%015.3f", coalesce(_time, 0)) . "|" . ip'), 'tagged after the match keys');
 	const decode = '| eval ip = mvdedup(mvmap(mvreverse(mvsort(ip)), replace(ip, "^[^|]*\\|", "")))';
 	assert.ok(recent.includes(decode), recent);
 	assert.ok(recent.indexOf(decode) < recent.indexOf('mvindex(ip,0,2)'), 'newest first and de-duplicated before trimming');
@@ -489,22 +489,6 @@ test('preview searches stop at adbmerge, never write, and summarise the result',
 	assert.throws(() => buildPreviewSearches([{ kind: 'command', text: '| outputlookup assetdb' }]), /adbmerge/);
 });
 
-// --- explain (which source supplied what) ------------------------------------------------
-
-test('the explain search reuses the pipeline up to the match keys and filters to the asset keys', () => {
-	const { buildExplainSearch } = require('./load-generator').loadGenerator();
-	const sources = [{ name: 'cmdb', lookup: 'a.csv' }, { name: 'scan', lookup: 's.csv', role: 'enrich' }];
-	const lines = JSON.parse(JSON.stringify(load().makeMergeSearchLines([{ name: 'general', content: { lookups: JSON.stringify(sources) } }, single('mac', { key_field: '1', case_sensitive: '0', normalizer: 'mac' }), single('owner')])));
-	const spl = buildExplainSearch(lines, ['aa:bb:cc:dd:ee:ff', 'x"y'], ['mac', 'owner']);
-	assert.ok(spl.includes('`normalize_mac(mac)`'), 'rows are explained after normalization');
-	assert.ok(!/\| stats|adbmerge|outputlookup|search _key=\*/.test(spl), 'it stops before the shallow stats: ' + spl);
-	assert.ok(spl.includes('| where mvcount(mvfilter(in(adb_row_keys, "aa:bb:cc:dd:ee:ff", "x\\"y"))) > 0'), spl);
-	assert.ok(spl.includes('role=if(adb_auth=0, "enrich only", "authoritative")'), 'shows the source role when enrich sources exist');
-	assert.ok(spl.endsWith('| table source, source_lookup, role, adb_time, adb_row_keys, mac, owner'), spl);
-	assert.throws(() => buildExplainSearch(JSON.parse(JSON.stringify(load().makeMergeSearchLines([general, single('owner')]))), ['a'], []), /key field/i);
-	assert.throws(() => buildExplainSearch(lines, [], []), /No keys/i);
-});
-
 // --- change history ---------------------------------------------------------------------
 
 test('mvappend is never called with a single argument (SPL rejects it)', () => {
@@ -528,52 +512,4 @@ test('change history is off by default; kv and index modes build the diff agains
 	assert.throws(() => cfg({ change_history: 'index' }), /index name/i);
 	assert.throws(() => cfg({ change_history: 'index', history_index: 'a b; delete' }), /index name/i);
 	assert.throws(() => cfg({ change_history: 'sometimes' }), /change history mode/i);
-});
-
-
-// --- Explore as a Dashboard Studio dashboard ------------------------------------------------
-
-test('the Explore dashboard definition wires the inputs, the drilldown token and the generated pipeline', () => {
-	const { buildExploreDashboard, exploreViewXml } = require('./load-generator').loadGenerator();
-	const lines = JSON.parse(JSON.stringify(load().makeMergeSearchLines([general, single('mac', { key_field: '1', case_sensitive: '0', normalizer: 'mac', validation: '^[0-9a-f:]+$' }), single('owner')])));
-	const d = JSON.parse(JSON.stringify(buildExploreDashboard(lines, ['mac', 'owner'])));
-	assert.deepEqual(Object.keys(d.inputs).sort(), ['input_scope', 'input_term']);
-	assert.equal(d.inputs.input_term.options.token, 'adb_term');
-	assert.deepEqual(d.visualizations.viz_assets.eventHandlers[0].options.tokens, [{ token: 'adb_keys', key: 'row.adb_keys.value' }]);
-	const q1 = d.dataSources.ds_assets.options.query;
-	assert.ok(q1.includes('$adb_term|s$') && q1.includes('lookup assetdb asset AS c OUTPUTNEW `adb_enrich_outputs`'), q1);
-	assert.ok(q1.endsWith('| table adb_keys, asset_source, last_seen, asset_mac, asset_owner'), q1);
-	const q2 = d.dataSources.ds_sources.options.query;
-	assert.ok(q2.includes('split($adb_keys|s$, "|")') && q2.includes('| search [| makeresults'), q2);
-	assert.ok(q2.includes('`normalize_mac(mac)`'), 'the generated pipeline is embedded');
-	assert.ok(q2.includes('^[0-9a-f:]+$$'), 'literal dollar signs are escaped for Studio tokens: ' + q2);
-	assert.ok(!/[^$]\$[^$|a-z_]/.test(q2.replace(/\$\$/g, '').replace(/\$[a-z_|]+\$/g, '')), 'no stray single dollar sign is left');
-	for (const q of [q1, q2]) assert.ok(!/outputlookup|collect|delete/.test(q), 'read only');
-	const xml = exploreViewXml(d);
-	assert.match(xml, /^<dashboard version="2" theme="light">/);
-	const json = JSON.parse(xml.match(/<!\[CDATA\[\n([\s\S]*)\n\]\]>/)[1]);
-	assert.equal(json.title, 'Explore');
-});
-
-test('without key fields the Explore dashboard explains why the source panel is empty', () => {
-	const { buildExploreDashboard } = require('./load-generator').loadGenerator();
-	const d = buildExploreDashboard(null, []);
-	assert.ok(d.visualizations.viz_help.options.markdown.includes('not available yet'), d.visualizations.viz_help.options.markdown);
-	assert.ok(d.dataSources.ds_sources.options.query.includes('where 1=0'));
-});
-
-test('the shipped explore.xml is exactly the generated placeholder (it cannot drift from the generator)', () => {
-	const { buildExploreDashboard, exploreViewXml } = require('./load-generator').loadGenerator();
-	const shipped = require('node:fs').readFileSync(path.join(__dirname, '..', '..', 'default', 'data', 'ui', 'views', 'explore.xml'), 'utf8');
-	assert.equal(shipped, exploreViewXml(buildExploreDashboard(null, [])));
-});
-
-
-test('keep original case cannot be combined with a normalizer that lowercases', () => {
-	for (const n of ['hostname', 'fqdn', 'user', 'email', 'os']) {
-		assert.throws(() => gen([single('h', { key_field: '1', case_sensitive: '0', keep_case: '1', normalizer: n })]), /Keep Original Case/, n);
-	}
-	for (const n of ['none', 'trim', 'mac', 'ip']) assert.doesNotThrow(() => gen([single('h', { key_field: '1', case_sensitive: '0', keep_case: '1', normalizer: n })]), n);
-	const cfg = (g, f) => gen([f], { name: 'general', content: Object.assign({ lookups: general.content.lookups }, g) });
-	assert.throws(() => cfg({ default_normalizer: 'hostname' }, single('h', { key_field: '1', case_sensitive: '0', keep_case: '1' })), /Keep Original Case/, 'the global default counts too');
 });

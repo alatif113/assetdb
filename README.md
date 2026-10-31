@@ -47,12 +47,12 @@ Every key field gets an index in the KV store collection (the collection allows 
 
 **Change history** (Settings, off by default). When on, every run that is written compares the new assets with the asset database it replaces and records the differences: assets *added*, *removed* or *changed*, with the names of the fields that changed (`last_seen` is ignored, it changes every run). Choose where the records go:
 
-- **KV store collection** (`assetdb_changes`): the newest *History Rows* records (default 20,000) are kept, so it is bounded. The Review dashboard shows the latest.
+- **KV store collection** (`assetdb_changes`): the newest *History Rows* records (default 20,000) are kept, so it is bounded. Read it with `| inputlookup assetdb_changes | sort 0 -run_time`.
 - **Index**: each change is a `sourcetype=assetdb:change` event written with `collect` into an index you name. It must exist first (on Splunk Cloud an admin creates it); use this when you want long retention.
 
 Limits to know: the previous `assetdb` is read in full on every run, so the cost grows with the number of assets (it was tested with 120,000); an asset's identity is its `_key`, which is derived from its keys, so an asset whose keys change is recorded as one removal and one addition.
 
-**Overflow and conflicts.** Clusters larger than Max Keys are not written to `assetdb`; they are listed in the `assetdb_overflow` collection (replaced on every run, so it only shows the last run) with a sample of their keys, their size and the sources involved. A field with *Flag Conflicts* turned on records its name in the asset's `conflicts` field when the sources disagree. The **Review** dashboard shows the latest runs, the overflow clusters and the assets with conflicts.
+**Overflow and conflicts.** Clusters larger than Max Keys are not written to `assetdb`; they are listed in the `assetdb_overflow` collection (replaced on every run, so it only shows the last run) with a sample of their keys, their size and the sources involved. A field with *Flag Conflicts* turned on records its name in the asset's `conflicts` field when the sources disagree. Read them with `| inputlookup assetdb_runs | sort 0 -run_time`, `| inputlookup assetdb_overflow` and `| inputlookup assetdb | search conflicts=*`.
 
 **Scoped keys.** The same address in two sites (overlapping RFC 1918 space, an acquired network, one tenant per customer) must not merge. Give each source a *Scope* (or name a *Scope Column* in Settings that holds the scope of each row), then mark the key fields that are only unique within a site as *Scoped* (IP addresses, host names) and leave globally unique ones (MAC addresses, serial numbers) as *Global*. A scoped key becomes `<scope>|<value>`, so it only matches rows of the same scope, while a global key still links assets across scopes. Merged assets get a `scope` field. Turning scoping on changes the keys, so the first run after enabling it rebuilds the collection.
 
@@ -122,25 +122,6 @@ Building the source lookups is the hardest part of setting up. The app ships fou
 | `assetdb-src-ad-computers` | enabled Active Directory computer accounts | SA-LDAPSearch (adapt the domain; not tested here) | Authoritative |
 
 Only the first needs no add-on and is tested end to end; the CIM ones are checked to parse as far as the data model lookup; the Active Directory one is a starting point.
-
-### Explore: find an asset and see where its data came from
-
-**Explore** is a native Dashboard Studio dashboard (you can open it in the Studio editor, export it, or change its layout like any other). Type an IP address, MAC address, host name or user name into *Key value*: it is matched in lowercase, and the normalized form of a MAC address, the short form of a host name and the user part of `DOMAIN\user` or `user@domain` are tried too (add a *Scope* when keys are scoped). Each candidate is looked up through the index of the `assetdb` collection, so it is fast at any size. Select a matching asset and the second table lists every source row, from every source lookup, that carries one of the asset's keys, with what that source supplied for each field, so each value of the merged asset can be traced back to its source. The rows come from the same generated pipeline as the merge (after column mapping, normalizing, ignore lists, allowed sources and row filters), so they show what the merge saw rather than the raw lookup. At most 1000 rows are shown.
-
-Because the second table embeds the generated pipeline, the Configure page rewrites the dashboard (`local/data/ui/views/explore.xml`) whenever the configuration changes. Edits you make to the dashboard in Studio are therefore overwritten by the next configuration change: save your own variation under another name.
-
-### Performance notes
-
-Measured on a 15 field, 3 source configuration with 300,000 source rows (30,000 assets, 30 unused columns per lookup) the generated search runs in about 14 seconds, 45% faster than before these changes, with the same assets. What changed:
-
-- **The merge command only receives the keys.** It was the largest single cost (41% of the run) because every column was serialized into the command and back; now the result is joined back to the full rows by a row id.
-- **Recent-first multivalue fields no longer sort.** Values carry their time as a prefix, `values()` de-duplicates them and they are ordered after the merge. This replaced two global sorts and also removed a cap: the previous `list()` stopped at 100 entries, so many repeats of a few values could push distinct older values out.
-- **Unused columns are dropped** right after the sources are read (after eval expressions when a field has one, since an expression may read any column).
-- **`adbmerge` merges across all of its input.** Splunk delivers the rows to a command in chunks of a few ten thousand and calls it once per chunk. The command used to merge each chunk on its own, so with more than one chunk a cluster whose rows landed in different chunks was never joined. It now collects every chunk and merges once, in the last one.
-
-Things that still cost time and are worth knowing: each *Earliest* field and each *Flag Conflicts* field adds an aggregate; *Change History* hashes every field of every asset twice and reads the whole previous `assetdb`; Explore and Preview run the generated pipeline up to the match keys.
-
-`latest` needs a time: a source lookup without `_time` (or a Time Column) gives every row the same time, and then the first row wins, not the last. Give such sources a time column if the order matters.
 
 ### Using the asset database: enrichment macros
 

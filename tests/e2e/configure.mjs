@@ -41,10 +41,6 @@ const rows = await page.locator('#ab_config .formatted-query .row').count();
 const keywords = await page.locator('#ab_config .formatted-query span.keyword').count();
 const previewError = await page.locator('#ab_config .formatted-query .error-message').count();
 if (rows < 5 || keywords < 2 || previewError) errors.push(`merge search preview not rendered (rows=${rows}, keywords=${keywords}, errors=${previewError})`);
-// The Review dashboard renders its three panels without errors
-await page.goto(`${base}/en-US/app/assetdb/review`);
-await page.waitForSelector('.dashboard-panel table, .dashboard-panel .splunk-table, .dashboard-panel .table', { timeout: 60000 }).catch(() => errors.push('Review dashboard shows no tables'));
-if ((await page.locator('.dashboard-panel').count()) < 3) errors.push('Review dashboard should have 3 panels');
 await page.screenshot({ path: process.env.E2E_SCREENSHOT || 'dist/e2e-configure.png' });
 await browser.close();
 

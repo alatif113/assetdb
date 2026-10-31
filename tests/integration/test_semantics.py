@@ -288,21 +288,6 @@ def test_preview_summarises_the_merge_without_writing_anything(sandbox):
     assert [r["source"] for r in result["sources"]] == ["a"]
 
 
-# --- explain: which source supplied what --------------------------------------------------------------
-
-def test_explain_lists_the_source_rows_behind_an_asset_after_normalization(sandbox):
-    sandbox.fields = [field("mac", key_field="1", normalizer="mac"), field("owner", field_type="single"), field("os", field_type="single")]
-    sandbox.add_source("cmdb", [{"mac": "AA-BB-CC-DD-EE-01", "owner": "alice", "os": ""}, {"mac": "aa:bb:cc:dd:ee:99", "owner": "someone else", "os": ""}])
-    sandbox.add_source("edr", [{"mac": "aabb.ccdd.ee01", "owner": "", "os": "linux"}])
-    sandbox.add_source("scan", [{"mac": "aabbccddee01", "owner": "", "os": "ubuntu"}], role="enrich")
-    asset = [r for r in sandbox.run() if r["mac"] == ["aa:bb:cc:dd:ee:01"]][0]
-    rows = sandbox.explain(asset["asset"])
-    by_source = {r["source"]: r for r in rows}
-    assert sorted(by_source) == ["cmdb", "edr", "scan"], rows        # the unrelated cmdb row is not listed
-    assert by_source["cmdb"]["owner"] == "alice" and by_source["edr"]["os"] == "linux"
-    assert by_source["scan"]["role"] == "enrich only" and by_source["cmdb"]["role"] == "authoritative"
-    assert by_source["edr"]["mac"] == "aa:bb:cc:dd:ee:01", "shown as the merge sees it, after the normalizer"
-
 
 # --- change history ------------------------------------------------------------------------------------
 
