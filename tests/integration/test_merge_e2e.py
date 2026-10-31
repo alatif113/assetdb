@@ -71,7 +71,7 @@ def env(splunk, run_id):
         e.created.append(lambda: splunk.delete(ns + "/storage/collections/config/" + e.kv))
         r = splunk.post(ns + "/data/transforms/lookups", {
             "name": e.kv, "external_type": "kvstore", "collection": e.kv,
-            "fields_list": ",".join(["_key", "asset", "source", "source_lookup"] + FIELDS)})
+            "fields_list": ",".join(["_key", "asset", "source", "source_lookup", "last_seen"] + FIELDS)})
         assert r.status_code in (200, 201), r.text
         e.created.append(lambda: splunk.delete(ns + "/data/transforms/lookups/" + e.kv))
 

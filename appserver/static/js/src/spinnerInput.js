@@ -12,10 +12,10 @@ define(function (require, exports, module) {
 
 			this.$input = $(`
                 <div id="${id}" class="control-group shared-controls-controlgroup control-group-default">
-                    <label class="control-label" for="control-key">${label}</label>
+                    <label class="control-label" for="${id}-input">${label}</label>
                     <div role="group" class="controls controls-join">
                         <div class="control shared-controls-spinnercontrol control-default">
-                            <input type="text" name="inputSpinner" class="" value="${value}" autocomplete="off" />
+                            <input type="text" id="${id}-input" name="inputSpinner" class="" value="${value}" autocomplete="off" />
                             <a href="#" class="increment-down">
                                 <i class="icon-minus"></i>
                             </a>

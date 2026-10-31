@@ -6,14 +6,14 @@
 ```### Shallow merge assets with matching key fields (using basic stats) ###```
 | eval _key = nt_host
 | search _key=*
-| stats values(source) as source, values(source_lookup) as source_lookup, values(nt_host) as nt_host by _key
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, values(nt_host) as nt_host by _key
 ```### Deep merge assets with matching key fields (using custom command) ###```
 | eval _key = nt_host
 | adbmerge max_keys=25
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, values(nt_host) as nt_host by _key
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, values(nt_host) as nt_host by _key
 ```### Trim multivalue fields ###```
 | eval nt_host = mvindex(nt_host,0,4)
 ```### Output to KV store ###```
-| table _key, asset, source, source_lookup, nt_host
+| table _key, asset, source, source_lookup, last_seen, nt_host
 | outputlookup assetdb

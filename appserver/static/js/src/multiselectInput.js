@@ -10,8 +10,8 @@ define(function (require, exports, module) {
 
 			this.$input = $(`
                 <div id="${id}" class="control-group shared-controls-controlgroup control-group-default">
-                    <label class="control-label" for="control-key">${label}</label>
-                    <div role="group" class="controls controls-join">
+                    <label class="control-label" id="${id}-label">${label}</label>
+                    <div role="group" aria-labelledby="${id}-label" class="controls controls-join">
                         <div class="control control-default"></div>
                     </div>
                 </div>`);

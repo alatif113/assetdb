@@ -76,7 +76,7 @@ require([
 	}
 
 	// Field names that would collide with the [general] stanza or with Splunk's own fields.
-	const RESERVED_FIELD_NAMES = ['general', 'asset', 'source', 'source_lookup', '_key', '_time', '_raw', 'host', 'index', 'sourcetype', 'linecount', 'punct', 'splunk_server', 'timestartpos', 'timeendpos'];
+	const RESERVED_FIELD_NAMES = ['general', 'asset', 'source', 'source_lookup', 'last_seen', '_key', '_time', '_raw', 'host', 'index', 'sourcetype', 'linecount', 'punct', 'splunk_server', 'timestartpos', 'timeendpos'];
 
 	function isReservedFieldName(name) {
 		return RESERVED_FIELD_NAMES.includes(String(name).toLowerCase());
@@ -300,6 +300,7 @@ require([
 			fieldNames.push('asset');
 			fieldNames.push('source');
 			fieldNames.push('source_lookup');
+			fieldNames.push('last_seen');
 
 			let fields_list = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, fields_list));
@@ -330,6 +331,7 @@ require([
 			fieldNames.push('asset');
 			fieldNames.push('source');
 			fieldNames.push('source_lookup');
+			fieldNames.push('last_seen');
 
 			let fields_list = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, fields_list));
@@ -519,7 +521,7 @@ require([
 				let error = false;
 				let eval_promise = undefined;
 
-				if (fieldTypeInput.getValue() == 'eval' && evalExpInput.getValue()) {
+				if (evalExpInput.getValue()) {
 					try {
 						checkEvalExpression(evalExpInput.getValue());
 					} catch (e) {
@@ -906,8 +908,6 @@ require([
 					}
 				} else if (field.content.field_type == 'multivalue') {
 					$dl.append(`<dt>Max Values</dt><dd>${_.escape(field.content.max_values)}</dd>`);
-				} else if (field.content.field_type == 'eval') {
-					$dl.append(`<dt>Eval Expression</dt><dd>${_.escape(field.content.eval_expression)}</dd>`);
 				}
 
 				$('td.expands', $tr).on('click', function () {
@@ -1054,15 +1054,15 @@ require([
 			if (keys.length) search += '\n```### Shallow merge assets with matching key fields (using basic stats) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`);
 			search += `\n| search _key=*`;
 			// _time is carried through the first stats so that `latest` still has a timestamp in the final stats
-			if (stats.length) search += `\n| stats values(source) as source, values(source_lookup) as source_lookup, ${(usesLatest ? ['latest(_time) as _time'] : []).concat(stats).join(', ')} by _key`;
+			if (stats.length) search += `\n| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${(usesLatest ? ['latest(_time) as _time'] : []).concat(stats).join(', ')} by _key`;
 			if (keys.length) search += '\n```### Deep merge assets with matching key fields (using custom command) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`);
 			search += `\n| adbmerge max_keys=${parseMaxKeys(fieldArray)}`
 			search += `\n| eval _key = md5(mvjoin(mvsort(asset), "::"))`;
-			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, ${statsFinal.join(', ')} by _key`;
+			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${statsFinal.join(', ')} by _key`;
 			if (avgEval.length) search += '\n```### Calculate averages ###```' + `\n| eval ${avgEval.join(', ')}`;
 			if (maxValues.length) search += '\n```### Trim multivalue fields ###```' + `\n| eval ${maxValues.join(', ')}`;
 			if (coalesce.length) search += '\n```### Define coalesce fields based on lookup priority ###```' + `\n| eval ${coalesce.join(', ')}`;
-			if (table.length) search += '\n```### Output to KV store ###```' + `\n| table _key, asset, source, source_lookup, ${table.join(', ')}`;
+			if (table.length) search += '\n```### Output to KV store ###```' + `\n| table _key, asset, source, source_lookup, last_seen, ${table.join(', ')}`;
 			search += '\n| outputlookup assetdb';
 
 			return search;

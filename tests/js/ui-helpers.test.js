@@ -34,3 +34,12 @@ test('assetdb.js no longer logs to the console or ships a sourceURL pragma', () 
 	assert.ok(!/sourceURL/.test(src));
 	assert.ok(!/<\/td>'\}/.test(src), 'stray \'} in row templates');
 });
+
+test('input widgets label their controls with unique ids, not a shared "control-key"', () => {
+	const fs = require('node:fs');
+	const path = require('node:path');
+	const dir = path.join(__dirname, '..', '..', 'appserver', 'static', 'js', 'src');
+	for (const f of ['textInput.js', 'radioInput.js', 'spinnerInput.js', 'multiselectInput.js']) {
+		assert.ok(!/control-key/.test(fs.readFileSync(path.join(dir, f), 'utf8')), f);
+	}
+});

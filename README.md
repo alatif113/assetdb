@@ -19,6 +19,8 @@ Create lookup files and corresponding lookup generation searches for each unique
 Create fields to be stored within the *Asset Database* and merged between all input lookup files. 
 
 
+
+Every merged asset also gets `last_seen`: the most recent `_time` of the source rows (empty when the source lookups have no `_time` column). Existing installs pick the field up in the `assetdb` lookup definition the next time a field is added or deleted in the UI.
 The maximum size of a merged asset is `max_keys` in the `[general]` stanza of `assetdb.conf` (default 25). Assets whose merged key set is larger are dropped and counted in `python.log`.
 Source lookups are read with the `input_adb_lookup` macro, which sets `source_lookup` to the lookup name when the lookup has no `source_lookup` column (lookups written by `output_adb_lookup` already carry it). `source` is derived from `source_lookup`.
 
@@ -44,6 +46,7 @@ The following field properties can be set when adding a new field or editing an 
 | Merge Method | (Only applicable when Field Type is *Single*) Defines how a single value is derived across the input lookup table files.<br>- **Latest**: the most recent value<br>- **Min**: minimum value, only applicable to numeric field values<br>- **Max**: maximum value, only applicable to numeric field values<br>- **Avg**: average value, only applicable to numeric field values<br>- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
 | Coalesce | (Only applicable when Merge Method is *Coalesce*) Defines the precedence of source data to be used for this field. |
 | Max Values | (Only applicable when Field Type is *Multivalue*) The maximum values the multivalue field can have. Excess values are trimmed. Large multivalue fields can lead to reduced performance. 
+| Eval Expression | (Optional) An SPL eval expression applied to the field before merging, e.g. `replace(field1, "[^w]", "")`. Pipes, backticks and square brackets are only allowed inside quoted strings. |
 
 ### How AssetDB Merges Assets
 

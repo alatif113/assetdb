@@ -164,3 +164,11 @@ test('max_keys comes from the general stanza, default 25, invalid values fall ba
 	assert.match(withKeys('40'), /\| adbmerge max_keys=40\n/);
 	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25\n/, String(bad));
 });
+
+test('last_seen is the max source _time, carried through both stats and written to the output', () => {
+	const spl = gen([single('owner', { merge_method: 'max' })]);
+	const [first, second] = spl.split('| adbmerge max_keys=25');
+	assert.ok(first.includes('max(_time) as last_seen'), spl);
+	assert.ok(second.includes('max(last_seen) as last_seen'), spl);
+	assert.ok(second.includes('| table _key, asset, source, source_lookup, last_seen, owner'), spl);
+});

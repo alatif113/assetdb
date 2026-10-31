@@ -4,12 +4,12 @@
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="a.csv", "a")
 | search _key=*
-| stats values(source) as source, values(source_lookup) as source_lookup, latest(_time) as _time, values(ip) as ip, latest(owner) as owner by _key
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, values(ip) as ip, latest(owner) as owner by _key
 | adbmerge max_keys=25
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, values(ip) as ip, latest(owner) as owner by _key
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, values(ip) as ip, latest(owner) as owner by _key
 ```### Trim multivalue fields ###```
 | eval ip = mvindex(ip,0,4)
 ```### Output to KV store ###```
-| table _key, asset, source, source_lookup, ip, owner
+| table _key, asset, source, source_lookup, last_seen, ip, owner
 | outputlookup assetdb
