@@ -15,4 +15,4 @@ const spl = makeMergeSearch(JSON.parse(input));
 const tail = /\| outputlookup override_if_empty=false assetdb$/;
 if (!tail.test(spl)) throw new Error('generated search no longer ends with "| outputlookup override_if_empty=false assetdb"');
 // the temporary collection gets its own run history too, so the real assetdb_runs is never written
-process.stdout.write(spl.replace(tail, `| outputlookup override_if_empty=false ${target}`).replace(/\bassetdb_runs\b/g, `${target}_runs`).replace(/\bassetdb_overflow\b/g, `${target}_overflow`).replace(/\bassetdb_changes\b/g, `${target}_changes`).replace(/(inputlookup(?: append=true)?) assetdb(?![\w])/g, `$1 ${target}`));
+process.stdout.write(spl.replace(tail, `| outputlookup override_if_empty=false ${target}`).replace(/\bassetdb_runs\b/g, `${target}_runs`).replace(/\bassetdb_overflow\b/g, `${target}_overflow`).replace(/(inputlookup(?: append=true)?) assetdb(?![\w])/g, `$1 ${target}`));

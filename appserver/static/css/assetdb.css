@@ -114,7 +114,7 @@ a { color: var(--link); }
 .tip { display: inline-flex; }
 .tip-b { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line-control); background: var(--surface); color: var(--text-2); font-size: 10px; font-weight: 700; line-height: 1; padding: 0; cursor: help; }
 .tip-b:hover { color: var(--text); border-color: var(--text-2); }
-.tip-t { position: fixed; z-index: 120; width: 260px; background: var(--tip-bg); color: var(--tip-text); font-size: 12.5px; line-height: 1.45; padding: 8px 10px; border-radius: 8px; box-shadow: var(--shadow-1); visibility: hidden; pointer-events: none; font-weight: 400; text-transform: none; letter-spacing: 0; }
+.tip-t { position: fixed; white-space: normal; overflow-wrap: anywhere; text-align: left; z-index: 120; width: 260px; background: var(--tip-bg); color: var(--tip-text); font-size: 12.5px; line-height: 1.45; padding: 8px 10px; border-radius: 8px; box-shadow: var(--shadow-1); visibility: hidden; pointer-events: none; font-weight: 400; text-transform: none; letter-spacing: 0; }
 .tip.on .tip-t { visibility: visible; }
 
 /* Status pills: dot + text */
@@ -184,6 +184,10 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .tbl td.act { text-align: right; white-space: nowrap; width: 1%; padding-top: 8px; padding-bottom: 8px; }
 .tbl td.act > * + * { margin-left: 4px; }
 .tbl tr.off td:not(.act) { color: var(--text-2); }
+.tbl td.grow { width: 36%; max-width: 0; }
+.tbl td.desc { width: 50%; max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tbl td.grow .nmw { max-width: 100%; }
+.tbl td.grow .fname, .tbl td.grow small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .keymark { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; }
 .keymark .ico { color: var(--primary); width: 15px; height: 15px; }
 .tbl-foot { padding: 12px 20px; color: var(--text-2); font-size: var(--fs-sm); border-top: 1px solid var(--line); }

@@ -26,12 +26,6 @@ access = read : [ * ], write : [ admin ]
 [collections/assetdb_overflow]
 access = read : [ * ], write : [ admin ]
 
-[collections/assetdb_changes]
-access = read : [ * ], write : [ admin ]
-
-[transforms/assetdb_changes]
-access = read : [ * ], write : [ admin ]
-
 [transforms/assetdb_overflow]
 access = read : [ * ], write : [ admin ]
 

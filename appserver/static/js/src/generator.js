@@ -31,9 +31,6 @@ define([], function () {
 	const DEFAULT_MIN_RATIO = 0.5;
 	const DEFAULT_RUNS_TO_KEEP = 200;
 	const MAX_RUNS_TO_KEEP = 5000;
-	const DEFAULT_HISTORY_ROWS = 20000;
-	const HISTORY_MODES = ['off', 'kv', 'index'];
-	const INDEX_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 	const RUN_COUNTERS = ['adb_total', 'adb_null_keys', 'adb_large_keys', 'adb_enrich_unmatched', 'adb_enrich_ambiguous', 'adb_junk_keys', 'adb_junk_rows'];
 	const DEFAULT_KEY_BLOCKLIST = [
 		'00:00:00:00:00:00', 'ff:ff:ff:ff:ff:ff', 're:^(00[:-]?){5}00$', 're:^(ff[:-]?){5}ff$',
@@ -194,11 +191,6 @@ define([], function () {
 		return isNaN(n) || n < 0 || n > 1 ? DEFAULT_MIN_RATIO : n;
 	}
 
-	function parseHistoryRows(general) {
-		const n = parseInt(general.history_rows);
-		return isNaN(n) || n < 100 ? DEFAULT_HISTORY_ROWS : Math.min(n, 200000);
-	}
-
 	function parseRunsToKeep(general) {
 		const n = parseInt(general.runs_to_keep);
 		return isNaN(n) || n < 1 ? DEFAULT_RUNS_TO_KEEP : Math.min(n, MAX_RUNS_TO_KEEP);
@@ -268,7 +260,7 @@ define([], function () {
 	/**
 	 * The merge up to the asset table without any write, compared with the assetdb it would replace: one row per asset that
 	 * would be added, removed or changed (and which fields changed). The side effects of the real search (overflow list, run
-	 * record, change history, the assetdb itself) are the lines that write, so dropping those lines is what makes it read
+	 * record, the assetdb itself) are the lines that write, so dropping those lines is what makes it read
 	 * only. The safety check is left out on purpose so the preview still shows the difference of a run that would be blocked.
 	 *
 	 * @param {Array}	lines	Lines from buildSearchLines
@@ -630,33 +622,6 @@ define([], function () {
 				+ ` | fields - guard | inputlookup append=true assetdb_runs | sort 0 -run_time | head ${keep} | outputlookup assetdb_runs | where 1=0]`);
 			section('Only write the asset database when the run passed the safety check');
 			command('| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0');
-
-			// Change history: diff this run against the assetdb it is about to replace. Per field hashes tell which fields changed.
-			const history = general.change_history || 'off';
-			if (!HISTORY_MODES.includes(history)) throw new Error(`Invalid change history mode "${history}"`);
-			if (history !== 'off' && table.length) {
-				const hashes = table.map((n) => `adbh_${n}=md5(coalesce(mvjoin(mvsort(${n}), "|"), ""))`).join(', ');
-				const hashNames = table.map((n) => `adbh_${n}`);
-				const changedFields = mvappendOf(table.map((n) => `if(mvcount(adbh_${n}) > 1, "${n}", null())`));
-				let store;
-				if (history === 'index') {
-					const index = String(general.history_index || '');
-					if (!INDEX_NAME_RE.test(index)) throw new Error('Change history in an index needs a valid index name');
-					store = `| eval _time=run_time | collect index=${index} sourcetype="assetdb:change" source="assetdb"`;
-				} else {
-					store = `| inputlookup append=true assetdb_changes | sort 0 -run_time | head ${parseHistoryRows(general)} | outputlookup assetdb_changes`;
-				}
-				section('Change history: what was added, removed or changed since the previous run');
-				// The previous assetdb is read with `inputlookup append=true`, not an `append [| inputlookup ...]` subsearch: a subsearch silently stops at 50000 rows.
-				command('| appendpipe [| eval adb_side="new" | inputlookup append=true assetdb'
-					+ ` | eval adb_side=coalesce(adb_side, "old"), ${hashes} | fields _key adb_side asset ${hashNames.join(' ')}`
-					+ ' | eventstats count(eval(adb_side="new")) as adb_n_new | where adb_n_new > 0'
-					+ ` | stats values(adb_side) as sides, latest(asset) as asset, ${hashNames.map((h) => `values(${h}) as ${h}`).join(', ')} by _key`
-					+ ' | eval change=case(mvcount(sides)=1 AND sides="new", "added", mvcount(sides)=1 AND sides="old", "removed", true(), "changed")'
-					+ ` | eval changed_fields=if(change="changed", ${changedFields}, null()) | where change!="changed" OR isnotnull(changed_fields)`
-					+ ' | eval run_time=now(), asset_id=_key, _key=run_time . "_" . substr(md5(asset_id), 1, 10) | table _key run_time change asset_id asset changed_fields'
-					+ ` ${store} | where 1=0]`);
-			}
 		}
 		if (table.length) { section('Output to KV store'); command(`| table _key, asset, source, source_lookup, last_seen, ${usesScope ? 'scope, ' : ''}${conflictFields.length ? 'conflicts, ' : ''}${table.join(', ')}`); }
 		command('| outputlookup override_if_empty=false assetdb');
@@ -674,9 +639,6 @@ define([], function () {
 		parseMaxKeys: parseMaxKeys,
 		parseMinRatio: parseMinRatio,
 		parseRunsToKeep: parseRunsToKeep,
-		parseHistoryRows: parseHistoryRows,
-		DEFAULT_HISTORY_ROWS: DEFAULT_HISTORY_ROWS,
-		HISTORY_MODES: HISTORY_MODES,
 		DEFAULT_MIN_RATIO: DEFAULT_MIN_RATIO,
 		DEFAULT_RUNS_TO_KEEP: DEFAULT_RUNS_TO_KEEP,
 		getKeyBlocklist: getKeyBlocklist,

@@ -73,8 +73,6 @@ require([
 		min_pct: 'A run that produces fewer assets than this share of the last successful run is not written and is recorded as blocked_low_count. 0 turns the check off. A run that produces no assets never overwrites the asset database.',
 		empty: 'An empty search result would otherwise wipe the collection, so it is never written. This cannot be turned off.',
 		runs_to_keep: 'How many runs the run history keeps. Older runs are removed on every run, so it cannot grow without bound.',
-		change_history: 'Record which assets were added, removed or changed (and which fields) on every run, as events in an index. Not recorded for runs blocked by the safety check.',
-		history_index: 'The index that receives the change events (sourcetype assetdb:change). It must already exist; on Splunk Cloud an admin creates it first.',
 		default_cs: 'Used for new fields and for fields that do not set it themselves.',
 		default_norm: 'Applied to fields whose normalizer is Default.',
 		scope_field: 'A column in the source lookups that holds the site or tenant of each row, for sources without a fixed scope. Leave empty if you do not scope keys.',
@@ -308,9 +306,6 @@ require([
 			max_key_share: String(general.max_key_share === undefined ? Generator.DEFAULT_MAX_KEY_SHARE : general.max_key_share),
 			min_pct: String(Math.round((isNaN(ratio) ? Generator.DEFAULT_MIN_RATIO : ratio) * 10000) / 100),
 			runs_to_keep: String(general.runs_to_keep === undefined ? Generator.DEFAULT_RUNS_TO_KEEP : general.runs_to_keep),
-			// the KV store mode is no longer offered: a config that still uses it is shown as Index (and needs an index name to be saved)
-			change_history: general.change_history === 'kv' ? 'index' : (general.change_history || 'off'),
-			history_index: general.history_index || '',
 			default_cs: !!parseInt(general.default_case_sensitive) || false,
 			default_norm: general.default_normalizer || 'none',
 			scope_field: general.scope_field || '',
@@ -358,17 +353,13 @@ require([
 	}
 
 	async function loadRuns() {
-		const mode = S.general.change_history || 'off'; const idx = S.general.history_index || '';
-		const changesBase = mode === 'index' && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(idx) ? `search index=${idx} sourcetype="assetdb:change" earliest=-90d` : mode === 'kv' ? '| inputlookup assetdb_changes' : null;
-		const [runs, overflowCount, overflow, changeCounts, changes] = await Promise.all([
+		const [runs, overflowCount, overflow] = await Promise.all([
 			oneshot('| inputlookup assetdb_runs | sort 0 -run_time | head 10', 10).catch(() => null),
 			oneshot('| inputlookup assetdb_overflow | stats count', 1).catch(() => null),
 			oneshot('| inputlookup assetdb_overflow | head 5', 5).catch(() => null),
-			changesBase ? oneshot(`${changesBase} | eventstats max(run_time) as adb_last | where run_time=adb_last | stats count by change`, 10).catch(() => null) : Promise.resolve([]),
-			changesBase ? oneshot(`${changesBase} | sort 0 -run_time | head 5 | table run_time change asset changed_fields`, 5).catch(() => null) : Promise.resolve([]),
 		]);
 		S.runs = runs; S.overflow = overflow; S.overflowCount = overflowCount ? parseInt((overflowCount[0] || {}).count || 0) : null;
-		S.changes = changes; S.changeCounts = changeCounts; ui.runsLoaded = true;
+		ui.runsLoaded = true;
 	}
 	const lastRun = () => (S.runs && S.runs[0]) || null;
 
@@ -581,7 +572,7 @@ require([
 		return `<div class="panel">${attnBar()}<table class="tbl"><caption class="sr-only">Source lookups</caption>
 			<thead><tr><th scope="col">Source</th><th scope="col">Role</th><th scope="col" class="hide-s hide-d">Scope</th><th scope="col" class="hide-s hide-d">Max age</th><th scope="col" class="num">Rows</th><th scope="col">Enabled</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
 			<tbody>${list.map((s) => { const ed = !!ui.drawer && ui.drawer.kind === 'source' && ui.drawer.id === s.name; const st = S.stats[s.lookup] || {}; const c = S.sourceConf.find((q) => q.name === s.name) || {}; return `<tr data-open data-id="${esc(s.name)}" data-active="${ed}" class="${s.enabled ? '' : 'off'}">
-				<td><span class="nmw"><span class="fname">${esc(s.name)}</span>${flag(problems('source', s))}</span><small>${esc(s.lookup)}</small></td>
+				<td class="grow"><span class="nmw"><span class="fname" title="${esc(s.name)}">${esc(s.name)}</span>${flag(problems('source', s))}</span><small title="${esc(s.lookup)}">${esc(s.lookup)}</small></td>
 				<td>${s.role === 'enrich' ? 'Enrich only' : 'Authoritative'}</td>
 				<td class="hide-s hide-d">${s.scope ? esc(s.scope) : '—'}</td><td class="hide-s hide-d">${c.max_age ? esc(c.max_age) : '—'}</td>
 				<td class="num">${st.pending || st.count === undefined ? (st.error ? '—' : '…') : fmt(st.count)}</td>${enabledSwitch('source', s.name, s.name, s.enabled, ed)}${rowActions('source', s.name, s.name)}</tr>`; }).join('')}</tbody></table>
@@ -605,10 +596,10 @@ require([
 		const list = visibleFields();
 		return `<div class="panel">${attnBar()}<div class="searchbar"><div class="search"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><input id="f-filter" class="inp" type="search" placeholder="Filter fields   ( / )" aria-label="Filter fields" value="${esc(ui.filter)}" data-fid="filter"></div></div>
 			<table class="tbl"><caption class="sr-only">Fields. Match keys are listed first.</caption>
-			<thead><tr><th scope="col">Field</th><th scope="col">Description</th><th scope="col">Enabled</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+			<thead><tr><th scope="col">Field</th><th scope="col" class="hide-d">Description</th><th scope="col">Enabled</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
 			<tbody>${list.map((x) => { const ed = !!ui.drawer && ui.drawer.kind === 'field' && ui.drawer.id === x.name; return `<tr data-open data-id="${esc(x.name)}" data-active="${ed}" class="${x.enabled ? '' : 'off'}">
-				<td><span class="nmw"><span class="kslot">${x.key ? `<span class="keymark" title="Key field">${ico('key')}<span class="sr-only">Key field</span></span>` : ''}</span><span class="fname">${esc(x.name)}</span>${x.fieldType === 'multivalue' ? '<span class="tag" title="Keeps several values">multi</span>' : ''}${flag(problems('field', x))}</span></td>
-				<td class="muted">${esc(x.description) || '—'}</td>${enabledSwitch('field', x.name, x.name, x.enabled, ed)}${rowActions('field', x.name, x.name)}</tr>`; }).join('')}</tbody></table>
+				<td class="grow"><span class="nmw"><span class="kslot">${x.key ? `<span class="keymark" title="Key field">${ico('key')}<span class="sr-only">Key field</span></span>` : ''}</span><span class="fname" title="${esc(x.name)}">${esc(x.name)}</span>${x.fieldType === 'multivalue' ? '<span class="tag" title="Keeps several values">multi</span>' : ''}${flag(problems('field', x))}</span></td>
+				<td class="muted desc hide-d" ${x.description ? `title="${esc(x.description)}"` : ''}>${esc(x.description) || '—'}</td>${enabledSwitch('field', x.name, x.name, x.enabled, ed)}${rowActions('field', x.name, x.name)}</tr>`; }).join('')}</tbody></table>
 			${list.length ? '' : `<div class="empty"><h2>No fields match</h2><p>Nothing matches “${esc(ui.filter)}”.</p><button class="btn" type="button" data-act="clearFilter">Clear filter</button></div>`}
 			<div class="tbl-foot">${S.fields.length} field${S.fields.length === 1 ? '' : 's'}, ${S.fields.filter((x) => x.key).length} ${S.fields.filter((x) => x.key).length === 1 ? 'is a match key' : 'are match keys'}${bad ? ` · <span class="attn">${needs(bad)}</span>` : ''}.</div></div>`;
 	}
@@ -709,7 +700,7 @@ require([
 		return `${group('Limits', 'Guards that stop bad data from merging unrelated assets.', num('max_keys', 'Max keys per asset', 1, Generator.HARD_MAX_KEYS) + num('max_key_share', 'Max rows sharing a key', 0, 1000000))}
 			${group('Run safety', 'Protects the asset list from a bad run.', num('min_pct', 'Minimum size versus last run', 0, 100, '%') + `<div class="srow2 center"><div class="lrow"><span class="l">Overwrite with an empty result</span>${tip(TIPS.empty, 'Overwrite with an empty result')}</div><div class="static">Never</div></div>`)}
 			${group('Schedule', 'When the merge search runs on its own.', sw('scheduled', 'Scheduled') + txt('cron', 'Schedule (cron)', { mono: true, w: 240 }))}
-			${group('History', 'How much run and change history is kept.', num('runs_to_keep', 'Runs to keep', 1, 5000) + sel('change_history', 'Change history', [['off', 'Off'], ['index', 'Record in an index']]) + (v.change_history === 'index' ? txt('history_index', 'Index name', { mono: true, w: 240 }) : ''))}
+			${group('History', 'How much run history is kept.', num('runs_to_keep', 'Runs to keep', 1, 5000))}
 			${group('Matching defaults', 'Used by fields that do not set their own.', sw('default_cs', 'Case sensitive') + sel('default_norm', 'Normalizer', NORMALIZER_CHOICES) + txt('scope_field', 'Scope column', { mono: true, w: 240 }))}
 			${group('Values to ignore', 'Placeholder values that should never link or fill assets.', chips('blocklist', 'blocklist', 'Key blocklist', 'blocklist') + chips('globalIgnore', 'ignore', 'Global ignore list', 'gignore'))}
 			<div class="savebar"><span class="unsaved" ${dirty ? '' : 'hidden'}>Unsaved changes</span><button class="btn" type="button" data-act="sdiscard" ${dirty ? '' : 'disabled'}>Discard changes</button><button class="btn primary" type="button" data-act="ssave" data-fid="ssave" ${dirty && ui.save !== 'saving' ? '' : 'disabled'}>Save settings</button></div>`;
@@ -722,12 +713,11 @@ require([
 	async function saveSettings() {
 		const v = ui.sdraft; let bad = null; const fail = (id, msg) => { showErr(`#${id}`, `#${id}-e`, msg); if (!bad) bad = $q(`#${id}`); };
 		const whole = (x) => /^\d+$/.test(String(x).trim());
-		['max_keys', 'max_key_share', 'runs_to_keep', 'min_pct', 'history_index', 'scope_field', 'cron'].forEach((k) => showErr(`#st-${k}`, `#st-${k}-e`, ''));
+		['max_keys', 'max_key_share', 'runs_to_keep', 'min_pct', 'scope_field', 'cron'].forEach((k) => showErr(`#st-${k}`, `#st-${k}-e`, ''));
 		if (!whole(v.max_keys) || parseInt(v.max_keys) < 1 || parseInt(v.max_keys) > Generator.HARD_MAX_KEYS) fail('st-max_keys', `Enter a whole number from 1 to ${Generator.HARD_MAX_KEYS}`);
 		if (!whole(v.max_key_share) || parseInt(v.max_key_share) > 1000000) fail('st-max_key_share', 'Enter a whole number from 0 to 1000000');
 		const pct = parseFloat(v.min_pct); if (isNaN(pct) || pct < 0 || pct > 100) fail('st-min_pct', 'Enter a number from 0 to 100');
 		if (!whole(v.runs_to_keep) || parseInt(v.runs_to_keep) < 1 || parseInt(v.runs_to_keep) > 5000) fail('st-runs_to_keep', 'Enter a whole number from 1 to 5000');
-		if (v.change_history === 'index' && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(v.history_index.trim())) fail('st-history_index', 'Enter the name of an existing index to record the changes in');
 		if (v.scope_field.trim() && /['"\\|`[\]]/.test(v.scope_field)) fail('st-scope_field', 'That column name has a character that is not allowed');
 		if (!CRON_RE.test(v.cron)) fail('st-cron', 'Enter a cron expression with 5 fields, e.g. 0 0 * * *');
 		if (bad) { bad.focus(); return; }
@@ -737,8 +727,8 @@ require([
 		const writes = () => Promise.all([
 			setConf('conf-assetdb/general/', {
 				max_keys: String(parseInt(draft.max_keys)), default_case_sensitive: draft.default_cs ? '1' : '0', default_normalizer: draft.default_norm, ignore_values: JSON.stringify(draft.ignore),
-				key_blocklist: JSON.stringify(draft.blocklist), max_key_share: String(parseInt(draft.max_key_share)), scope_field: draft.scope_field.trim(), change_history: draft.change_history,
-				history_index: draft.history_index.trim(), min_ratio: String(Math.round(parseFloat(draft.min_pct) * 100) / 10000), runs_to_keep: String(parseInt(draft.runs_to_keep)),
+				key_blocklist: JSON.stringify(draft.blocklist), max_key_share: String(parseInt(draft.max_key_share)), scope_field: draft.scope_field.trim(),
+				min_ratio: String(Math.round(parseFloat(draft.min_pct) * 100) / 10000), runs_to_keep: String(parseInt(draft.runs_to_keep)),
 			}),
 			setConf(SAVED, { cron_schedule: draft.cron.trim(), enableSched: draft.scheduled ? '1' : '0' }),
 		]);
@@ -887,10 +877,7 @@ require([
 		const runsHtml = !ui.runsLoaded ? '<p class="hint">Loading…</p>' : S.runs === null ? '<p class="hint">The run history could not be read.</p>' : !S.runs.length ? '<p class="hint">No runs yet. The first scheduled or manual run creates the first record.</p>' : `<div class="runlist">${S.runs.map((r, i) => runItem(r, i === 0)).join('')}</div>`;
 		const over = S.overflowCount;
 		const overHtml = over === null || over === undefined ? '' : `<fieldset class="sec"><legend>Needs review</legend><p class="hint" style="margin:0 0 8px">${over ? `${fmt(over)} cluster${over === 1 ? ' was' : 's were'} too large to merge in the last run, usually because of a shared key.` : 'No oversized clusters in the last run.'}</p>${over && S.overflow && S.overflow.length ? `<ul class="minilist">${S.overflow.map((r) => `<li><b>${fmt(r.cluster_keys)}</b> keys in ${fmt(r.cluster_rows)} rows<div class="sub">${keysOf(r)}${r.source ? ` · ${esc([].concat(r.source).join(', '))}` : ''}</div></li>`).join('')}</ul><p class="shelf-actions"><a href="${esc(searchUrl('| inputlookup assetdb_overflow'))}" target="_blank" rel="noopener">Open all ${fmt(over)} in Search</a></p>` : ''}</fieldset>`;
-		const mode = S.general.change_history || 'off';
-		const counts = {}; (S.changeCounts || []).forEach((r) => { counts[r.change] = r.count; });
-		const changeHtml = mode === 'off' ? '<p class="hint" style="margin:0">Change history is off. Turn it on in Settings to record what changes between runs.</p>' : S.changes === null ? `<p class="hint" style="margin:0">The change history could not be read. Check that the index ${esc(S.general.history_index || '')} exists.</p>` : !S.changes.length ? '<p class="hint" style="margin:0">No changes recorded yet.</p>' : `<p class="hint" style="margin:0 0 8px">Last run: ${['added', 'removed', 'changed'].filter((k) => counts[k]).map((k) => `${fmt(counts[k])} ${k}`).join(', ') || 'no changes'}.</p><ul class="minilist">${S.changes.map((r) => `<li><span class="pill ${r.change === 'added' ? 'ok' : r.change === 'removed' ? 'bad' : 'warn'}">${esc(r.change)}</span> ${keysOf(r)}${r.changed_fields ? `<div class="sub">${esc([].concat(r.changed_fields).join(', '))}</div>` : ''}</li>`).join('')}</ul><p class="shelf-actions"><a href="${esc(searchUrl(mode === 'index' ? `index=${S.general.history_index} sourcetype="assetdb:change"` : '| inputlookup assetdb_changes | sort 0 -run_time'))}" target="_blank" rel="noopener">Open all in Search</a></p>`;
-		const body = `<fieldset class="sec"><legend>Runs</legend>${runsHtml}</fieldset>${overHtml}<fieldset class="sec"><legend>Changes</legend>${changeHtml}</fieldset>`;
+		const body = `<fieldset class="sec"><legend>Runs</legend>${runsHtml}</fieldset>${overHtml}`;
 		return { title: 'Run history', body, footer: '<div class="drawer-f"><button class="btn" type="button" data-act="closeDrawer">Close</button></div>' };
 	}
 	function footerHtml(kind) {
@@ -1131,7 +1118,7 @@ require([
 		if (t.dataset.dm && ui.drawer) { ui.drawer.draft.map[+t.dataset.i][t.dataset.dm] = t.value; onDraftChange(); return; }
 		if (t.dataset.s && ui.sdraft) {
 			const k = t.dataset.s; ui.sdraft[k] = t.value; showErr(`#${t.id}`, `#${t.id}-e`, '');
-			if (k === 'change_history') { renderPane(); refocus(`st-${k}`); } updateSaveState(); refreshSettingsBar();
+			updateSaveState(); refreshSettingsBar();
 		}
 	});
 	ROOT.addEventListener('change', (e) => { const t = e.target; if (t.tagName === 'SELECT' && t.dataset.d && ui.drawer) { ui.drawer.draft[t.dataset.d] = t.value; if (['method', 'fieldType'].includes(t.dataset.d)) rerender(); else onDraftChange(); } });
