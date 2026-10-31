@@ -8,12 +8,12 @@ Open **Configure** to set AssetDB up. The page has four tabs, a status strip and
 
 - **Sources**, **Fields**, **Pipeline** and **Settings** tabs. Sources and Fields are read-only tables; each row has an *Enabled* switch (it saves on its own) and *Edit*, *Duplicate* and *Remove* icons. A warning icon beside a name explains a problem, for example a source whose lookup cannot be read, or a field that no enabled source supplies.
 - **Editing is draft-and-save.** The editor card beside the table holds your edits; nothing is written until you click *Save*, and closing with unsaved edits asks first. A save writes the configuration, updates the KV store collection and regenerates the merge search, and the status strip says which step failed if one does.
-- The **status strip** shows whether everything is saved, the last run (time, assets and change), the next scheduled run and and a warning when the merge search is out of date, with a *Run now* button (it shows how long the merge has been running and links to the job) and a *Run history* panel: one row per run (click for its counters) and the oversized clusters of the last run, with an *Open in Search* link for the full list. *N items need attention* in the strip is a button that shows only those rows.
+- The **status strip** shows whether everything is saved, the last run (time, assets and the change since the run before), the next scheduled run, and a warning when the merge search is out of date, with a *Run now* button (it shows how long the merge has been running and links to the job) and a *Run history* panel: one row per run (click for its counters) and the oversized clusters of the last run, with an *Open in Search* link for the full list. *N items need attention* in the strip is a button that shows only those rows.
 - Help text for each setting is in the **(i)** tooltip beside its label.
 
 The sections below keep the original names of the things you configure: the *Sources* tab is where lookups are added, *Fields* is where fields are configured, *Pipeline* shows the merge search and *Settings* the global values.
 
-### Asset Lookups
+### Source lookups
 
 Create lookup files and corresponding lookup generation searches for each unique data source that provides asset information.
 
@@ -48,20 +48,20 @@ Every key field gets an index in the KV store collection (the collection allows 
 
 **Run history and the safety check.** Every run of the merge search writes one record to the `assetdb_runs` KV collection: time, status, assets produced, assets in the last successful run, merge inputs (rows that have a key, identical key sets combined), rows without keys, dropped overflow assets, skipped shared keys and unmatched enrich rows. The *Run history* panel shows the latest runs.
 
-- *Safety Check* (Settings, default 0.5): a run that produces fewer than that fraction of the assets of the last *successful* run is not written. The asset database stays as it was and the run is recorded as `blocked_low_count`. A run that produces no assets at all can never overwrite the asset database (recorded as `empty`). The usual cause is an upstream search that failed and left a source lookup empty. The disabled saved search `assetdb-run-alert` shows the latest run when it was not `ok`: enable it and attach an alert action.
-- *Runs to Keep* (default 200, at most 5000): every run rewrites the history to keep only the newest runs, so the collection cannot grow without bound.
+- *Minimum size vs last run* (Settings, default 50%): a run that produces fewer than that share of the assets of the last *successful* run is not written. The asset database stays as it was and the run is recorded as `blocked_low_count`. A run that produces no assets at all can never overwrite the asset database (recorded as `empty`). The usual cause is an upstream search that failed and left a source lookup empty. The disabled saved search `assetdb-run-alert` shows the latest run when it was not `ok`: enable it and attach an alert action.
+- *Runs to keep* (default 200, at most 5000): every run rewrites the history to keep only the newest runs, so the collection cannot grow without bound.
 - **Why a KV collection and not an index?** The history is small (one row per run), has to be read back by the merge search itself (to find the last successful run), and has to work the same on Splunk Cloud, where an app cannot create an index and every deployment would need an admin to do so first. A KV collection works on every deployment, needs no extra configuration and is bounded by Runs to Keep.
 
 **What changed.** AssetDB keeps no change log. The *Run preview* on the Pipeline tab compares a run with the current asset database before you commit to it (see Preview below). To keep a history of the assets, schedule your own search that writes `| inputlookup assetdb` to an index.
 
 **Overflow and conflicts.** Clusters larger than Max Keys are not written to `assetdb`; they are listed in the `assetdb_overflow` collection (replaced on every run, so it only shows the last run) with a sample of their keys, their size and the sources involved. A field with *Flag Conflicts* turned on records its name in the asset's `conflicts` field when the sources disagree. Read them with `| inputlookup assetdb_runs | sort 0 -run_time`, `| inputlookup assetdb_overflow` and `| inputlookup assetdb | search conflicts=*`.
 
-**Scoped keys.** The same address in two sites (overlapping RFC 1918 space, an acquired network, one tenant per customer) must not merge. Give each source a *Scope* (or name a *Scope Column* in Settings that holds the scope of each row), then mark the key fields that are only unique within a site as *Scoped* (IP addresses, host names) and leave globally unique ones (MAC addresses, serial numbers) as *Global*. A scoped key becomes `<scope>|<value>`, so it only matches rows of the same scope, while a global key still links assets across scopes. Merged assets get a `scope` field. Turning scoping on changes the keys, so the first run after enabling it rebuilds the collection.
+**Scoped keys.** The same address in two sites (overlapping RFC 1918 space, an acquired network, one tenant per customer) must not merge. Give each source a *Scope* (or name a *Scope column* in Settings that holds the scope of each row), then mark the key fields that are only unique within a site as *Scoped* (IP addresses, host names) and leave globally unique ones (MAC addresses, serial numbers) as *Global*. A scoped key becomes `<scope>|<value>`, so it only matches rows of the same scope, while a global key still links assets across scopes. Merged assets get a `scope` field. Turning scoping on changes the keys, so the first run after enabling it rebuilds the collection.
 
 **Key quality.** One bad key can chain unrelated assets into a single cluster. Two protections are on by default:
 
-- *Key Blocklist* (Settings): values that are never used to match assets in any key field. The defaults cover all-zero and broadcast MACs, `0.0.0.0`, `::`, loopback and link-local addresses, `localhost` and placeholders such as `unknown`, `none`, `null`, `n/a`. Entries are exact values, `re:<regex>` or `cidr:<network>`; saving the setting replaces the defaults, so you can remove any of them. A blocked value is still stored on the asset, it just cannot link two assets.
-- *Max Key Share* (Settings, default 50, 0 turns it off): a key found in more than this many input rows is not used to match, which catches shared keys you did not think of, such as a NAT address or a golden-image host name. The skipped keys are listed in the `adbmerge` log (`python.log`). Rows left without any key are dropped.
+- *Key blocklist* (Settings): values that are never used to match assets in any key field. The defaults cover all-zero and broadcast MACs, `0.0.0.0`, `::`, loopback and link-local addresses, `localhost` and placeholders such as `unknown`, `none`, `null`, `n/a`. Entries are exact values, `re:<regex>` or `cidr:<network>`; saving the setting replaces the defaults, so you can remove any of them. A blocked value is still stored on the asset, it just cannot link two assets.
+- *Max rows per key* (Settings, default 50, 0 turns it off): a key found in more than this many input rows is not used to match, which catches shared keys you did not think of, such as a NAT address or a golden-image host name. The skipped keys are listed in the `adbmerge` log (`python.log`). Rows left without any key are dropped.
 Source lookups are read with the `input_adb_lookup` macro, which sets `source_lookup` to the lookup name when the lookup has no `source_lookup` column (lookups written by `output_adb_lookup` already carry it). `source` is derived from `source_lookup`.
 
 - **Add CIM fields**: Click *Add CIM preset* to add the missing fields of the CIM-shaped asset schema in one step: `ip`, `mac`, `nt_host`, `dns` (keys, with normalizers and validation), `owner` (conflicts flagged), `priority`, `bunit`, `category`, `city`, `country`, `pci_domain` and `is_expected`. It only uses the names and sensible defaults; it needs neither the CIM add-on nor Enterprise Security. Fields that already exist are left alone.
@@ -114,7 +114,7 @@ Note how although, the Asset from `lookup_A` and Asset from `lookup_C` do not sh
 
 ### Source templates
 
-Building the source lookups is the hardest part of setting up. The app ships four **disabled** saved searches that build a source lookup in the field names the CIM presets use. Enable one, run it once (it creates the lookup file), then add that lookup on the Configure page. Adapt the search to your data; they carry a template version number so a later release can tell them apart from your edits.
+Building the source lookups is the hardest part of setting up. The app ships seven **disabled** saved searches that build a source lookup in the field names the CIM presets use. Enable one, run it once (it creates the lookup file), then add that lookup on the Configure page. Adapt the search to your data; they carry a template version number so a later release can tell them apart from your edits.
 
 | Saved search | Source | Needs | Add as |
 | --- | --- | --- | --- |
@@ -122,8 +122,11 @@ Building the source lookups is the hardest part of setting up. The app ships fou
 | `assetdb-src-dhcp-cim` | IP, MAC and host name from DHCP events (CIM Network Sessions) | CIM add-on and a DHCP add-on | Authoritative, with a short Max Age |
 | `assetdb-src-vulnerabilities-cim` | vulnerability counts and highest CVSS per host (CIM Vulnerabilities) | CIM add-on and a scanner add-on | **Enrich only** |
 | `assetdb-src-ad-computers` | enabled Active Directory computer accounts | SA-LDAPSearch (adapt the domain; not tested here) | Authoritative |
+| `assetdb-src-crowdstrike-devices` | hosts from CrowdStrike Falcon (internal IP only; the Falcon device ID is the key) | CrowdStrike Falcon Devices Technical Add-on (not tested here) | Authoritative |
+| `assetdb-src-defender-machines` | devices from Microsoft Defender for Endpoint | Splunk Add-on for Microsoft Security (not tested here) | Authoritative |
+| `assetdb-src-tenable-assets` | assets from Tenable Vulnerability Management | Tenable Add-On for Splunk (not tested here) | Authoritative, or Enrich only if another source owns the inventory |
 
-Only the first needs no add-on and is tested end to end; the CIM ones are checked to parse as far as the data model lookup; the Active Directory one is a starting point.
+Only the first needs no add-on and is tested end to end; the CIM ones are checked to parse as far as the data model lookup; the Active Directory, CrowdStrike, Defender and Tenable ones are starting points to adapt.
 
 ### Using the asset database: enrichment macros
 
@@ -148,7 +151,7 @@ The columns come from the `adb_enrich_outputs` macro, which the Configure page k
 
 `default/server.conf` lists `assetdb.conf` in `conf_replication_include`, so the configuration written by the Configure page on one member is replicated to the others. Deploy the app from the deployer as usual; the merge search is a scheduled search, so it runs on one member (the captain's scheduler). KV store collections (`assetdb`, `assetdb_runs`, `assetdb_overflow`) are shared by the cluster.
 
-### Asset Merge Search
+### Merge search
 
 Merging is done via a custom command `adbmerge` and saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store.
 

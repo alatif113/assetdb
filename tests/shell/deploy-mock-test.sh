@@ -40,7 +40,7 @@ export SPLUNK_HOST=splunk.home ALLOWED_HOSTS=splunk.home SPLUNK_TOKEN=dummy SSH_
 cd "$ROOT"
 # Use the repo's real package, redirecting dist/backups to the temp dir via a copied script root.
 cp -R scripts "$T/scripts"; cp -R default "$T/default"; mkdir -p "$T/dist"
-cp dist/assetdb-*.tar.gz "$T/dist/" 2>/dev/null || { scripts/package.sh --skip-npm >/dev/null 2>&1; cp dist/assetdb-*.tar.gz "$T/dist/"; }
+cp "dist/assetdb-$(sed -n 's/^version = //p' default/app.conf | head -1).tar.gz" "$T/dist/" 2>/dev/null || { scripts/package.sh --skip-npm >/dev/null 2>&1; cp "dist/assetdb-$(sed -n 's/^version = //p' default/app.conf | head -1).tar.gz" "$T/dist/"; }
 D="$T/scripts/deploy.sh"
 APP="$T/splunk/etc/apps/assetdb"
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -51,7 +51,7 @@ grep -q 'version = 0.0.1' "$APP/default/app.conf" || fail "dry-run modified the 
 ls "$T/dist/backups" >/dev/null 2>&1 && fail "dry-run created a backup"
 
 "$D" --yes >/dev/null 2>&1
-grep -q 'version = 1.5.7' "$APP/default/app.conf" || fail "deploy did not update app.conf"
+grep -q "version = $(sed -n 's/^version = //p' default/app.conf | head -1)" "$APP/default/app.conf" || fail "deploy did not update app.conf"
 [[ -f "$APP/default/stale.conf" ]] && fail "stale file not removed"
 grep -q 'user=config' "$APP/local/savedsearches.conf" || fail "local/ was not preserved"
 ls "$T"/dist/backups/assetdb-*-v0.0.1.tar.gz >/dev/null || fail "no backup of previous version"

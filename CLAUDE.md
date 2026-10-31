@@ -12,6 +12,7 @@ AssetDB is a Splunk app (no Splunk Enterprise Security required) that merges ass
 - Edit only `appserver/static/js/src/*.js`. The `*.min.js` files are committed build output (what the dashboard actually loads) and must be rebuilt after source changes.
 - Python/SPL changes need no build; reload the app in Splunk (`.../debug/refresh` or restart) to pick up `.conf` changes. `local/` is gitignored and holds runtime overrides written by the UI.
 
+- `scripts/e2e.sh --flow` and `--visual` (Playwright, `npm i --no-save playwright`): the UI against a real Splunk; `--visual` sweeps every tab at three widths for cut-off tooltips, spilled text and overlapping controls.
 - `make test` — pytest (`tests/python`, targets `bin/adbmerge_core.py`), `node --test` golden SPL tests (`tests/js`, `UPDATE_GOLDEN=1 npm test` to refresh `tests/fixtures/golden`), min.js freshness (`scripts/check-minjs.sh`), deploy mock test, shellcheck.
 - `make package` -> `dist/assetdb-<version>.tar.gz`; `make inspect` (AppInspect, tags from `APPINSPECT_TAGS`, waivers in `.appinspect-waivers`); `make deploy` / `make reload` (SSH deploy to the dev server, config in gitignored `.env.local`, see `.env.example`); `make integration`; `make all` runs the pipeline (`scripts/test-all.sh --skip-deploy` for local only). Always run deploy/reload with `--dry-run` first.
 - Merge logic lives in `bin/adbmerge_core.py` (pure, unit tested); `bin/adbmerge.py` is the thin splunklib wrapper. `makeMergeSearch()` is tested by evaluating the unmodified `assetdb.js` in a vm sandbox (`tests/js/load-generator.js`).
@@ -32,7 +33,7 @@ The pieces only make sense together:
 
 ## Gotchas
 
-- The repo lives in iCloud Drive, which evicts and duplicates files: `node_modules` is a symlink to `node_modules.nosync` (iCloud skips `.nosync`), and stray `name 2.ext` copies are excluded from the package. If a build suddenly fails with a missing module, run `npm ci`.
+- The repo lives in iCloud Drive, which evicts and duplicates files: `node_modules` is a symlink to `node_modules.nosync` (iCloud skips `.nosync`), and stray `name 2.ext` copies are git-ignored and excluded from the package (the archive check fails if one gets in). If a build suddenly fails with a missing module, run `npm ci`.
 
 - `python.required = 3.13` and splunk-sdk 3.x mean `adbmerge` needs a Splunk whose custom commands run on Python 3.13 (not 10.0).
 - Field names `_key`, `asset`, `source`, `source_lookup`, `last_seen`, `scope`, `conflicts` are reserved (created by the merge).
