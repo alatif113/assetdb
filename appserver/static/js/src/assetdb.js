@@ -922,11 +922,13 @@ require([
 				$('.fields-table tbody', $container).append($tr);
 			});
 
-			let promise = makeMergeSearch(fieldArray);
-			$.when(promise).done((data) => {
-				let $formatted_query = format(data);
-				$('.formatted-query', $container).append($formatted_query);
-			});
+			$.when(makeMergeSearchLines(fieldArray))
+				.done((lines) => {
+					$('.formatted-query', $container).append(format(lines));
+				})
+				.fail((err) => {
+					$('.formatted-query', $container).append($('<div class="error-message"></div>').text(`The merge search cannot be built: ${describeError(err)}`));
+				});
 			$el.append($container);
 		});
 	}
@@ -934,9 +936,19 @@ require([
 	/**
 	 * Build the Splunk merge search query
 	 *
-	 * @return {String}		Built Splunk query
+	 * @return {Promise}	Resolves to the query text
 	 */
 	function makeMergeSearch(fieldArray = []) {
+		return $.when(makeMergeSearchLines(fieldArray)).then((lines) => lines.map((line) => line.text).join('\n'));
+	}
+
+	/**
+	 * Build the Splunk merge search as typed lines: {kind: 'comment' | 'command', text}. The page renders
+	 * these directly, so no SPL has to be parsed to format or highlight it.
+	 *
+	 * @return {Promise}	Resolves to the array of lines
+	 */
+	function makeMergeSearchLines(fieldArray = []) {
 		const promise = fieldArray.length ? undefined : getConf('conf-assetdb');
 
 		return $.when(promise).then((data) => {
@@ -1041,31 +1053,34 @@ require([
 				table.push(name);
 			};
 			
-			let search = '';
-			if (lookupFiles.length) search += lookupFiles.join('\n');
-			if (multivalue.length) search += '\n```### Split multivalue fields ###```' + `\n| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`;
-			if (caseInsensitive.length) search += '\n```### Convert case insensitive fields to lowercase ###```' + `\n| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`;
-			if (validation.length) search += '\n```### Validate field values ###```' + `\n| eval ${validation.join(', ')}`;
-			if (ignoreValues.length) search += '\n```### Ignore values ###```' + `\n| eval ${ignoreValues.join(' ')}`;
-			if (lookupNames.length) search += '\n```### Map source lookup to source name ###```' + `\n| eval source=case(${lookupNames.join(', ')})`
-			if (fillnull.length) search += '\n```### Fill null values ###```' + `\n| eval ${fillnull.join(', ')}`;
-			if (evalExp.length) search += '\n```### Eval expression fields ###```' + `\n| eval ${evalExp.join(', ')}`;
-			if (fieldSplit.length) search += '\n```### Create lookup specific fields for priority based coalesce ###```' + `\n| eval ${fieldSplit.join(', ')}`;
-			if (keys.length) search += '\n```### Shallow merge assets with matching key fields (using basic stats) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`);
-			search += `\n| search _key=*`;
-			// _time is carried through the first stats so that `latest` still has a timestamp in the final stats
-			if (stats.length) search += `\n| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${(usesLatest ? ['latest(_time) as _time'] : []).concat(stats).join(', ')} by _key`;
-			if (keys.length) search += '\n```### Deep merge assets with matching key fields (using custom command) ###```' + '\n| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`);
-			search += `\n| adbmerge max_keys=${parseMaxKeys(fieldArray)}`
-			search += `\n| eval _key = md5(mvjoin(mvsort(asset), "::"))`;
-			if (stats.length) search += `\n| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${statsFinal.join(', ')} by _key`;
-			if (avgEval.length) search += '\n```### Calculate averages ###```' + `\n| eval ${avgEval.join(', ')}`;
-			if (maxValues.length) search += '\n```### Trim multivalue fields ###```' + `\n| eval ${maxValues.join(', ')}`;
-			if (coalesce.length) search += '\n```### Define coalesce fields based on lookup priority ###```' + `\n| eval ${coalesce.join(', ')}`;
-			if (table.length) search += '\n```### Output to KV store ###```' + `\n| table _key, asset, source, source_lookup, last_seen, ${table.join(', ')}`;
-			search += '\n| outputlookup assetdb';
+			const lines = [];
+			const section = (title) => lines.push({ kind: 'comment', text: `\`\`\`### ${title} ###\`\`\`` });
+			const command = (text) => lines.push({ kind: 'command', text });
 
-			return search;
+			lookupFiles.forEach(command);
+			if (multivalue.length) { section('Split multivalue fields'); command(`| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`); }
+			if (caseInsensitive.length) { section('Convert case insensitive fields to lowercase'); command(`| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`); }
+			if (validation.length) { section('Validate field values'); command(`| eval ${validation.join(', ')}`); }
+			if (ignoreValues.length) { section('Ignore values'); command(`| eval ${ignoreValues.join(' ')}`); }
+			if (lookupNames.length) { section('Map source lookup to source name'); command(`| eval source=case(${lookupNames.join(', ')})`); }
+			if (fillnull.length) { section('Fill null values'); command(`| eval ${fillnull.join(', ')}`); }
+			if (evalExp.length) { section('Eval expression fields'); command(`| eval ${evalExp.join(', ')}`); }
+			if (fieldSplit.length) { section('Create lookup specific fields for priority based coalesce'); command(`| eval ${fieldSplit.join(', ')}`); }
+			if (keys.length) { section('Shallow merge assets with matching key fields (using basic stats)'); command('| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`)); }
+			command('| search _key=*');
+			// _time is carried through the first stats so that `latest` still has a timestamp in the final stats
+			if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${(usesLatest ? ['latest(_time) as _time'] : []).concat(stats).join(', ')} by _key`);
+			if (keys.length) { section('Deep merge assets with matching key fields (using custom command)'); command('| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`)); }
+			command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}`);
+			command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
+			if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${statsFinal.join(', ')} by _key`);
+			if (avgEval.length) { section('Calculate averages'); command(`| eval ${avgEval.join(', ')}`); }
+			if (maxValues.length) { section('Trim multivalue fields'); command(`| eval ${maxValues.join(', ')}`); }
+			if (coalesce.length) { section('Define coalesce fields based on lookup priority'); command(`| eval ${coalesce.join(', ')}`); }
+			if (table.length) { section('Output to KV store'); command(`| table _key, asset, source, source_lookup, last_seen, ${table.join(', ')}`); }
+			command('| outputlookup assetdb');
+
+			return lines;
 		});
 	}
 

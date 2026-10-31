@@ -36,6 +36,11 @@ const runHref = await page.getAttribute('#ab_config a:has-text("Run Search")', '
 const schedHref = await page.getAttribute('#ab_config a:has-text("Edit Schedule")', 'href');
 if (!/^\/[a-z]{2}-[A-Z]{2}\/app\/assetdb\/search\?/.test(runHref)) errors.push(`Run Search link is not locale prefixed: ${runHref}`);
 if (!/^\/[a-z]{2}-[A-Z]{2}\/manager\/assetdb\//.test(schedHref)) errors.push(`Edit Schedule link is not locale prefixed: ${schedHref}`);
+// The merge search preview is rendered from typed lines: numbered rows with highlighted commands, no error box
+const rows = await page.locator('#ab_config .formatted-query .row').count();
+const keywords = await page.locator('#ab_config .formatted-query span.keyword').count();
+const previewError = await page.locator('#ab_config .formatted-query .error-message').count();
+if (rows < 5 || keywords < 2 || previewError) errors.push(`merge search preview not rendered (rows=${rows}, keywords=${keywords}, errors=${previewError})`);
 await page.screenshot({ path: process.env.E2E_SCREENSHOT || 'dist/e2e-configure.png' });
 await browser.close();
 
