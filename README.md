@@ -122,6 +122,10 @@ index=vpn | `adb_enrich_scoped(src_ip, site)`
 
 The columns come from the `adb_enrich_outputs` macro, which the Configure page keeps in line with the configured fields whenever a field is added or deleted. Matching is lowercase, so keys of fields that are *Case Sensitive* only match when they are already lowercase. Because the keys of an asset are stored in the multivalue `asset` field of the KV collection (indexed), the lookup is a plain indexed KV lookup.
 
+### Search head clusters
+
+`default/server.conf` lists `assetdb.conf` in `conf_replication_include`, so the configuration written by the Configure page on one member is replicated to the others. Deploy the app from the deployer as usual; the merge search is a scheduled search, so it runs on one member (the captain's scheduler). KV store collections (`assetdb`, `assetdb_runs`, `assetdb_overflow`) are shared by the cluster.
+
 ### Asset Merge Search
 
 Merging is done via a custom command `adbmerge` and saved search `assetdb-lookupgen` that runs on a user defined frequency. By default, this frequency is once a day. The saved search is automatically updated based on *Lookup* and *Field* configurations. Merged assets are outputted to the `assetdb` KV store. 

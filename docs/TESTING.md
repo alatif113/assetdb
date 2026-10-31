@@ -93,8 +93,7 @@ with the vendored SDK.
   published for Splunk Cloud.
 
 Other accepted warnings: `check_for_splunk_js` (informational telemetry note),
-`check_for_python_script_existence` (generic py2/3 notice), `check_custom_conf_replication`
-(search-head clustering only; this dev box is a single instance), `check_collections_conf`
+`check_for_python_script_existence` (generic py2/3 notice), `check_collections_conf`
 (informational), `check_kos_are_accessible` (`admin` role vs `sc_admin`; Cloud only),
 `check_hostnames_and_ips` (synthetic IPs in the demo lookup `assetdb_demo_assets.csv`).
 
