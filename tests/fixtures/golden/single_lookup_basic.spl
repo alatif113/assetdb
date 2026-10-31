@@ -5,14 +5,16 @@
 | foreach nt_host [eval <<FIELD>>=lower(<<FIELD>>)]
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="demo.csv", "demo")
+```### Build match keys (lowercased where the field is case insensitive) ###```
+| eval adbk_nt_host = nt_host
 ```### Shallow merge assets with matching key fields (using basic stats) ###```
-| eval _key = nt_host
+| eval _key = adbk_nt_host
 | search _key=*
 ```### Sort newest first (multivalue fields keep their most recent values) ###```
 | sort 0 -_time
-| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, list(nt_host) as nt_host, latest(owner) as owner by _key
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, values(adbk_nt_host) as adbk_nt_host, list(nt_host) as nt_host, latest(owner) as owner by _key
 ```### Deep merge assets with matching key fields (using custom command) ###```
-| eval _key = nt_host
+| eval _key = adbk_nt_host
 | adbmerge max_keys=25
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | sort 0 -_time

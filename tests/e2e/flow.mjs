@@ -73,14 +73,22 @@ try {
   const fillnullErr = await modal().locator('.error-message').allInnerTexts();
   check(fillnullErr.some((t) => /key field/i.test(t)) || (await conf()).every((e) => e.name !== name), 'fill null on a key field is refused');
 
-  // add a normal field
-  await page.click('.modal:visible #inputKeyField button[data-value="0"]');
+  // add a key field with the new cleaning options
   await page.fill('.modal:visible #inputFillnull input', '').catch(() => {});
+  await page.fill('.modal:visible #inputDescription input', 'e2e test field');
+  await page.selectOption('.modal:visible #inputNormalizer select', 'trim');
+  await page.selectOption('.modal:visible #inputValidationType select', 'ipv4');
+  check(await modal().locator('#inputKeepCase').isVisible(), 'Keep Original Case is offered for a case insensitive key field');
   await page.click('.modal:visible .btn-primary');
   await page.waitForSelector(`#ab_config tr[data-name="${name}"]`, { timeout: 30000 });
   check(true, 'new field appears in the table after the save chain completes');
   check((await conf()).some((e) => e.name === name), 'field stanza written to assetdb.conf');
+  const saved = (await conf()).find((e) => e.name === name).content;
+  check(saved.description === 'e2e test field' && saved.normalizer === 'trim' && saved.validation_type === 'ipv4', 'new field options are stored');
   check((await savedSearch()).includes(name), 'saved search regenerated with the new field');
+  check((await savedSearch()).includes(`\`normalize_trim(${name})\``), 'saved search applies the normalizer');
+  const collection = async () => (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb')).entry[0].content;
+  check((await collection())[`accelerated_fields.${name}`] === JSON.stringify({ [name]: 1 }), 'key field is accelerated in the KV collection');
   check((await fieldsList()).split(',').includes(name) && (await fieldsList()).includes('last_seen'), 'transforms fields_list updated (incl. last_seen)');
 
   // delete it again
@@ -91,6 +99,7 @@ try {
   await page.waitForSelector(`#ab_config tr[data-name="${name}"]`, { state: 'detached', timeout: 30000 });
   check(!(await conf()).some((e) => e.name === name), 'field stanza removed');
   check(!(await savedSearch()).includes(name), 'saved search no longer mentions the field');
+  check(!(await collection())[`accelerated_fields.${name}`], 'acceleration removed with the field');
   check(!(await fieldsList()).split(',').includes(name), 'transforms fields_list no longer lists the field');
 } catch (e) {
   errors.push(String(e));

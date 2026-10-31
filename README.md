@@ -21,7 +21,7 @@ Create fields to be stored within the *Asset Database* and merged between all in
 
 
 Every merged asset also gets `last_seen`: the most recent `_time` of the source rows (empty when the source lookups have no `_time` column). Existing installs pick the field up in the `assetdb` lookup definition the next time a field is added or deleted in the UI.
-The **Settings** tab holds global settings. `Max Keys` (stored as `max_keys` in the `[general]` stanza, default 25, hard limit 100) is the largest merged asset: assets whose merged key set is larger are dropped and counted in `python.log`. The limit is hard because the merge command keeps every key set in memory. The tab also sets the cron schedule of the merge search and whether it is scheduled.
+Every key field gets an index in the KV store collection (the collection allows 10 indexes, `asset` uses one, so at most 9 key fields are indexed). The **Settings** tab holds global settings, including the default case rule and default normalizer for fields that do not set their own. `Max Keys` (stored as `max_keys` in the `[general]` stanza, default 25, hard limit 100) is the largest merged asset: assets whose merged key set is larger are dropped and counted in `python.log`. The limit is hard because the merge command keeps every key set in memory. The tab also sets the cron schedule of the merge search and whether it is scheduled.
 Source lookups are read with the `input_adb_lookup` macro, which sets `source_lookup` to the lookup name when the lookup has no `source_lookup` column (lookups written by `output_adb_lookup` already carry it). `source` is derived from `source_lookup`.
 
 - **Add field**: Click the *Add Field* button to add a new field into the *Asset Database*. See the **Field Properties** section below for more information on field properties. 
@@ -39,6 +39,10 @@ The following field properties can be set when adding a new field or editing an 
 | Field Name | The name of the field. Must consist of alphanumeric characters or underscores. Field names *_key* and *asset* are automatically created during the asset merge process and cannot be overwritten. |
 | Key Field | Whether the field is a key field or not. Key fields are fields that define a unique asset and are used during the asset merge process. See **How AssetDB Merges Assets** for more information on. |
 | Case Sensitive | Whether the field is case sensitive or not. A value of *No* will set all field values to lower case. |
+| Keep Original Case | (Key fields only, when Case Sensitive is *No*) Store the original value and lowercase it only for matching assets, so `HOST-A` is displayed as written. Values that differ only by case are then both kept. |
+| Normalizer | Rewrites every value into a canonical form before matching and merging: trim, MAC (`aa:bb:cc:dd:ee:ff`), IP (trim, no leading zeros), short host name, FQDN, user name (strips `DOMAIN\` and `@domain`), email, operating system family. *Default* uses the global default from Settings. The presets are the `normalize_*` macros. |
+| Validate As | Drops values that are not of the chosen type (IP, IPv4, IPv6, MAC, email, host name, FQDN, CIDR, number) after normalizing. Assets are kept; only the invalid values go. |
+| Description | Free text documenting what the field means. |
 | Ignore Values | (Optional) A comma separated list of field values to ignore (e.g. null,none,unknown). |
 | Fill Null | (Optional) A static value for assets that have no value for this field in any source (e.g. a default asset priority). Applied after the merge, so it never competes with real values. Not allowed on key fields. | 
 | Validation | (Optional) A regular expression to validate field values. Values that fail validation are ignored. Case insensitive fields are lowercased first, so write the regex for lowercase values. | 
@@ -46,6 +50,7 @@ The following field properties can be set when adding a new field or editing an 
 | Merge Method | (Only applicable when Field Type is *Single*) Defines how a single value is derived across the input lookup table files.<br>- **Latest**: the most recent value<br>- **Min**: minimum value, only applicable to numeric field values<br>- **Max**: maximum value, only applicable to numeric field values<br>- **Avg**: average value, only applicable to numeric field values<br>- **Coalesce**: define a precedence by ranking the source data with the *Coalesce* property |
 | Coalesce | (Only applicable when Merge Method is *Coalesce*) Defines the precedence of source data to be used for this field. |
 | Max Values | (Only applicable when Field Type is *Multivalue*) The maximum values the multivalue field can have (1 to 100). Excess values are trimmed, keeping the most recent values (by the `_time` of the source rows) unless Value Order is *Alphabetical*. Large multivalue fields can lead to reduced performance. 
+| Value Type | (Single value fields) The type declared for the field in the KV store collection: text, number, true/false, time or CIDR. |
 | Eval Expression | (Optional) An SPL eval expression applied to the field before merging, e.g. `replace(field1, "[^w]", "")`. Pipes, backticks and square brackets are only allowed inside quoted strings. |
 
 ### How AssetDB Merges Assets

@@ -196,3 +196,75 @@ test('multivalue fields keep the most recent values by default and can opt into 
 	assert.ok(!alpha.includes('sort 0'), alpha);
 	assert.ok(/values\(ip\) as ip/.test(alpha), alpha);
 });
+
+// --- normalizers, typed validation, case handling, value type ----------------------------
+
+test('normalizer presets call their macro after the split and before case/validation; unknown presets are rejected', () => {
+	const spl = gen([single('mac', { key_field: '1', normalizer: 'mac' }), single('os', { normalizer: 'os' }), single('plain')]);
+	assert.ok(spl.includes('| `normalize_mac(mac)`'), spl);
+	assert.ok(spl.includes('| `normalize_os(os)`'), spl);
+	assert.ok(!spl.includes('normalize_trim'), spl);
+	assert.ok(spl.indexOf('normalize_mac') > spl.indexOf('split('), 'after the split');
+	assert.throws(() => gen([single('f', { normalizer: 'rot13' })]), /normalizer/i);
+});
+
+test('the global default normalizer and case rule apply to fields that do not set their own', () => {
+	const withDefaults = (fields) => gen(fields, { name: 'general', content: { lookups: general.content.lookups, default_normalizer: 'trim', default_case_sensitive: '1' } });
+	const spl = withDefaults([single('a'), single('b', { normalizer: 'none' }), single('c', { normalizer: 'default' }), single('d', { case_sensitive: '0' })]);
+	assert.ok(spl.includes('`normalize_trim(a)`') && spl.includes('`normalize_trim(c)`'), spl);
+	assert.ok(!spl.includes('normalize_trim(b)'), spl);
+	assert.ok(/foreach d \[eval <<FIELD>>=lower/.test(spl), 'explicit case_sensitive=0 beats the default: ' + spl);
+	const unsetCase = withDefaults([{ name: 'e', content: { field_type: 'single', merge_method: 'latest' } }]);
+	assert.ok(!/foreach e \[eval <<FIELD>>=lower/.test(unsetCase), 'default case sensitive keeps e as is');
+});
+
+test('typed validation drops values that do not match and rejects unknown types', () => {
+	const spl = gen([single('ip', { validation_type: 'ip' }), single('mail', { validation_type: 'email', validation: '@corp\\.com$' })]);
+	assert.ok(/ip=mvfilter\(match\(ip, "\^\(\(\(25\[0-5\]/.test(spl), spl);
+	// the typed check runs before the custom regex of the same field
+	assert.ok(spl.indexOf('mail=mvfilter(match(mail, "^[^@') < spl.indexOf('mail=mvfilter(match(mail, "@corp'), spl);
+	assert.throws(() => gen([single('f', { validation_type: 'zip' })]), /validation type/i);
+});
+
+test('validation type patterns accept and reject the right values', () => {
+	const { VALIDATION_TYPES } = require('./load-generator').loadGenerator();
+	const re = (t) => new RegExp(VALIDATION_TYPES[t]);
+	const cases = {
+		ipv4: [['10.1.2.3', true], ['255.255.255.255', true], ['256.1.1.1', false], ['1.2.3', false], ['1.2.3.4.5', false]],
+		ipv6: [['fe80::1', true], ['2001:db8::8a2e:370:7334', true], ['10.1.2.3', false], ['nonsense', false]],
+		ip: [['10.1.2.3', true], ['fe80::1', true], ['host', false]],
+		mac: [['aa:bb:cc:dd:ee:ff', true], ['AA-BB-CC-DD-EE-FF', true], ['aabbccddeeff', false], ['aa:bb:cc:dd:ee', false]],
+		email: [['a@b.co', true], ['a b@c.com', false], ['a@b', false]],
+		hostname: [['host-1', true], ['-bad', false], ['a.b', false]],
+		fqdn: [['host.corp.example.com', true], ['host', false], ['host.c', false]],
+		cidr: [['10.0.0.0/8', true], ['10.0.0.0/33', false], ['10.0.0.0', false]],
+		integer: [['42', true], ['-7', true], ['4.2', false]],
+		number: [['4.2', true], ['-7', true], ['abc', false], ['4.', false]],
+	};
+	for (const [type, list] of Object.entries(cases)) {
+		for (const [value, ok] of list) assert.equal(re(type).test(value), ok, `${type}: ${value}`);
+	}
+});
+
+test('keep original case: key matching is lowercased in a temp field and the stored value keeps its case', () => {
+	const spl = gen([single('host', { key_field: '1', case_sensitive: '0', keep_case: '1' }), single('mac', { key_field: '1', case_sensitive: '0' })]);
+	assert.ok(spl.includes('adbk_host = lower(host), adbk_mac = mac'), spl);
+	assert.ok(!/foreach [^\n]*host[^\n]*lower\(<<FIELD>>\)/.test(spl), 'host is not lowercased in place:\n' + spl);
+	assert.ok(/foreach mac \[eval <<FIELD>>=lower/.test(spl), spl);
+	assert.ok(spl.includes('_key = mvjoin(mvdedup(mvappend(adbk_host, adbk_mac)), "::")'), spl);
+	assert.ok(spl.includes('values(adbk_host) as adbk_host'), spl);
+	assert.ok(spl.includes('| eval _key = mvappend(adbk_host, adbk_mac)'), spl);
+});
+
+test('value type is validated', () => {
+	assert.doesNotThrow(() => gen([single('n', { value_type: 'number' })]));
+	assert.throws(() => gen([single('n', { value_type: 'decimal' })]), /value type/i);
+});
+
+test('every normalizer preset has a macro in macros.conf', () => {
+	const macros = require('node:fs').readFileSync(path.join(__dirname, '..', '..', 'default', 'macros.conf'), 'utf8');
+	const { NORMALIZERS } = require('./load-generator').loadGenerator();
+	for (const [preset, macro] of Object.entries(NORMALIZERS)) {
+		if (macro) assert.ok(macros.includes(`[${macro}(1)]`), `${preset} -> ${macro}`);
+	}
+});

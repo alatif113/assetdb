@@ -52,7 +52,14 @@ function load({ confEntries = [] } = {}) {
 	const mvc = { createService: () => service };
 
 	const sandbox = { module: { exports: {} }, console };
-	sandbox.require = (deps, fn) => fn(underscore, $, mvc, noop, noop, noop, noop, noop, noop, noop, loadGenerator(), noop, noop);
+	// Hand each dependency its stub by name, so adding or reordering modules in assetdb.js cannot misalign the arguments.
+	sandbox.require = (deps, fn) => fn(...deps.map((dep) => {
+		if (dep === 'underscore') return underscore;
+		if (dep === 'jquery') return $;
+		if (dep === 'splunkjs/mvc') return mvc;
+		if (/generator\.min$/.test(dep)) return loadGenerator();
+		return noop;
+	}));
 	vm.runInNewContext(source, sandbox, { filename: SRC });
 	return sandbox.module.exports;
 }

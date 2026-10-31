@@ -19,6 +19,36 @@ define([], function () {
 	const MERGE_ORDER_RE = /^[A-Za-z0-9_]+$/;
 	const MERGE_METHODS = ['latest', 'min', 'max', 'avg', 'coalesce'];
 	const DEFAULT_MAX_KEYS = 25;
+	// Normaliser presets: each maps to a macro in macros.conf that rewrites every value of one field.
+	const NORMALIZERS = {
+		none: null,
+		trim: 'normalize_trim',
+		mac: 'normalize_mac',
+		ip: 'normalize_ip',
+		hostname: 'normalize_hostname',
+		fqdn: 'normalize_fqdn',
+		user: 'normalize_user',
+		email: 'normalize_email',
+		os: 'normalize_os',
+	};
+	// Typed validation: values that do not match are dropped (anchored regexes, evaluated with SPL match()).
+	const IPV4 = '((25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1?\\d?\\d)';
+	const IPV6 = '(?=.*:.*:)[0-9a-fA-F:.]+(%\\w+)?';
+	const HOSTNAME = '[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?';
+	const VALIDATION_TYPES = {
+		none: null,
+		ipv4: `^${IPV4}$`,
+		ipv6: `^${IPV6}$`,
+		ip: `^(${IPV4}|${IPV6})$`,
+		mac: '^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$',
+		email: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$',
+		hostname: `^${HOSTNAME}$`,
+		fqdn: `^(${HOSTNAME}\\.)+[A-Za-z]{2,}$`,
+		cidr: `^${IPV4}/(3[0-2]|[12]?\\d)$`,
+		integer: '^-?\\d+$',
+		number: '^-?\\d+(\\.\\d+)?$',
+	};
+	const VALUE_TYPES = ['string', 'number', 'bool', 'time', 'cidr'];
 	// The adbmerge command keeps every key set in memory; beyond this the merge is too expensive, so it is a hard limit.
 	const HARD_MAX_KEYS = 100;
 
@@ -116,6 +146,10 @@ define([], function () {
 		let caseInsensitive = [];
 		let maxValues = [];
 
+		const general = (fieldArray.find((e) => e.name === 'general') || {}).content || {};
+		let normalize = [];
+		let keyTemps = [];
+		let keyFields = [];
 		const lookupsArray = getLookupArray(fieldArray);
 		for (const {lookup, name} of lookupsArray) {
 			if (!LOOKUP_FILE_RE.test(lookup)) throw new Error(`Invalid lookup "${lookup}"`);
@@ -130,14 +164,33 @@ define([], function () {
 			if (!FIELD_NAME_RE.test(name)) throw new Error(`Invalid field name "${name}"`);
 			if (content.merge_method && !MERGE_METHODS.includes(content.merge_method)) throw new Error(`Invalid merge method "${content.merge_method}" for field ${name}`);
 
-			if (parseInt(content.key_field)) {
+			const isKey = !!parseInt(content.key_field);
+			// Case rule: an explicit value wins, otherwise the global default (insensitive when neither is set).
+			const hasCase = content.case_sensitive !== undefined && content.case_sensitive !== '';
+			const caseSensitive = !!parseInt(hasCase ? content.case_sensitive : (general.default_case_sensitive || 0));
+			// Keep the original case in the stored value and lowercase only for matching (key fields only).
+			const keepCase = isKey && !caseSensitive && !!parseInt(content.keep_case || 0);
+
+			let normalizer = content.normalizer;
+			if (!normalizer || normalizer === 'default') normalizer = general.default_normalizer || 'none';
+			if (!(normalizer in NORMALIZERS)) throw new Error(`Invalid normalizer "${normalizer}" for field ${name}`);
+			if (NORMALIZERS[normalizer]) normalize.push(`| \`${NORMALIZERS[normalizer]}(${name})\``);
+
+			const validationType = content.validation_type || 'none';
+			if (!(validationType in VALIDATION_TYPES)) throw new Error(`Invalid validation type "${validationType}" for field ${name}`);
+			if (VALIDATION_TYPES[validationType]) validation.push(`${name}=mvfilter(match(${name}, ${splQuote(VALIDATION_TYPES[validationType])}))`);
+			if (content.value_type && !VALUE_TYPES.includes(content.value_type)) throw new Error(`Invalid value type "${content.value_type}" for field ${name}`);
+
+			if (isKey) {
 				keys.push(name);
+				keyFields.push(name);
+				keyTemps.push(`adbk_${name} = ${keepCase ? `lower(${name})` : name}`);
 			}
 
 			const ignored = content.ignore_values ? safeParse(content.ignore_values, null) : null;
 			if (Array.isArray(ignored)) {
 				if (ignored.length) {
-					const lower = !parseInt(content.case_sensitive);
+					const lower = !caseSensitive;
 					const quoted = ignored.map(n => splQuote(lower ? String(n).toLowerCase() : n));
 					ignoreValues.push(`${name} = if(in(${name}, ${quoted.join(', ')}), null(), ${name})`);
 				}
@@ -156,7 +209,7 @@ define([], function () {
 				evalExp.push(`${name} = ${content.eval_expression}`);
 			}
 
-			if (!parseInt(content.case_sensitive)) {
+			if (!caseSensitive && !keepCase) {
 				caseInsensitive.push(name);
 			}
 
@@ -213,18 +266,25 @@ define([], function () {
 
 		lookupFiles.forEach(command);
 		if (multivalue.length) { section('Split multivalue fields'); command(`| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`); }
+		if (normalize.length) { section('Normalize values'); normalize.forEach(command); }
 		if (caseInsensitive.length) { section('Convert case insensitive fields to lowercase'); command(`| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`); }
 		if (validation.length) { section('Validate field values'); command(`| eval ${validation.join(', ')}`); }
 		if (ignoreValues.length) { section('Ignore values'); command(`| eval ${ignoreValues.join(' ')}`); }
 		if (lookupNames.length) { section('Map source lookup to source name'); command(`| eval source=case(${lookupNames.join(', ')})`); }
 		if (evalExp.length) { section('Eval expression fields'); command(`| eval ${evalExp.join(', ')}`); }
 		if (fieldSplit.length) { section('Create lookup specific fields for priority based coalesce'); command(`| eval ${fieldSplit.join(', ')}`); }
-		if (keys.length) { section('Shallow merge assets with matching key fields (using basic stats)'); command('| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`)); }
+		const keyRefs = keyFields.map((n) => `adbk_${n}`);
+		if (keys.length) {
+			section('Build match keys (lowercased where the field is case insensitive)');
+			command(`| eval ${keyTemps.join(', ')}`);
+			section('Shallow merge assets with matching key fields (using basic stats)');
+			command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvjoin(mvdedup(mvappend(${keyRefs.join(', ')})), "::")`));
+		}
 		command('| search _key=*');
 		// _time is carried through the first stats so that `latest` and the recent-first multivalue order still have a timestamp in the final stats
 		if (recentMv) { section('Sort newest first (multivalue fields keep their most recent values)'); command('| sort 0 -_time'); }
-		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(stats).join(', ')} by _key`);
-		if (keys.length) { section('Deep merge assets with matching key fields (using custom command)'); command('| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`)); }
+		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
+		if (keys.length) { section('Deep merge assets with matching key fields (using custom command)'); command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvappend(${keyRefs.join(', ')})`)); }
 		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}`);
 		command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
 		if (recentMv) command('| sort 0 -_time');
@@ -250,6 +310,9 @@ define([], function () {
 		parseMaxKeys: parseMaxKeys,
 		parseMaxValues: parseMaxValues,
 		FIELD_NAME_RE: FIELD_NAME_RE,
+		NORMALIZERS: NORMALIZERS,
+		VALIDATION_TYPES: VALIDATION_TYPES,
+		VALUE_TYPES: VALUE_TYPES,
 		HARD_MAX_KEYS: HARD_MAX_KEYS,
 		DEFAULT_MAX_KEYS: DEFAULT_MAX_KEYS,
 	};

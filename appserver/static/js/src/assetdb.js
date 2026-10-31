@@ -7,18 +7,53 @@ require([
 	'../app/assetdb/js/textInput.min',
 	'../app/assetdb/js/radioInput.min',
 	'../app/assetdb/js/spinnerInput.min',
+	'../app/assetdb/js/selectInput.min',
 	'../app/assetdb/js/multiselectInput.min',
 	'../app/assetdb/js/format.min',
 	'../app/assetdb/js/generator.min',
 	'splunkjs/mvc/simpleform/input/dropdown',
 	'splunkjs/mvc/utils',
 	'splunkjs/mvc/simplexml/ready!',
-], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, MultiSelectInput, format, Generator, DropdownInput, MvcUtils) {
+], function (_, $, mvc, SearchManager, Modal, TextInput, RadioInput, SpinnerInput, SelectInput, MultiSelectInput, format, Generator, DropdownInput, MvcUtils) {
 	const $el = $('#ab_config');
 	const ENDPOINT_BASE = '/servicesNS/nobody/assetdb/configs/';
 	const VALIDATION_ENDPOINT = '/services/search/v2/parser';
 	const SERVICE = mvc.createService();
 	const { safeParse, checkEvalExpression, isReservedFieldName, getLookupArray, FIELD_NAME_RE } = Generator;
+	const COLLECTION_ENDPOINT = '/servicesNS/nobody/assetdb/storage/collections/config/assetdb';
+	// KV store allows 10 accelerations per collection; one is taken by `asset`.
+	const MAX_KEY_ACCELERATIONS = 9;
+	const NORMALIZER_CHOICES = [
+		{ label: 'None', value: 'none' },
+		{ label: 'Trim whitespace', value: 'trim' },
+		{ label: 'MAC address (aa:bb:cc:dd:ee:ff)', value: 'mac' },
+		{ label: 'IP address (trim, no leading zeros)', value: 'ip' },
+		{ label: 'Short host name (host from host.domain)', value: 'hostname' },
+		{ label: 'Fully qualified domain name', value: 'fqdn' },
+		{ label: 'User name (strip DOMAIN\\ and @domain)', value: 'user' },
+		{ label: 'Email address (lowercase)', value: 'email' },
+		{ label: 'Operating system family', value: 'os' },
+	];
+	const VALIDATION_TYPE_CHOICES = [
+		{ label: 'None', value: 'none' },
+		{ label: 'IP address (v4 or v6)', value: 'ip' },
+		{ label: 'IPv4 address', value: 'ipv4' },
+		{ label: 'IPv6 address', value: 'ipv6' },
+		{ label: 'MAC address', value: 'mac' },
+		{ label: 'Email address', value: 'email' },
+		{ label: 'Host name', value: 'hostname' },
+		{ label: 'Fully qualified domain name', value: 'fqdn' },
+		{ label: 'IPv4 CIDR', value: 'cidr' },
+		{ label: 'Whole number', value: 'integer' },
+		{ label: 'Number', value: 'number' },
+	];
+	const VALUE_TYPE_CHOICES = [
+		{ label: 'Text', value: 'string' },
+		{ label: 'Number', value: 'number' },
+		{ label: 'True/false', value: 'bool' },
+		{ label: 'Time', value: 'time' },
+		{ label: 'CIDR', value: 'cidr' },
+	];
 
 	/**
 	 * Splunk Web URL for a path such as /app/assetdb/search, with the root endpoint and locale prefix.
@@ -177,6 +212,44 @@ require([
 	}
 
 	/**
+	 * Bring the KV collection definition in line with the fields: an index on every key field (the
+	 * collection allows 10, `asset` takes one) and a field type for single value fields.
+	 *
+	 * @return {Promise}	Resolves with the number of changed settings
+	 */
+	function syncCollection() {
+		return $.when(getConf('conf-assetdb')).then((data) => {
+			const fields = (safeParse(data, {}).entry || []).filter((e) => e.name !== 'general');
+			const desired = {};
+			fields
+				.filter((f) => parseInt(f.content.key_field))
+				.slice(0, MAX_KEY_ACCELERATIONS)
+				.forEach((f) => {
+					desired[`accelerated_fields.${f.name}`] = JSON.stringify({ [f.name]: 1 });
+				});
+			fields.forEach((f) => {
+				if (f.content.field_type === 'single' && f.content.value_type) desired[`field.${f.name}`] = f.content.value_type;
+			});
+
+			return $.when(SERVICE.get(COLLECTION_ENDPOINT, { output_mode: 'json' }).promise()).then((current) => {
+				const content = ((safeParse(current, {}).entry || [])[0] || {}).content || {};
+				const protectedNames = ['asset', 'source', 'source_lookup', 'last_seen'];
+				const changes = {};
+				Object.keys(desired).forEach((k) => {
+					if (content[k] !== desired[k]) changes[k] = desired[k];
+				});
+				// settings of fields that no longer qualify (deleted, no longer a key, no longer typed) are cleared
+				Object.keys(content).forEach((k) => {
+					const m = /^(accelerated_fields|field)\.(.+)$/.exec(k);
+					if (m && !protectedNames.includes(m[2]) && content[k] !== '' && !(k in desired)) changes[k] = '';
+				});
+				if (!Object.keys(changes).length) return 0;
+				return $.when(SERVICE.post(COLLECTION_ENDPOINT, changes).promise()).then(() => Object.keys(changes).length);
+			});
+		});
+	}
+
+	/**
 	 * Update a field within assetdb.conf
 	 *
 	 * @param {Array}	fieldArray		Array of field data from assetdb.conf
@@ -250,7 +323,7 @@ require([
 			promises.push(setConf(endpoint_transforms, fields_list));
 		}
 
-		return $.when(...promises);
+		return $.when(...promises).then(() => syncCollection());
 	}
 
 	/**
@@ -276,6 +349,7 @@ require([
 	 */
 	function editAddField(fieldArray, field = {}) {
 		let lookupArray = getLookupArray(fieldArray);
+		const general = (fieldArray.find((e) => e.name === 'general') || {}).content || {};
 
 		let fieldNameInput = new TextInput({
 			id: 'inputFieldName',
@@ -302,8 +376,50 @@ require([
 				{ label: 'Yes', value: 1 },
 				{ label: 'No', value: 0 },
 			],
-			value: field?.content?.case_sensitive || 0,
-			help: 'If No, field values are converted to lowercase',
+			value: field?.content?.case_sensitive ?? general.default_case_sensitive ?? 0,
+			help: 'If No, field values are matched case insensitively (lowercased unless Keep Original Case is on)',
+		});
+
+		let keepCaseInput = new RadioInput({
+			id: 'inputKeepCase',
+			label: 'Keep Original Case',
+			choices: [
+				{ label: 'Yes', value: 1 },
+				{ label: 'No', value: 0 },
+			],
+			value: field?.content?.keep_case || 0,
+			help: 'Key fields only: store the original value and lowercase it only when matching assets. Values that differ only by case are then kept separately',
+		});
+
+		let descriptionInput = new TextInput({
+			id: 'inputDescription',
+			label: 'Description',
+			value: field?.content?.description || '',
+			help: '[Optional] What this field means, for the people who use the asset data',
+		});
+
+		let normalizerInput = new SelectInput({
+			id: 'inputNormalizer',
+			label: 'Normalizer',
+			choices: [{ label: `Default (${general.default_normalizer || 'none'})`, value: 'default' }].concat(NORMALIZER_CHOICES),
+			value: field?.content?.normalizer || 'default',
+			help: 'Rewrites every value into a canonical form before matching and merging, so the same asset matches across sources',
+		});
+
+		let validationTypeInput = new SelectInput({
+			id: 'inputValidationType',
+			label: 'Validate As',
+			choices: VALIDATION_TYPE_CHOICES,
+			value: field?.content?.validation_type || 'none',
+			help: 'Values that are not of this type are dropped (checked after normalizing)',
+		});
+
+		let valueTypeInput = new SelectInput({
+			id: 'inputValueType',
+			label: 'Value Type',
+			choices: VALUE_TYPE_CHOICES,
+			value: field?.content?.value_type || 'string',
+			help: 'Single value fields only: the type declared for the field in the KV store collection',
 		});
 
 		/*let ignoreValuesInput = new TextInput({
@@ -399,23 +515,43 @@ require([
 
 		let $form = $(`
             <div class="form-horizontal">
-                <div class="input-group-base"></div>
+                <h4 class="adb-group-title">Field</h4>
+                <div class="input-group-field"></div>
+                <h4 class="adb-group-title">Matching and cleaning</h4>
+                <div class="input-group-cleaning"></div>
+                <h4 class="adb-group-title">Merging</h4>
+                <div class="input-group-merging"></div>
                 <div class="input-group-toggle input-group-single"></div>
                 <div class="input-group-toggle input-group-multivalue"></div>
             </div>`);
 
-		$('.input-group-base', $form)
+		$('.input-group-field', $form)
 			.append(fieldNameInput.getInput())
+			.append(descriptionInput.getInput())
 			.append(keyFieldInput.getInput())
-			.append(caseSensitiveInput.getInput())
-			.append(ignoreValuesInput.getInput())
-			.append(fillnullInput.getInput())
-			.append(validationInput.getInput())
-			.append(evalExpInput.getInput())
 			.append(fieldTypeInput.getInput());
 
-		$('.input-group-single', $form).append(mergeMethodInput.getInput()).append(mergeOrderInput.getInput());
+		$('.input-group-cleaning', $form)
+			.append(caseSensitiveInput.getInput())
+			.append(keepCaseInput.getInput())
+			.append(normalizerInput.getInput())
+			.append(validationTypeInput.getInput())
+			.append(validationInput.getInput())
+			.append(ignoreValuesInput.getInput())
+			.append(evalExpInput.getInput());
+
+		$('.input-group-merging', $form).append(fillnullInput.getInput());
+		$('.input-group-single', $form).append(mergeMethodInput.getInput()).append(mergeOrderInput.getInput()).append(valueTypeInput.getInput());
 		$('.input-group-multivalue', $form).append(spinnerInput.getInput()).append(mvOrderInput.getInput());
+
+		// Keep Original Case only applies to case insensitive key fields
+		const toggleKeepCase = () => {
+			const applies = parseInt(keyFieldInput.getValue()) === 1 && parseInt(caseSensitiveInput.getValue()) === 0;
+			applies ? keepCaseInput.getInput().show() : keepCaseInput.getInput().hide();
+		};
+		toggleKeepCase();
+		keyFieldInput.getInput().on('change', toggleKeepCase);
+		caseSensitiveInput.getInput().on('change', toggleKeepCase);
 
 		$('.input-group-toggle', $form).hide();
 		$(`.input-group-${fieldTypeInput.getValue()}`, $form).show();
@@ -510,6 +646,11 @@ require([
 						merge_order: mergeOrderInput.getValue(),
 						max_values: spinnerInput.getValue() || 2,
 						mv_order: mvOrderInput.getValue(),
+						keep_case: parseInt(keyFieldInput.getValue()) === 1 && parseInt(caseSensitiveInput.getValue()) === 0 ? keepCaseInput.getValue() : 0,
+						description: descriptionInput.getValue(),
+						normalizer: normalizerInput.getValue(),
+						validation_type: validationTypeInput.getValue(),
+						value_type: fieldTypeInput.getValue() === 'single' ? valueTypeInput.getValue() : 'string',
 						eval_expression: evalExpInput.getValue(),
 					};
 	
@@ -701,6 +842,7 @@ require([
 	 * of the merge saved search. Each save writes the config, then regenerates the merge search.
 	 */
 	function buildSettings($form, fieldArray) {
+		const general = (fieldArray.find((e) => e.name === 'general') || {}).content || {};
 		const maxKeysInput = new TextInput({
 			id: 'inputMaxKeys',
 			label: 'Max Keys',
@@ -724,7 +866,30 @@ require([
 			help: 'Turn off to run the merge manually only',
 		});
 
-		$form.append(maxKeysInput.getInput()).append(scheduledInput.getInput()).append(scheduleInput.getInput());
+		const defaultCaseInput = new RadioInput({
+			id: 'inputDefaultCase',
+			label: 'Case Sensitive (default)',
+			choices: [
+				{ label: 'Yes', value: 1 },
+				{ label: 'No', value: 0 },
+			],
+			value: parseInt(general.default_case_sensitive) || 0,
+			help: 'Used for new fields and for fields that do not set it themselves',
+		});
+		const defaultNormalizerInput = new SelectInput({
+			id: 'inputDefaultNormalizer',
+			label: 'Normalizer (default)',
+			choices: NORMALIZER_CHOICES,
+			value: general.default_normalizer || 'none',
+			help: 'Applied to fields whose Normalizer is Default',
+		});
+
+		$form
+			.append(maxKeysInput.getInput())
+			.append(defaultCaseInput.getInput())
+			.append(defaultNormalizerInput.getInput())
+			.append(scheduledInput.getInput())
+			.append(scheduleInput.getInput());
 		const $save = $('<a href="#" class="btn btn-primary btn-save-settings">Save Settings</a>');
 		$form.append($('<div class="control-group"></div>').append($('<div class="controls"></div>').append($save)));
 
@@ -750,7 +915,11 @@ require([
 			if (invalid) return false;
 
 			const writes = $.when(
-				setConf('conf-assetdb/general/', { max_keys: String(maxKeys) }),
+				setConf('conf-assetdb/general/', {
+					max_keys: String(maxKeys),
+					default_case_sensitive: String(parseInt(defaultCaseInput.getValue()) ? 1 : 0),
+					default_normalizer: defaultNormalizerInput.getValue(),
+				}),
 				setConf('conf-savedsearches/assetdb-lookupgen', {
 					cron_schedule: scheduleInput.getValue().trim(),
 					enableSched: String(parseInt(scheduledInput.getValue()) ? 1 : 0),
@@ -895,6 +1064,9 @@ require([
 									<dt>Case Sensitive</dt><dd>${caseSensitive ? 'Yes' : 'No'}</dd>
 									<dt>Ignore Values</dt><dd>${_.escape(formatIgnoreValues(field.content?.ignore_values))}</dd>
 									<dt>Fill Null</dt><dd>${_.escape(field.content?.fillnull || 'N/A')}</dd>
+									<dt>Description</dt><dd>${_.escape(field.content?.description || 'N/A')}</dd>
+									<dt>Normalizer</dt><dd>${_.escape(field.content?.normalizer || 'default')}</dd>
+									<dt>Validate As</dt><dd>${_.escape(field.content?.validation_type || 'none')}</dd>
 									<dt>Validation</dt><dd>${_.escape(field.content?.validation || 'N/A')}</dd>
 									<dt>Eval Expression</dt><dd>${_.escape(field.content?.eval_expression || 'N/A')}</dd>
 								</dl>

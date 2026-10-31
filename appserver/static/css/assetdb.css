@@ -192,3 +192,17 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 #ab_config .btn-edit-schedule {
 	margin-left: 10px;
 }
+
+.adb-select {
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.adb-group-title {
+	margin: 18px 0 6px;
+	padding-bottom: 4px;
+	border-bottom: 1px solid rgba(128, 128, 128, 0.35);
+	font-size: 13px;
+	text-transform: uppercase;
+	opacity: 0.8;
+}
