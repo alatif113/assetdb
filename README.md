@@ -25,6 +25,7 @@ Click *Edit* on a lookup (or set them when adding it) to change how that source 
 | Max Age | Ignore rows older than this (`30d`, `12h`, `6mon`). Rows without a time are kept. |
 | Time Column | The column holding each row's epoch time when the lookup does not use `_time`. |
 | Row Filter | A `where` expression written against the source's own columns, e.g. `status!="decommissioned"`. It is validated by Splunk when saved. |
+| Scope | The site or tenant of every row in this source (see *Scoped keys* below). |
 | Column Mapping | One `field = source column` per line when a source names a column differently, e.g. `nt_host = Computer Name`. |
 
 When a lookup is chosen the dialog shows its row count and the columns it holds. That only informs: a source does not have to fill every column.
@@ -37,6 +38,8 @@ Create fields to be stored within the *Asset Database* and merged between all in
 
 Every merged asset also gets `last_seen`: the most recent `_time` of the source rows (empty when the source lookups have no `_time` column). Existing installs pick the field up in the `assetdb` lookup definition the next time a field is added or deleted in the UI.
 Every key field gets an index in the KV store collection (the collection allows 10 indexes, `asset` uses one, so at most 9 key fields are indexed). The **Settings** tab holds global settings, including the default case rule and default normalizer for fields that do not set their own. `Max Keys` (stored as `max_keys` in the `[general]` stanza, default 25, hard limit 100) is the largest merged asset: assets whose merged key set is larger are dropped and counted in `python.log`. The limit is hard because the merge command keeps every key set in memory. The tab also sets the cron schedule of the merge search and whether it is scheduled.
+
+**Scoped keys.** The same address in two sites (overlapping RFC 1918 space, an acquired network, one tenant per customer) must not merge. Give each source a *Scope* (or name a *Scope Column* in Settings that holds the scope of each row), then mark the key fields that are only unique within a site as *Scoped* (IP addresses, host names) and leave globally unique ones (MAC addresses, serial numbers) as *Global*. A scoped key becomes `<scope>|<value>`, so it only matches rows of the same scope, while a global key still links assets across scopes. Merged assets get a `scope` field. Turning scoping on changes the keys, so the first run after enabling it rebuilds the collection.
 
 **Key quality.** One bad key can chain unrelated assets into a single cluster. Two protections are on by default:
 

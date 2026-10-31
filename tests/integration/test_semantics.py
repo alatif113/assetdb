@@ -162,3 +162,23 @@ def test_a_widely_shared_key_is_skipped_by_the_frequency_guard(sandbox):
     out = sandbox.run()
     assert sorted(r["mac"][0] for r in out) == ["m%d" % i for i in range(8)], out
     assert all(r["asset"] == [r["mac"][0]] for r in out)
+
+
+def test_scoped_keys_keep_overlapping_addresses_in_different_sites_apart(sandbox):
+    sandbox.fields = [field("ip", key_field="1", key_scope="scoped"), field("mac", key_field="1"), field("owner", field_type="single")]
+    sandbox.add_source("paris", [{"ip": "10.0.0.5", "mac": "", "owner": "pierre"}], scope="Paris")
+    sandbox.add_source("dallas", [{"ip": "10.0.0.5", "mac": "", "owner": "dana"}], scope="Dallas")
+    sandbox.add_source("dallas2", [{"ip": "", "mac": "aa:01", "owner": ""}, {"ip": "10.0.0.5", "mac": "aa:01", "owner": ""}], scope="Dallas")
+    rows = sandbox.run()
+    by_owner = {r["owner"][0]: r for r in rows if r.get("owner")}
+    assert sorted(by_owner) == ["dana", "pierre"], rows
+    assert by_owner["pierre"]["scope"] == ["paris"] and by_owner["pierre"]["asset"] == ["paris|10.0.0.5"]
+    assert by_owner["dana"]["scope"] == ["dallas"] and sorted(by_owner["dana"]["asset"]) == ["aa:01", "dallas|10.0.0.5"]   # the global mac still links within the site
+
+
+def test_scope_column_is_used_when_a_source_has_no_fixed_scope(sandbox):
+    sandbox.general = {"scope_field": "site"}
+    sandbox.fields = [field("ip", key_field="1", key_scope="scoped")]
+    sandbox.add_source("a", [{"ip": "10.0.0.5", "site": "East"}, {"ip": "10.0.0.5", "site": "West"}, {"ip": "10.0.0.5", "site": "east"}])
+    rows = sandbox.run()
+    assert sorted(r["asset"][0] for r in rows) == ["east|10.0.0.5", "west|10.0.0.5"], rows

@@ -36,7 +36,7 @@ class Sandbox(object):
         self._cleanup.append(lambda: self.splunk.delete(self.ns + "/storage/collections/config/" + self.kv))
         r = self.splunk.post(self.ns + "/data/transforms/lookups", {
             "name": self.kv, "external_type": "kvstore", "collection": self.kv,
-            "fields_list": ",".join(["_key", "asset", "source", "source_lookup", "last_seen"] + columns)})
+            "fields_list": ",".join(["_key", "asset", "source", "source_lookup", "last_seen", "scope"] + columns)})
         assert r.status_code in (200, 201), r.text
         self._cleanup.append(lambda: self.splunk.delete(self.ns + "/data/transforms/lookups/" + self.kv))
 

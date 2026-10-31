@@ -54,12 +54,14 @@ try {
   await page.waitForTimeout(1500);
   check((await modal().locator('#inputSourceFilter .error-message').allInnerTexts()).some((t) => /malformed|unexpected/i.test(t)), 'invalid row filter is rejected with the parser message');
   await page.fill('.modal:visible #inputSourceFilter input', 'priority>0');
+  await page.fill('.modal:visible #inputSourceScope input', 'E2E_Site');
   await page.fill('.modal:visible #inputSourceColumns', 'owner = Owner Name');
   await page.click('.modal:visible .btn-primary');
   await page.waitForTimeout(2500);
   const demo = JSON.parse((await generalConf()).lookups)[0];
   check(demo.max_age === '45d' && demo.filter === 'priority>0' && demo.columns.owner === 'Owner Name' && demo.enabled === true, 'source options stored in the lookups JSON');
   check((await savedSearch()).includes('relative_time(now(), "-45d")'), 'saved search applies the max age');
+  check((await savedSearch()).includes('"e2e_site"') && (await savedSearch()).includes('| eval scope = lower(case('), 'saved search assigns the source scope');
 
   // Settings: max keys is validated against the hard cap, valid values are saved, and the original is restored
     const originalMaxKeys = (await generalConf()).max_keys;
@@ -114,6 +116,7 @@ try {
   await page.fill('.modal:visible #inputFillnull input', '').catch(() => {});
   await page.fill('.modal:visible #inputDescription input', 'e2e test field');
   await page.selectOption('.modal:visible #inputNormalizer select', 'trim');
+  await page.click('.modal:visible #inputKeyScope button[data-value="scoped"]');
   await page.selectOption('.modal:visible #inputValidationType select', 'ipv4');
   check(await modal().locator('#inputKeepCase').isVisible(), 'Keep Original Case is offered for a case insensitive key field');
   await page.click('.modal:visible .btn-primary');
@@ -124,6 +127,7 @@ try {
   check(saved.description === 'e2e test field' && saved.normalizer === 'trim' && saved.validation_type === 'ipv4', 'new field options are stored');
   check((await savedSearch()).includes(name), 'saved search regenerated with the new field');
   check((await savedSearch()).includes(`\`normalize_trim(${name})\``), 'saved search applies the normalizer');
+  check((await savedSearch()).includes(`mvmap(adbk_${name}, scope`), 'saved search prefixes the scoped key');
   const collection = async () => (await rest('/servicesNS/nobody/assetdb/storage/collections/config/assetdb')).entry[0].content;
   check((await collection())[`accelerated_fields.${name}`] === JSON.stringify({ [name]: 1 }), 'key field is accelerated in the KV collection');
   check((await fieldsList()).split(',').includes(name) && (await fieldsList()).includes('last_seen'), 'transforms fields_list updated (incl. last_seen)');

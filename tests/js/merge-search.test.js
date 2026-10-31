@@ -383,3 +383,28 @@ test('max_key_share is passed to adbmerge unless it is 0', () => {
 	assert.match(withShare('0'), /\| adbmerge max_keys=25\n/);
 	assert.match(withShare('abc'), /max_key_share=50\n/);
 });
+
+// --- scope (site / tenant) ---------------------------------------------------------------
+
+test('scoped keys are prefixed with the row scope after the blocklist; global keys are not', () => {
+	const sources = [{ name: 'paris', lookup: 'p.csv', scope: 'Paris' }, { name: 'dallas', lookup: 'd.csv', scope: 'dallas' }, { name: 'x', lookup: 'x.csv' }];
+	const spl = withSources(sources, [single('ip', { key_field: '1', key_scope: 'scoped' }), single('mac', { key_field: '1' })]);
+	assert.ok(spl.includes('| eval scope = lower(case(source_lookup="p.csv", "paris", source_lookup="d.csv", "dallas", true(), null()))'), spl);
+	assert.ok(spl.includes('adbk_ip = if(isnotnull(scope), mvmap(adbk_ip, scope . "|" . adbk_ip), adbk_ip)'), spl);
+	assert.ok(!spl.includes('mvmap(adbk_mac'), 'mac stays global');
+	assert.ok(spl.indexOf('Remove blocklisted') < spl.indexOf('Prefix scoped keys'), 'blocklist sees the raw value');
+	assert.ok(spl.includes('values(scope) as scope'), spl);
+	assert.ok(spl.includes('| table _key, asset, source, source_lookup, last_seen, scope, '), spl);
+});
+
+test('a scope column (general scope_field) is used for sources without a fixed scope', () => {
+	const cfg = (general) => gen([single('ip', { key_field: '1', key_scope: 'scoped' })], { name: 'general', content: Object.assign({ lookups: JSON.stringify([{ name: 'a', lookup: 'a.csv', scope: 'hq' }, { name: 'b', lookup: 'b.csv' }]) }, general) });
+	assert.ok(cfg({ scope_field: 'Site Code' }).includes(`| eval scope = lower(case(source_lookup="a.csv", "hq", true(), 'Site Code'))`));
+	assert.throws(() => cfg({ scope_field: "x'y" }), /scope field/i);
+	assert.throws(() => gen([single('ip')], { name: 'general', content: { lookups: JSON.stringify([{ name: 'a', lookup: 'a.csv', scope: 'a|b' }]) } }), /scope/i);
+});
+
+test('nothing changes without any scope configured', () => {
+	const spl = gen([single('ip', { key_field: '1', key_scope: 'scoped' })]);
+	assert.ok(!spl.includes('scope'), spl);
+});

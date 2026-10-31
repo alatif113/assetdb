@@ -291,6 +291,7 @@ require([
 			fieldNames.push('source');
 			fieldNames.push('source_lookup');
 			fieldNames.push('last_seen');
+			fieldNames.push('scope');
 
 			let fields_list = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, fields_list));
@@ -322,6 +323,7 @@ require([
 			fieldNames.push('source');
 			fieldNames.push('source_lookup');
 			fieldNames.push('last_seen');
+			fieldNames.push('scope');
 
 			let fields_list = { fields_list: fieldNames.join(',') };
 			promises.push(setConf(endpoint_transforms, fields_list));
@@ -371,6 +373,17 @@ require([
 			],
 			value: field?.content?.key_field || 0,
 			help: 'Key fields define a unique asset',
+		});
+
+		let keyScopeInput = new RadioInput({
+			id: 'inputKeyScope',
+			label: 'Key Scope',
+			choices: [
+				{ label: 'Global', value: 'global' },
+				{ label: 'Scoped', value: 'scoped' },
+			],
+			value: field?.content?.key_scope || 'global',
+			help: 'Key fields only. A scoped key only matches rows of the same scope (site or tenant), e.g. IP addresses, host names. Use global for values that are unique everywhere, such as MAC addresses and serial numbers. Needs a scope on the sources or a scope field in Settings',
 		});
 
 		let caseSensitiveInput = new RadioInput({
@@ -557,6 +570,7 @@ require([
 			.append(fieldTypeInput.getInput());
 
 		$('.input-group-cleaning', $form)
+			.append(keyScopeInput.getInput())
 			.append(caseSensitiveInput.getInput())
 			.append(keepCaseInput.getInput())
 			.append(normalizerInput.getInput())
@@ -576,6 +590,9 @@ require([
 			const applies = parseInt(keyFieldInput.getValue()) === 1 && parseInt(caseSensitiveInput.getValue()) === 0;
 			applies ? keepCaseInput.getInput().show() : keepCaseInput.getInput().hide();
 		};
+		const toggleKeyScope = () => (parseInt(keyFieldInput.getValue()) === 1 ? keyScopeInput.getInput().show() : keyScopeInput.getInput().hide());
+		toggleKeyScope();
+		keyFieldInput.getInput().on('change', toggleKeyScope);
 		toggleKeepCase();
 		keyFieldInput.getInput().on('change', toggleKeepCase);
 		caseSensitiveInput.getInput().on('change', toggleKeepCase);
@@ -678,6 +695,7 @@ require([
 						mv_order: mvOrderInput.getValue(),
 						keep_case: parseInt(keyFieldInput.getValue()) === 1 && parseInt(caseSensitiveInput.getValue()) === 0 ? keepCaseInput.getValue() : 0,
 						description: descriptionInput.getValue(),
+						key_scope: parseInt(keyFieldInput.getValue()) === 1 ? keyScopeInput.getValue() : 'global',
 						normalizer: normalizerInput.getValue(),
 						validation_type: validationTypeInput.getValue(),
 						value_type: fieldTypeInput.getValue() === 'single' ? valueTypeInput.getValue() : 'string',
@@ -724,6 +742,7 @@ require([
 	 */
 	function sourceSummary(source) {
 		const parts = [];
+		if (source.scope) parts.push(`scope ${source.scope}`);
 		if (source.max_age) parts.push(`max age ${source.max_age}`);
 		if (source.time_field) parts.push(`time from ${source.time_field}`);
 		if (source.filter) parts.push('row filter');
@@ -760,6 +779,12 @@ require([
 			value: source.role || 'authoritative',
 			help: 'Authoritative sources create assets and link them. Enrich-only sources (e.g. a vulnerability scanner or firewall log) only add data to an asset they match unambiguously: they never create an asset or link two assets',
 		});
+		const scopeInput = new TextInput({
+			id: 'inputSourceScope',
+			label: 'Scope',
+			value: source.scope || '',
+			help: '[Optional] The site or tenant of every row in this source, for keys marked Scoped. The same value in two scopes (e.g. 10.0.0.5 in Paris and in Dallas) stays two assets',
+		});
 		const maxAgeInput = new TextInput({
 			id: 'inputSourceMaxAge',
 			label: 'Max Age',
@@ -793,6 +818,7 @@ require([
 		const $el = $('<div></div>')
 			.append(enabledInput.getInput())
 			.append(roleInput.getInput())
+			.append(scopeInput.getInput())
 			.append(maxAgeInput.getInput())
 			.append(timeFieldInput.getInput())
 			.append(filterInput.getInput())
@@ -817,6 +843,7 @@ require([
 				const options = {
 					enabled: parseInt(enabledInput.getValue()) ? true : false,
 					role: roleInput.getValue(),
+					scope: scopeInput.getValue().trim(),
 					max_age: maxAgeInput.getValue().trim(),
 					time_field: timeFieldInput.getValue().trim(),
 					filter: filterInput.getValue().trim(),
@@ -829,6 +856,11 @@ require([
 				const maxAge = maxAgeInput.getValue().trim();
 				maxAgeInput.clearError();
 				filterInput.clearError();
+				scopeInput.clearError();
+				if (scopeInput.getValue().trim() && !/^[A-Za-z0-9_.-]+$/.test(scopeInput.getValue().trim())) {
+					scopeInput.setError('Use letters, digits, underscore, dot and dash');
+					message = 'invalid';
+				}
 				if (maxAge && !Generator.MAX_AGE_RE.test(maxAge)) {
 					maxAgeInput.setError('Use a number and a unit, e.g. 30d, 12h or 6mon');
 					message = 'invalid';
@@ -1123,6 +1155,12 @@ require([
 			value: blocklistValues,
 			help: 'Values that are never used to match assets, in any key field: placeholders, loopback and similar. A value that is blocked here still appears in the asset, it just cannot link two assets. Type a value, re:<regular expression> or cidr:<network>',
 		});
+		const scopeFieldInput = new TextInput({
+			id: 'inputScopeField',
+			label: 'Scope Column',
+			value: general.scope_field || '',
+			help: '[Optional] A column in the source lookups that holds the site or tenant of each row, used for sources without a fixed Scope. Leave empty if you do not scope keys',
+		});
 		const maxKeyShareInput = new TextInput({
 			id: 'inputMaxKeyShare',
 			label: 'Max Key Share',
@@ -1152,6 +1190,7 @@ require([
 			.append(globalIgnoreInput.getInput())
 			.append(keyBlocklistInput.getInput())
 			.append(maxKeyShareInput.getInput())
+			.append(scopeFieldInput.getInput())
 			.append(scheduledInput.getInput())
 			.append(scheduleInput.getInput());
 		const $save = $('<a href="#" class="btn btn-primary btn-save-settings">Save Settings</a>');
@@ -1172,6 +1211,10 @@ require([
 				maxKeysInput.setError(`Enter a whole number from 1 to ${Generator.HARD_MAX_KEYS}`);
 				invalid = true;
 			} else maxKeysInput.clearError();
+			if (scopeFieldInput.getValue().trim() && /['"\\|`[\]]/.test(scopeFieldInput.getValue())) {
+				scopeFieldInput.setError('That column name has a character that is not allowed');
+				invalid = true;
+			} else scopeFieldInput.clearError();
 			if (!/^\d+$/.test(String(maxKeyShareInput.getValue()).trim()) || parseInt(maxKeyShareInput.getValue()) > 1000000) {
 				maxKeyShareInput.setError('Enter a whole number from 0 to 1000000');
 				invalid = true;
@@ -1190,6 +1233,7 @@ require([
 					ignore_values: JSON.stringify(globalIgnoreInput.getValue()),
 					key_blocklist: JSON.stringify(keyBlocklistInput.getValue()),
 					max_key_share: String(parseInt(maxKeyShareInput.getValue())),
+					scope_field: scopeFieldInput.getValue().trim(),
 				}),
 				setConf('conf-savedsearches/assetdb-lookupgen', {
 					cron_schedule: scheduleInput.getValue().trim(),
@@ -1336,7 +1380,7 @@ require([
 							<span>${_.escape(field.name)}</span>${isKey ? '<span class="key-tag">Key</span>' : ''}
 							<div class="more-info" style="display: none">
 								<dl class="list-dotted">
-									<dt>Key Field</dt><dd>${isKey ? 'Yes' : 'No'}</dd>
+									<dt>Key Field</dt><dd>${isKey ? (field.content?.key_scope === 'scoped' ? 'Yes (scoped)' : 'Yes') : 'No'}</dd>
 									<dt>Case Sensitive</dt><dd>${caseSensitive ? 'Yes' : 'No'}</dd>
 									<dt>Ignore Values</dt><dd>${_.escape(formatIgnoreValues(field.content?.ignore_values))}${parseInt(field.content?.inherit_ignore ?? 1) ? ' (+ global list)' : ''}</dd>
 									<dt>Allowed Sources</dt><dd>${_.escape(field.content?.allowed_sources || 'all')}</dd>

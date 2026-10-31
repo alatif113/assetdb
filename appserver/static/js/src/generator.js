@@ -17,6 +17,7 @@ define([], function () {
 	const SOURCE_NAME_RE = /^[A-Za-z0-9_.-]+$/;
 	const LOOKUP_FILE_RE = /^[A-Za-z0-9_.-]+$/;
 	const SOURCE_ROLES = ['authoritative', 'enrich'];
+	const SCOPE_RE = /^[A-Za-z0-9_.-]+$/;
 	// relative_time offset such as 30d, 12h, 6mon
 	const MAX_AGE_RE = /^[1-9]\d*(s|m|h|d|w|mon|q|y)$/;
 	// A lookup column name as written in SPL between single quotes.
@@ -95,7 +96,7 @@ define([], function () {
 	}
 
 	// Field names that would collide with the [general] stanza or with Splunk's own fields.
-	const RESERVED_FIELD_NAMES = ['general', 'asset', 'source', 'source_lookup', 'last_seen', '_key', '_time', '_raw', 'host', 'index', 'sourcetype', 'linecount', 'punct', 'splunk_server', 'timestartpos', 'timeendpos'];
+	const RESERVED_FIELD_NAMES = ['general', 'asset', 'source', 'source_lookup', 'last_seen', 'scope', '_key', '_time', '_raw', 'host', 'index', 'sourcetype', 'linecount', 'punct', 'splunk_server', 'timestartpos', 'timeendpos'];
 
 	function isReservedFieldName(name) {
 		return RESERVED_FIELD_NAMES.includes(String(name).toLowerCase());
@@ -251,6 +252,10 @@ define([], function () {
 		const timeMaps = [];
 		const columnMaps = {};
 		const enrichLookups = [];
+		const staticScopes = [];
+		const scopeColumn = general.scope_field ? String(general.scope_field).trim() : '';
+		if (scopeColumn && !COLUMN_RE.test(scopeColumn)) throw new Error(`Invalid scope field "${scopeColumn}"`);
+		let scopedKeys = [];
 		for (const src of lookupsArray) {
 			const {lookup, name} = src;
 			if (!LOOKUP_FILE_RE.test(lookup)) throw new Error(`Invalid lookup "${lookup}"`);
@@ -275,6 +280,10 @@ define([], function () {
 				if (!MAX_AGE_RE.test(src.max_age)) throw new Error(`Invalid max age "${src.max_age}" for source ${name} (use e.g. 30d, 12h, 6mon)`);
 				ageFilters.push(`(${notThis} OR isnull(_time) OR _time >= relative_time(now(), "-${src.max_age}"))`);
 			}
+			if (src.scope) {
+				if (!SCOPE_RE.test(src.scope)) throw new Error(`Invalid scope "${src.scope}" for source ${name} (letters, digits, _ . -)`);
+				staticScopes.push(`${isThis}, ${splQuote(src.scope.toLowerCase())}`);
+			}
 			const columns = src.columns && typeof src.columns === 'object' ? src.columns : {};
 			for (const [target, column] of Object.entries(columns)) {
 				if (!FIELD_NAME_RE.test(target)) throw new Error(`Invalid field name "${target}" in the column mapping of source ${name}`);
@@ -282,6 +291,7 @@ define([], function () {
 				(columnMaps[target] = columnMaps[target] || []).push(`${isThis}, '${column}'`);
 			}
 		}
+		const usesScope = staticScopes.length > 0 || !!scopeColumn;
 		const lookupFiles = lookupsArray.map(({lookup}) => `| \`input_adb_lookup(${lookup})\``);
 		const lookupNames = lookupsArray.map(({lookup, name}) => `source_lookup=${splQuote(lookup)}, ${splQuote(name)}`);
 
@@ -311,6 +321,7 @@ define([], function () {
 			if (isKey) {
 				keys.push(name);
 				keyFields.push(name);
+				if (content.key_scope === 'scoped') scopedKeys.push(`adbk_${name}`);
 				keyTemps.push(`adbk_${name} = ${keepCase ? `lower(${name})` : name}`);
 				const blocked = valueFilter(`adbk_${name}`, keyBlocklist, caseSensitive && !keepCase, 'key blocklist');
 				if (blocked) blocklistClauses.push(blocked);
@@ -420,6 +431,10 @@ define([], function () {
 			section('Map source columns to fields');
 			command(`| eval ${Object.entries(columnMaps).map(([target, cases]) => `${target} = case(${cases.join(', ')}, true(), ${target})`).join(', ')}`);
 		}
+		if (usesScope) {
+			section('Scope (site or tenant) of each row');
+			command(`| eval scope = lower(case(${staticScopes.concat(['true()', scopeColumn ? `'${scopeColumn}'` : 'null()']).join(', ')}))`);
+		}
 		if (allowedSources.length) { section('Discard values from sources a field does not accept'); command(`| eval ${allowedSources.join(', ')}`); }
 		if (multivalue.length) { section('Split multivalue fields'); command(`| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`); }
 		if (normalize.length) { section('Normalize values'); normalize.forEach(command); }
@@ -435,25 +450,29 @@ define([], function () {
 			section('Build match keys (lowercased where the field is case insensitive)');
 			command(`| eval ${keyTemps.join(', ')}`);
 			if (blocklistClauses.length) { section('Remove blocklisted values from the match keys'); command(`| eval ${blocklistClauses.join(', ')}`); }
+			if (usesScope && scopedKeys.length) {
+				section('Prefix scoped keys with the row scope (the same value in two sites is two different assets)');
+				command(`| eval ${scopedKeys.map((k) => `${k} = if(isnotnull(scope), mvmap(${k}, scope . "|" . ${k}), ${k})`).join(', ')}`);
+			}
 			section('Shallow merge assets with matching key fields (using basic stats)');
 			command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvjoin(mvdedup(mvappend(${keyRefs.join(', ')})), "::")`));
 		}
 		command('| search _key=*');
 		// _time is carried through the first stats so that `latest` and the recent-first multivalue order still have a timestamp in the final stats
 		if (recentMv) { section('Sort newest first (multivalue fields keep their most recent values)'); command('| sort 0 -_time'); }
-		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(enrichLookups.length ? ['max(adb_auth) as adb_auth'] : [], keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
+		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(enrichLookups.length ? ['max(adb_auth) as adb_auth'] : [], keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
 		if (keys.length) { section('Deep merge assets with matching key fields (using custom command)'); command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvappend(${keyRefs.join(', ')})`)); }
 		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}${parseMaxKeyShare(general) ? ` max_key_share=${parseMaxKeyShare(general)}` : ''}`);
 		command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
 		if (recentMv) command('| sort 0 -_time');
-		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${statsFinal.join(', ')} by _key`);
+		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat(statsFinal).join(', ')} by _key`);
 		if (avgEval.length) { section('Calculate averages'); command(`| eval ${avgEval.join(', ')}`); }
 		if (earliestFinal.length) { section('Pick the earliest values'); command(`| eval ${earliestFinal.join(', ')}`); }
 		if (coalesce.length) { section('Define coalesce fields based on lookup priority'); command(`| eval ${coalesce.join(', ')}`); }
 		if (fillnull.length) { section('Fill null values (after the merge, only where an asset has no value at all)'); command(`| eval ${fillnull.join(', ')}`); }
 		if (dedupMv.length) { section('De-duplicate multivalue fields (order is kept)'); command(`| eval ${dedupMv.map((n) => `${n} = mvdedup(${n})`).join(', ')}`); }
 		if (maxValues.length) { section('Trim multivalue fields'); command(`| eval ${maxValues.join(', ')}`); }
-		if (table.length) { section('Output to KV store'); command(`| table _key, asset, source, source_lookup, last_seen, ${table.join(', ')}`); }
+		if (table.length) { section('Output to KV store'); command(`| table _key, asset, source, source_lookup, last_seen, ${usesScope ? 'scope, ' : ''}${table.join(', ')}`); }
 		command('| outputlookup assetdb');
 
 		return lines;
