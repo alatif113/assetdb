@@ -8,12 +8,17 @@
 ```### Shallow merge assets with matching key fields (using basic stats) ###```
 | eval _key = nt_host
 | search _key=*
-| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, values(nt_host) as nt_host, latest(owner) as owner by _key
+```### Sort newest first (multivalue fields keep their most recent values) ###```
+| sort 0 -_time
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, list(nt_host) as nt_host, latest(owner) as owner by _key
 ```### Deep merge assets with matching key fields (using custom command) ###```
 | eval _key = nt_host
 | adbmerge max_keys=25
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, values(nt_host) as nt_host, latest(owner) as owner by _key
+| sort 0 -_time
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, list(nt_host) as nt_host, latest(owner) as owner by _key
+```### De-duplicate multivalue fields (order is kept) ###```
+| eval nt_host = mvdedup(nt_host)
 ```### Trim multivalue fields ###```
 | eval nt_host = mvindex(nt_host,0,4)
 ```### Output to KV store ###```

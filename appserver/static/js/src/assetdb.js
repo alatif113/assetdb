@@ -386,6 +386,17 @@ require([
 			help: 'The maximum number of values to store as a multivalue',
 		});
 
+		let mvOrderInput = new RadioInput({
+			id: 'inputMvOrder',
+			label: 'Value Order',
+			choices: [
+				{ label: 'Most recent first', value: 'recent' },
+				{ label: 'Alphabetical', value: 'alpha' },
+			],
+			value: field?.content?.mv_order || 'recent',
+			help: 'Which values are kept when a field has more than Max Values: the most recent ones (needs a _time column in the source lookups) or the alphabetically first',
+		});
+
 		let $form = $(`
             <div class="form-horizontal">
                 <div class="input-group-base"></div>
@@ -404,7 +415,7 @@ require([
 			.append(fieldTypeInput.getInput());
 
 		$('.input-group-single', $form).append(mergeMethodInput.getInput()).append(mergeOrderInput.getInput());
-		$('.input-group-multivalue', $form).append(spinnerInput.getInput());
+		$('.input-group-multivalue', $form).append(spinnerInput.getInput()).append(mvOrderInput.getInput());
 
 		$('.input-group-toggle', $form).hide();
 		$(`.input-group-${fieldTypeInput.getValue()}`, $form).show();
@@ -498,6 +509,7 @@ require([
 						merge_method: mergeMethodInput.getValue(),
 						merge_order: mergeOrderInput.getValue(),
 						max_values: spinnerInput.getValue() || 2,
+						mv_order: mvOrderInput.getValue(),
 						eval_expression: evalExpInput.getValue(),
 					};
 	
@@ -820,7 +832,7 @@ require([
 						$dl.append(`<dt>Merge Order</dt><dd>${_.escape(field.content.merge_order)}</dd>`);
 					}
 				} else if (field.content.field_type == 'multivalue') {
-					$dl.append(`<dt>Max Values</dt><dd>${_.escape(field.content.max_values)}</dd>`);
+					$dl.append(`<dt>Max Values</dt><dd>${_.escape(field.content.max_values)} (${field.content.mv_order === 'alpha' ? 'alphabetical' : 'most recent first'})</dd>`);
 				}
 
 				$('td.expands', $tr).on('click', function () {

@@ -5,10 +5,15 @@
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="one.csv", "one.csv", source_lookup="two.csv", "two.csv")
 | search _key=*
-| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, values(ip) as ip by _key
+```### Sort newest first (multivalue fields keep their most recent values) ###```
+| sort 0 -_time
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, list(ip) as ip by _key
 | adbmerge max_keys=25
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, values(ip) as ip by _key
+| sort 0 -_time
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, list(ip) as ip by _key
+```### De-duplicate multivalue fields (order is kept) ###```
+| eval ip = mvdedup(ip)
 ```### Trim multivalue fields ###```
 | eval ip = mvindex(ip,0,4)
 ```### Output to KV store ###```

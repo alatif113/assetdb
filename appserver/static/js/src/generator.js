@@ -70,7 +70,7 @@ define([], function () {
 	 */
 	function parseMaxValues(value) {
 		const n = parseInt(value);
-		return isNaN(n) ? 10 : Math.max(1, n);
+		return isNaN(n) ? 10 : Math.min(100, Math.max(1, n));
 	}
 
 	/**
@@ -103,6 +103,8 @@ define([], function () {
 		let statsFinal = [];
 		let avgEval = [];
 		let usesLatest = false;
+		let recentMv = false;
+		let dedupMv = [];
 		let evalExp = [];
 		let keys = [];
 		let table = [];
@@ -188,8 +190,16 @@ define([], function () {
 				}
 			} else if (content.field_type == 'multivalue') {
 				multivalue.push(name);
-				stats.push(`values(${name}) as ${name}`);
-				statsFinal.push(`values(${name}) as ${name}`);
+				if (content.mv_order === 'alpha') {
+					stats.push(`values(${name}) as ${name}`);
+					statsFinal.push(`values(${name}) as ${name}`);
+				} else {
+					// Most recent first: list() keeps arrival order and the rows are sorted by _time (newest first) before each stats.
+					recentMv = true;
+					stats.push(`list(${name}) as ${name}`);
+					statsFinal.push(`list(${name}) as ${name}`);
+					dedupMv.push(name);
+				}
 				maxValues.push(`${name} = mvindex(${name},0,${parseMaxValues(content.max_values) - 1})`);
 			}
 			table.push(name);
@@ -205,20 +215,23 @@ define([], function () {
 		if (validation.length) { section('Validate field values'); command(`| eval ${validation.join(', ')}`); }
 		if (ignoreValues.length) { section('Ignore values'); command(`| eval ${ignoreValues.join(' ')}`); }
 		if (lookupNames.length) { section('Map source lookup to source name'); command(`| eval source=case(${lookupNames.join(', ')})`); }
-		if (fillnull.length) { section('Fill null values'); command(`| eval ${fillnull.join(', ')}`); }
 		if (evalExp.length) { section('Eval expression fields'); command(`| eval ${evalExp.join(', ')}`); }
 		if (fieldSplit.length) { section('Create lookup specific fields for priority based coalesce'); command(`| eval ${fieldSplit.join(', ')}`); }
 		if (keys.length) { section('Shallow merge assets with matching key fields (using basic stats)'); command('| eval _key = ' + (keys.length == 1 ? keys[0] : `mvjoin(mvdedup(mvappend(${keys.join(', ')})), "::")`)); }
 		command('| search _key=*');
-		// _time is carried through the first stats so that `latest` still has a timestamp in the final stats
-		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${(usesLatest ? ['latest(_time) as _time'] : []).concat(stats).join(', ')} by _key`);
+		// _time is carried through the first stats so that `latest` and the recent-first multivalue order still have a timestamp in the final stats
+		if (recentMv) { section('Sort newest first (multivalue fields keep their most recent values)'); command('| sort 0 -_time'); }
+		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(stats).join(', ')} by _key`);
 		if (keys.length) { section('Deep merge assets with matching key fields (using custom command)'); command('| eval _key = ' + (keys.length == 1 ? keys[0] : `mvappend(${keys.join(', ')})`)); }
 		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}`);
 		command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
+		if (recentMv) command('| sort 0 -_time');
 		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${statsFinal.join(', ')} by _key`);
 		if (avgEval.length) { section('Calculate averages'); command(`| eval ${avgEval.join(', ')}`); }
-		if (maxValues.length) { section('Trim multivalue fields'); command(`| eval ${maxValues.join(', ')}`); }
 		if (coalesce.length) { section('Define coalesce fields based on lookup priority'); command(`| eval ${coalesce.join(', ')}`); }
+		if (fillnull.length) { section('Fill null values (after the merge, only where an asset has no value at all)'); command(`| eval ${fillnull.join(', ')}`); }
+		if (dedupMv.length) { section('De-duplicate multivalue fields (order is kept)'); command(`| eval ${dedupMv.map((n) => `${n} = mvdedup(${n})`).join(', ')}`); }
+		if (maxValues.length) { section('Trim multivalue fields'); command(`| eval ${maxValues.join(', ')}`); }
 		if (table.length) { section('Output to KV store'); command(`| table _key, asset, source, source_lookup, last_seen, ${table.join(', ')}`); }
 		command('| outputlookup assetdb');
 

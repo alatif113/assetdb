@@ -5,19 +5,24 @@
 | eval mac=mvfilter(match(mac, "^([0-9a-f]{2}:){5}[0-9a-f]{2}$"))
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="a.csv", "a")
-```### Fill null values ###```
-| eval priority = if(isnull(priority), "3", priority)
 ```### Eval expression fields ###```
 | eval label = upper(owner) . "-" . priority
 ```### Shallow merge assets with matching key fields (using basic stats) ###```
 | eval _key = mac
 | search _key=*
-| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, latest(priority) as priority, values(mac) as mac by _key
+```### Sort newest first (multivalue fields keep their most recent values) ###```
+| sort 0 -_time
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, latest(priority) as priority, list(mac) as mac by _key
 ```### Deep merge assets with matching key fields (using custom command) ###```
 | eval _key = mac
 | adbmerge max_keys=25
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, latest(priority) as priority, values(mac) as mac by _key
+| sort 0 -_time
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, latest(priority) as priority, list(mac) as mac by _key
+```### Fill null values (after the merge, only where an asset has no value at all) ###```
+| eval priority = if(isnull(priority), "3", priority)
+```### De-duplicate multivalue fields (order is kept) ###```
+| eval mac = mvdedup(mac)
 ```### Trim multivalue fields ###```
 | eval mac = mvindex(mac,0,4)
 ```### Output to KV store ###```

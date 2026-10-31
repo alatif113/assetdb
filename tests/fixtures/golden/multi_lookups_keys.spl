@@ -9,12 +9,17 @@
 ```### Shallow merge assets with matching key fields (using basic stats) ###```
 | eval _key = mvjoin(mvdedup(mvappend(mac, nt_host)), "::")
 | search _key=*
-| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, values(mac) as mac, values(nt_host) as nt_host, values(ip) as ip by _key
+```### Sort newest first (multivalue fields keep their most recent values) ###```
+| sort 0 -_time
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, list(mac) as mac, list(nt_host) as nt_host, list(ip) as ip by _key
 ```### Deep merge assets with matching key fields (using custom command) ###```
 | eval _key = mvappend(mac, nt_host)
 | adbmerge max_keys=25
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, values(mac) as mac, values(nt_host) as nt_host, values(ip) as ip by _key
+| sort 0 -_time
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, list(mac) as mac, list(nt_host) as nt_host, list(ip) as ip by _key
+```### De-duplicate multivalue fields (order is kept) ###```
+| eval mac = mvdedup(mac), nt_host = mvdedup(nt_host), ip = mvdedup(ip)
 ```### Trim multivalue fields ###```
 | eval mac = mvindex(mac,0,4), nt_host = mvindex(nt_host,0,4), ip = mvindex(ip,0,4)
 ```### Output to KV store ###```

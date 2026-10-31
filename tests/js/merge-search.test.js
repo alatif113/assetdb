@@ -172,3 +172,26 @@ test('last_seen is the max source _time, carried through both stats and written 
 	assert.ok(second.includes('max(last_seen) as last_seen'), spl);
 	assert.ok(second.includes('| table _key, asset, source, source_lookup, last_seen, owner'), spl);
 });
+
+// --- fill null after the merge, recent-first multivalue order ----------------------------
+
+test('fill null is applied after the merge, never per source row', () => {
+	const spl = gen([single('k', { key_field: '1' }), single('owner', { fillnull: 'unknown' })]);
+	const [before, after] = spl.split('| adbmerge max_keys=25');
+	assert.ok(!/isnull\(owner\)/.test(before), 'no fill null before the merge:\n' + before);
+	assert.ok(/\| eval owner = if\(isnull\(owner\), "unknown", owner\)/.test(after), after);
+	assert.ok(after.indexOf('isnull(owner)') > after.indexOf('| stats values(asset)'), 'fill null comes after the final stats');
+});
+
+test('multivalue fields keep the most recent values by default and can opt into alphabetical', () => {
+	const recent = gen([mvField('ip', { max_values: '3' })]);
+	assert.ok(recent.includes('| sort 0 -_time'), recent);
+	assert.ok(/list\(ip\) as ip/.test(recent), recent);
+	assert.ok(recent.includes('ip = mvdedup(ip)'), recent);
+	assert.ok(recent.indexOf('mvdedup(ip)') < recent.indexOf('mvindex(ip,0,2)'), 'de-duplicate before trimming');
+	assert.equal((recent.match(/\| sort 0 -_time/g) || []).length, 2, 'sorted before both stats');
+
+	const alpha = gen([mvField('ip', { max_values: '3', mv_order: 'alpha' })]);
+	assert.ok(!alpha.includes('sort 0'), alpha);
+	assert.ok(/values\(ip\) as ip/.test(alpha), alpha);
+});
