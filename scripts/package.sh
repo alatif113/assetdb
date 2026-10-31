@@ -36,7 +36,7 @@ EXCLUDES=(
   '*.pyc' __pycache__ '*.swp' '*~' '.DS_Store'
   CLAUDE.md package.json package-lock.json babel.config.json Makefile
   pytest.ini requirements-dev.txt coverage eslint.config.js pyproject.toml
-  '* [0-9].*' '* [0-9]'   # iCloud Drive conflict copies ("name 2.py")
+  '* [0-9]*' # iCloud Drive conflict copies ("name 2.py", "name 12.js")
   appserver/static/js/src
   static/slides.gif   # README illustration only; AppInspect allows only png in static/
 )
@@ -96,7 +96,7 @@ verify_archive() { # file
   tops=$(tar -tzf "$f" | awk -F/ '{print $1}' | sort -u)
   [[ "$tops" == "$id" ]] || die "$EX_FAIL" "Archive must have exactly one top-level dir '$id'; found: $tops"
   tar -tzf "$f" | grep -qx "$id/default/app.conf" || die "$EX_FAIL" "default/app.conf missing from archive"
-  bad=$(tar -tzf "$f" | grep -E '(^|/)(\.[^/]+|__pycache__|node_modules|local)(/|$)|\.pyc$|/\._' || true)
+  bad=$(tar -tzf "$f" | grep -E '(^|/)(\.[^/]+|__pycache__|node_modules|local)(/|$)|\.pyc$|/\._|/[^/]* [0-9]+(\.[^/]*)?$|/(tests|scripts|docs|mockups|dist)(/|$)' || true)
   [[ -z "$bad" ]] || die "$EX_FAIL" "Forbidden entries in archive:"$'\n'"$bad"
   local tmp; tmp=$(mktemp -d)
   tar -xzf "$f" -C "$tmp" "$id/default/app.conf"
