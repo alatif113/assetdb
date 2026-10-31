@@ -130,7 +130,8 @@ require([
 	 * @return {Promise} 			Jquery promise with retrieved validation data.
 	*/
 	function validateQuery(query) {
-		let deferred = SERVICE.get(VALIDATION_ENDPOINT, {q: query});
+		// the v2 parser endpoint only accepts POST (a GET answers 405); an invalid query comes back as 400 with messages
+		let deferred = SERVICE.post(VALIDATION_ENDPOINT, {q: query, output_mode: 'json'});
 		return deferred.promise();
 	}
 
@@ -177,13 +178,12 @@ require([
 	 * Update the 'lookups' key within the 'general' stanza of assetdb.conf. The current list is
 	 * read from the server first so concurrent edits are not overwritten with stale page state.
 	 *
-	 * @param {String}	lookupName		Lookup name to add or delete
-	 * @param {String}	lookupFile		Lookup file or definition (add only)
-	 * @param {String}	operation		add or delete
+	 * @param {Object}	source			Source ({name, lookup, ...options}); only {name} is needed to delete
+	 * @param {String}	operation		add, update (replace the options of an existing source) or delete
 	 *
 	 * @return {Promise} 				Jquery promise
 	 */
-	function updateLookups(lookupName, lookupFile, operation) {
+	function updateLookups(source, operation) {
 		const endpoint = 'conf-assetdb/general/';
 
 		return $.when(getConf('conf-assetdb')).then((data) => {
@@ -195,13 +195,17 @@ require([
 
 				while (low < high) {
 					let mid = (low + high) >>> 1;
-					if (lookupArray[mid].name < lookupName) low = mid + 1;
+					if (lookupArray[mid].name < source.name) low = mid + 1;
 					else high = mid;
 				}
 
-				lookupArray.splice(low, 0, {name: lookupName, lookup: lookupFile});
+				lookupArray.splice(low, 0, source);
+			} else if (operation == 'update') {
+				let index = lookupArray.findIndex(item => item.name === source.name);
+				if (index < 0) return $.Deferred().reject({message: `source ${source.name} no longer exists`}).promise();
+				lookupArray[index] = Object.assign({}, lookupArray[index], source);
 			} else if (operation == 'delete') {
-				let index = lookupArray.findIndex(item => item.name === lookupName);
+				let index = lookupArray.findIndex(item => item.name === source.name);
 				if (index > -1) lookupArray.splice(index, 1);
 			} else {
 				return $.Deferred().reject({message: `unknown operation ${operation}`}).promise();
@@ -716,6 +720,203 @@ require([
 	}
 
 	/**
+	 * One line describing the non-default options of a source.
+	 */
+	function sourceSummary(source) {
+		const parts = [];
+		if (source.max_age) parts.push(`max age ${source.max_age}`);
+		if (source.time_field) parts.push(`time from ${source.time_field}`);
+		if (source.filter) parts.push('row filter');
+		const mapped = Object.keys(source.columns || {}).length;
+		if (mapped) parts.push(`${mapped} column${mapped > 1 ? 's' : ''} mapped`);
+		return parts.join(', ') || '-';
+	}
+
+	/**
+	 * Inputs for the options of one source (enabled, role, column mapping, max age, row filter), shared by the
+	 * add and edit modals.
+	 *
+	 * @param {Object}	source		Current source object, or {} for a new one
+	 * @return {Object}				{ $el, collect(): options to store, validate(): Promise resolving to an error message or '' }
+	 */
+	function buildSourceOptions(source) {
+		const enabledInput = new RadioInput({
+			id: 'inputSourceEnabled',
+			label: 'Enabled',
+			choices: [
+				{ label: 'Yes', value: 1 },
+				{ label: 'No', value: 0 },
+			],
+			value: Generator.sourceEnabled(source) ? 1 : 0,
+			help: 'A disabled source is left out of the merge but keeps its settings',
+		});
+		const roleInput = new RadioInput({
+			id: 'inputSourceRole',
+			label: 'Role',
+			choices: [
+				{ label: 'Authoritative', value: 'authoritative' },
+				{ label: 'Enrich only', value: 'enrich' },
+			],
+			value: source.role || 'authoritative',
+			help: 'Authoritative sources create assets and link them. Enrich-only sources (e.g. a vulnerability scanner or firewall log) only add data to an asset they match unambiguously: they never create an asset or link two assets',
+		});
+		const maxAgeInput = new TextInput({
+			id: 'inputSourceMaxAge',
+			label: 'Max Age',
+			value: source.max_age || '',
+			help: '[Optional] Ignore rows older than this, e.g. 30d, 12h or 6mon. Rows without a time are kept',
+		});
+		const timeFieldInput = new TextInput({
+			id: 'inputSourceTimeField',
+			label: 'Time Column',
+			value: source.time_field || '',
+			help: '[Optional] Column holding the epoch time of each row, when the lookup does not use _time',
+		});
+		const filterInput = new TextInput({
+			id: 'inputSourceFilter',
+			label: 'Row Filter',
+			value: source.filter || '',
+			help: '[Optional] Keep only rows where this where expression is true, written against the source columns, e.g. status!="decommissioned"',
+		});
+
+		const columnLines = Object.entries(source.columns || {}).map(([field, column]) => `${field} = ${column}`).join('\n');
+		const $columns = $(`
+			<div class="control-group shared-controls-controlgroup control-group-default">
+				<label class="control-label" for="inputSourceColumns">Column Mapping</label>
+				<div role="group" class="controls controls-join">
+					<div class="control control-default"><textarea id="inputSourceColumns" class="adb-textarea" rows="4" spellcheck="false"></textarea></div>
+				</div>
+				<div class="help-block">[Optional] One mapping per line, <i>field = source column</i>, when this source names a column differently, e.g. nt_host = Computer Name. Only this source is affected</div>
+			</div>`);
+		$('textarea', $columns).val(columnLines);
+
+		const $el = $('<div></div>')
+			.append(enabledInput.getInput())
+			.append(roleInput.getInput())
+			.append(maxAgeInput.getInput())
+			.append(timeFieldInput.getInput())
+			.append(filterInput.getInput())
+			.append($columns);
+
+		const parseColumns = () => {
+			const columns = {};
+			const errors = [];
+			($('textarea', $columns).val() || '').split('\n').forEach((line) => {
+				if (!line.trim()) return;
+				const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$/.exec(line);
+				if (!m) errors.push(`"${line.trim()}" is not "field = column"`);
+				else columns[m[1]] = m[2];
+			});
+			return { columns, errors };
+		};
+
+		return {
+			$el,
+			collect() {
+				const { columns } = parseColumns();
+				const options = {
+					enabled: parseInt(enabledInput.getValue()) ? true : false,
+					role: roleInput.getValue(),
+					max_age: maxAgeInput.getValue().trim(),
+					time_field: timeFieldInput.getValue().trim(),
+					filter: filterInput.getValue().trim(),
+					columns,
+				};
+				return options;
+			},
+			validate() {
+				let message = '';
+				const maxAge = maxAgeInput.getValue().trim();
+				maxAgeInput.clearError();
+				filterInput.clearError();
+				if (maxAge && !Generator.MAX_AGE_RE.test(maxAge)) {
+					maxAgeInput.setError('Use a number and a unit, e.g. 30d, 12h or 6mon');
+					message = 'invalid';
+				}
+				const { columns, errors } = parseColumns();
+				$('.error-message', $columns).remove();
+				const columnProblems = errors.slice();
+				Object.entries(columns).forEach(([field, column]) => {
+					if (isReservedFieldName(field) && field !== 'general') columnProblems.push(`"${field}" is a reserved field name`);
+					if (/['"\\|`[\]]/.test(column)) columnProblems.push(`column "${column}" has a character that is not allowed`);
+				});
+				if (columnProblems.length) {
+					$columns.append($('<div class="error-message help-block"></div>').text(columnProblems.join('; ')));
+					message = 'invalid';
+				}
+				const filter = filterInput.getValue().trim();
+				if (filter) {
+					try {
+						checkEvalExpression(filter);
+						Generator.checkBalancedParens(filter);
+					} catch (e) {
+						filterInput.setError(e.message);
+						return $.Deferred().resolve('invalid').promise();
+					}
+					return $.when(validateQuery(`| makeresults | where ${filter}`)).then(
+						() => message,
+						(data) => {
+							const messages = (data?.data || safeParse(data?.responseText, {})).messages || [];
+							filterInput.setError(messages.length ? messages[0].text : 'Invalid where expression');
+							return 'invalid';
+						}
+					);
+				}
+				return $.Deferred().resolve(message).promise();
+			},
+		};
+	}
+
+	/**
+	 * Show what a lookup holds (row count and columns) so a source can be checked when it is added. It only informs:
+	 * a source does not have to fill every column.
+	 */
+	function showSourceSchema($box, lookup) {
+		if (!lookup || !/^[A-Za-z0-9_.-]+$/.test(lookup)) {
+			$box.text('');
+			return;
+		}
+		$box.text('Reading the lookup...');
+		const oneshot = (search) => $.when(SERVICE.post('/servicesNS/nobody/assetdb/search/jobs', { search, exec_mode: 'oneshot', output_mode: 'json', count: 0 }).promise());
+		$.when(oneshot(`| inputlookup ${lookup} | head 200`), oneshot(`| inputlookup ${lookup} | stats count`))
+			.done((sample, counted) => {
+				const rows = (safeParse(Array.isArray(sample) ? sample[0] : sample, {}).results || []);
+				const total = ((safeParse(Array.isArray(counted) ? counted[0] : counted, {}).results || [])[0] || {}).count;
+				const columns = [];
+				rows.forEach((row) => Object.keys(row).forEach((k) => { if (!k.startsWith('_') && !columns.includes(k)) columns.push(k); }));
+				$box.empty().append($('<i class="icon-info-circle"></i>')).append(document.createTextNode(` ${total === undefined ? 'Unknown number of' : total} rows. Columns seen in the first rows: ${columns.length ? columns.join(', ') : '(none)'}. A source does not need to fill every column.`));
+			})
+			.fail((err) => $box.text(`Could not read the lookup: ${describeError(err)}`));
+	}
+
+	/**
+	 * Create and show the modal that edits the options of an existing source.
+	 */
+	function editSource(source) {
+		const sourceOptions = buildSourceOptions(source);
+		const $form = $('<div class="form-horizontal"></div>')
+			.append($('<p></p>').append($('<b></b>').text(source.name)).append(document.createTextNode(` (${source.lookup})`)))
+			.append($('<div class="adb-source-schema help-block"></div>'))
+			.append(sourceOptions.$el);
+		showSourceSchema($('.adb-source-schema', $form), source.lookup);
+
+		const modal = new Modal({
+			wide: true,
+			title: 'Edit Lookup',
+			primaryButton: 'Save',
+			onRemove: function () {},
+			onPrimaryBtnClick: function () {
+				$.when(sourceOptions.validate()).done((problem) => {
+					if (problem) return;
+					finishChange(updateLookups(Object.assign({ name: source.name }, sourceOptions.collect()), 'update'), 'section-lookups', this);
+				});
+			},
+		});
+		modal.setBody($form);
+		modal.show();
+	}
+
+	/**
 	 * Create and show the AddLookup modal to add a new lookup within the asset lookup list.
 	 *
 	 * @param {Array}	lookupArray		Array of lookup names currently within the asset lookup list.
@@ -737,6 +938,9 @@ require([
 					</div>                                        
 				</div>
             </div>`);
+
+		const sourceOptions = buildSourceOptions({});
+		$form.append($('<div class="adb-source-schema help-block"></div>')).append(sourceOptions.$el);
 
 		new SearchManager(
 			{
@@ -795,8 +999,10 @@ require([
 			{ tokens: true }
 		).render();
 
+		lookupInput.on('change', (value) => showSourceSchema($('.adb-source-schema', $form), typeof value === 'string' ? value : lookupInput.val()));
+
 		let addModal = new Modal({
-			wide: false,
+			wide: true,
 			title: 'Add Lookup',
 			primaryButton: 'Save',
 			onRemove: function () {
@@ -825,7 +1031,10 @@ require([
 				} else if (lookupArray.findIndex(item => item.lookup === lookupFile) > -1) {
 					lookupNameInput.setError(`An input with lookup ${lookupFile} already exists`);
 				} else {
-					finishChange(updateLookups(lookupName, lookupFile, 'add'), 'section-lookups', this);
+					$.when(sourceOptions.validate()).done((problem) => {
+						if (problem) return;
+						finishChange(updateLookups(Object.assign({ name: lookupName, lookup: lookupFile }, sourceOptions.collect()), 'add'), 'section-lookups', this);
+					});
 				}
 			},
 		});
@@ -847,7 +1056,7 @@ require([
 			title: 'Remove Lookup',
 			primaryButton: 'Remove',
 			onPrimaryBtnClick: function () {
-				finishChange(updateLookups(lookupName, null, 'delete'), 'section-lookups', this);
+				finishChange(updateLookups({ name: lookupName }, 'delete'), 'section-lookups', this);
 			},
 		});
 
@@ -1007,6 +1216,8 @@ require([
 								<tr>
 									<th>Name</th>
 									<th>Lookup</th>
+									<th>Role</th>
+									<th>Options</th>
 									<th>Action</th>
 								</tr>
 							</thead>
@@ -1078,9 +1289,12 @@ require([
 					<tr data-name="${_.escape(lookup.name)}">
 						<td>${_.escape(lookup.name)}</td>
 						<td>${_.escape(lookup.lookup)}</td>
-						<td><a class="adb-lookup-delete" href="#">Delete</a></td>
+						<td>${lookup.role === 'enrich' ? 'Enrich only' : 'Authoritative'}${Generator.sourceEnabled(lookup) ? '' : ' <span class="key-tag">Disabled</span>'}</td>
+						<td>${_.escape(sourceSummary(lookup))}</td>
+						<td><a class="adb-lookup-edit" href="#">Edit</a> | <a class="adb-lookup-delete" href="#">Delete</a></td>
 					</tr>
 				`);
+				$('.adb-lookup-edit', $tr).on('click', () => editSource(lookup));
 				$('.adb-lookup-delete', $tr).on('click', () => deleteLookup(lookupArray, lookup.name));
 				$('.lookups-table tbody', $container).append($tr);
 			});

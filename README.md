@@ -14,6 +14,21 @@ Create lookup files and corresponding lookup generation searches for each unique
 
  - **Delete lookup file**: Click the *Delete* link next to an existing lookup file in the *Lookups Table* to remove the lookup and prevent its contents from being merged into the *Asset Database*.
 
+#### Source options
+
+Click *Edit* on a lookup (or set them when adding it) to change how that source is read. All of them apply to that source's rows only.
+
+| Option | Description |
+| --- | --- |
+| Enabled | A disabled source is left out of the merge but keeps its settings. |
+| Role | *Authoritative* sources create assets and link assets that share keys. *Enrich only* sources (a vulnerability scanner, a firewall log) never create an asset and never link two assets: a row is attached to an asset only when its keys point at exactly one asset, otherwise it is dropped (the counts are logged). |
+| Max Age | Ignore rows older than this (`30d`, `12h`, `6mon`). Rows without a time are kept. |
+| Time Column | The column holding each row's epoch time when the lookup does not use `_time`. |
+| Row Filter | A `where` expression written against the source's own columns, e.g. `status!="decommissioned"`. It is validated by Splunk when saved. |
+| Column Mapping | One `field = source column` per line when a source names a column differently, e.g. `nt_host = Computer Name`. |
+
+When a lookup is chosen the dialog shows its row count and the columns it holds. That only informs: a source does not have to fill every column.
+
 ### Asset Fields
 
 Create fields to be stored within the *Asset Database* and merged between all input lookup files. 

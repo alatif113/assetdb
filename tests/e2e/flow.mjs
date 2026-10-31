@@ -18,6 +18,8 @@ const conf = async () => (await rest('/servicesNS/nobody/assetdb/configs/conf-as
 const savedSearch = async () => (await rest('/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen')).entry[0].content.search;
 const fieldsList = async () => (await rest('/servicesNS/nobody/assetdb/configs/conf-transforms/assetdb')).entry[0].content.fields_list;
 let originalSearch;
+let originalLookups;
+const generalConf = async () => (await conf()).find((e) => e.name === 'general').content;
 const modal = () => page.locator('.modal:visible');
 
 try {
@@ -25,6 +27,7 @@ try {
   await page.waitForSelector('#ab_config .lookups-table', { timeout: 60000 });
 
   originalSearch = await savedSearch();
+  originalLookups = (await generalConf()).lookups;
 
   // F-08: cancelling Remove Lookup must not change anything
   const lookupsBefore = (await conf()).find((e) => e.name === 'general').content.lookups;
@@ -37,9 +40,29 @@ try {
   await page.click('.modal:visible a.btn:has-text("Cancel")');
   check((await conf()).find((e) => e.name === 'general').content.lookups === lookupsBefore, 'cancelled lookup removal leaves the lookups config unchanged');
 
+  // Sources: edit options (max age, row filter, column mapping), see them stored and used by the saved search
+  await page.click('#ab_config a.tab-label:has-text("Asset Lookups")');
+  await page.click('#ab_config .adb-lookup-edit');
+  await modal().waitFor();
+  check((await modal().locator('.adb-source-schema').innerText()).length > 0, 'edit source shows the lookup schema box');
+  await page.fill('.modal:visible #inputSourceMaxAge input', 'nonsense');
+  await page.click('.modal:visible .btn-primary');
+  check((await modal().locator('#inputSourceMaxAge .error-message').count()) > 0, 'invalid max age is rejected');
+  await page.fill('.modal:visible #inputSourceMaxAge input', '45d');
+  await page.fill('.modal:visible #inputSourceFilter input', 'priority>>0');
+  await page.click('.modal:visible .btn-primary');
+  await page.waitForTimeout(1500);
+  check((await modal().locator('#inputSourceFilter .error-message').allInnerTexts()).some((t) => /malformed|unexpected/i.test(t)), 'invalid row filter is rejected with the parser message');
+  await page.fill('.modal:visible #inputSourceFilter input', 'priority>0');
+  await page.fill('.modal:visible #inputSourceColumns', 'owner = Owner Name');
+  await page.click('.modal:visible .btn-primary');
+  await page.waitForTimeout(2500);
+  const demo = JSON.parse((await generalConf()).lookups)[0];
+  check(demo.max_age === '45d' && demo.filter === 'priority>0' && demo.columns.owner === 'Owner Name' && demo.enabled === true, 'source options stored in the lookups JSON');
+  check((await savedSearch()).includes('relative_time(now(), "-45d")'), 'saved search applies the max age');
+
   // Settings: max keys is validated against the hard cap, valid values are saved, and the original is restored
-  const generalConf = async () => (await conf()).find((e) => e.name === 'general').content;
-  const originalMaxKeys = (await generalConf()).max_keys;
+    const originalMaxKeys = (await generalConf()).max_keys;
   await page.click('#ab_config a.tab-label:has-text("Settings")');
   await page.fill('#inputMaxKeys input', '500');
   await page.click('#ab_config .btn-save-settings');
@@ -73,6 +96,16 @@ try {
   await page.click('.modal:visible .btn-primary');
   const fillnullErr = await modal().locator('.error-message').allInnerTexts();
   check(fillnullErr.some((t) => /key field/i.test(t)) || (await conf()).every((e) => e.name !== name), 'fill null on a key field is refused');
+
+  // eval expressions are checked by Splunk's parser (the v2 parser endpoint needs POST)
+  await page.fill('.modal:visible #inputEvalExp input', 'if(');
+  await page.fill('.modal:visible #inputFillnull input', '');
+  await page.click('.modal:visible #inputKeyField button[data-value="0"]');
+  await page.click('.modal:visible .btn-primary');
+  await page.waitForTimeout(1500);
+  check((await modal().locator('#inputEvalExp .error-message').count()) > 0, 'a malformed eval expression is rejected by the parser');
+  await page.fill('.modal:visible #inputEvalExp input', '');
+  await page.click('.modal:visible #inputKeyField button[data-value="1"]');
 
   // add a key field with the new cleaning options
   await page.fill('.modal:visible #inputFillnull input', '').catch(() => {});
@@ -114,10 +147,15 @@ try {
   // the UI regenerates the saved search on every change; put back what was there before
   const csrf = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
   if (originalSearch !== undefined && csrf) {
-    const resp = await ctx.request.post(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen`, {
+    if (originalLookups !== undefined) {
+      await ctx.request.post(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/configs/conf-assetdb/general`, {
+        headers: { 'X-Splunk-Form-Key': csrf.value, 'X-Requested-With': 'XMLHttpRequest' }, form: { lookups: originalLookups, output_mode: 'json' },
+      }).catch(() => {});
+      check((await generalConf().catch(() => ({}))).lookups === originalLookups, 'lookups config restored');
+    }
+    await ctx.request.post(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen`, {
       headers: { 'X-Splunk-Form-Key': csrf.value, 'X-Requested-With': 'XMLHttpRequest' }, form: { search: originalSearch, output_mode: 'json' },
-    }).catch((e) => ({ status: () => 0, text: async () => String(e) }));
-    console.log('restore POST', resp.status(), (await resp.text()).slice(0, 150));
+    }).catch(() => {});
     check((await savedSearch().catch(() => null)) === originalSearch, 'saved search restored to its original text');
   }
   await page.screenshot({ path: 'dist/e2e-flow.png' }).catch(() => {});

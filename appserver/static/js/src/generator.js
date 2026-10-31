@@ -16,6 +16,11 @@ define([], function () {
 	const FIELD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 	const SOURCE_NAME_RE = /^[A-Za-z0-9_.-]+$/;
 	const LOOKUP_FILE_RE = /^[A-Za-z0-9_.-]+$/;
+	const SOURCE_ROLES = ['authoritative', 'enrich'];
+	// relative_time offset such as 30d, 12h, 6mon
+	const MAX_AGE_RE = /^[1-9]\d*(s|m|h|d|w|mon|q|y)$/;
+	// A lookup column name as written in SPL between single quotes.
+	const COLUMN_RE = /^[^'"\\|`[\]\r\n]+$/;
 	const MERGE_ORDER_RE = /^[A-Za-z0-9_]+$/;
 	const MERGE_METHODS = ['latest', 'earliest', 'min', 'max', 'avg', 'sum', 'coalesce'];
 	const DEFAULT_MAX_KEYS = 25;
@@ -90,6 +95,34 @@ define([], function () {
 	}
 
 	/**
+	 * A source is enabled unless `enabled` is explicitly false/0 (older configs have no such property).
+	 */
+	function sourceEnabled(source) {
+		const v = source.enabled;
+		return !(v === false || v === 0 || ['0', 'false', 'no'].includes(String(v).toLowerCase()));
+	}
+
+	/**
+	 * Throw unless the parentheses of an expression balance outside string literals, so it can be wrapped in
+	 * another condition without its own `)` escaping the wrapper.
+	 */
+	function checkBalancedParens(expression) {
+		let depth = 0;
+		let quote = null;
+		const text = String(expression);
+		for (let i = 0; i < text.length; i++) {
+			const c = text[i];
+			if (quote) {
+				if (c === '\\') i++;
+				else if (c === quote) quote = null;
+			} else if (c === '"' || c === "'") quote = c;
+			else if (c === '(') depth++;
+			else if (c === ')' && --depth < 0) throw new Error('Invalid row filter: unbalanced parentheses');
+		}
+		if (depth !== 0) throw new Error('Invalid row filter: unbalanced parentheses');
+	}
+
+	/**
 	 * max_keys for adbmerge from the [general] stanza of assetdb.conf: a positive integer, default 25.
 	 */
 	function parseMaxKeys(fieldArray) {
@@ -155,10 +188,43 @@ define([], function () {
 		let earliestFinal = [];
 		let keyTemps = [];
 		let keyFields = [];
-		const lookupsArray = getLookupArray(fieldArray);
-		for (const {lookup, name} of lookupsArray) {
+		// Sources: only enabled ones take part. Per source options are applied to that source's rows only (source_lookup test).
+		const lookupsArray = getLookupArray(fieldArray).filter(sourceEnabled);
+		const rowFilters = [];
+		const ageFilters = [];
+		const timeMaps = [];
+		const columnMaps = {};
+		const enrichLookups = [];
+		for (const src of lookupsArray) {
+			const {lookup, name} = src;
 			if (!LOOKUP_FILE_RE.test(lookup)) throw new Error(`Invalid lookup "${lookup}"`);
 			if (!SOURCE_NAME_RE.test(name)) throw new Error(`Invalid lookup input name "${name}"`);
+			const isThis = `source_lookup=${splQuote(lookup)}`;
+			const notThis = `source_lookup!=${splQuote(lookup)}`;
+
+			const role = src.role || 'authoritative';
+			if (!SOURCE_ROLES.includes(role)) throw new Error(`Invalid role "${role}" for source ${name}`);
+			if (role === 'enrich') enrichLookups.push(lookup);
+
+			if (src.filter) {
+				checkEvalExpression(src.filter);
+				checkBalancedParens(src.filter);
+				rowFilters.push(`(${notThis} OR (${src.filter}))`);
+			}
+			if (src.time_field) {
+				if (!COLUMN_RE.test(src.time_field)) throw new Error(`Invalid time column "${src.time_field}" for source ${name}`);
+				timeMaps.push(`${isThis}, tonumber('${src.time_field}')`);
+			}
+			if (src.max_age) {
+				if (!MAX_AGE_RE.test(src.max_age)) throw new Error(`Invalid max age "${src.max_age}" for source ${name} (use e.g. 30d, 12h, 6mon)`);
+				ageFilters.push(`(${notThis} OR isnull(_time) OR _time >= relative_time(now(), "-${src.max_age}"))`);
+			}
+			const columns = src.columns && typeof src.columns === 'object' ? src.columns : {};
+			for (const [target, column] of Object.entries(columns)) {
+				if (!FIELD_NAME_RE.test(target)) throw new Error(`Invalid field name "${target}" in the column mapping of source ${name}`);
+				if (!COLUMN_RE.test(column)) throw new Error(`Invalid column "${column}" in the column mapping of source ${name}`);
+				(columnMaps[target] = columnMaps[target] || []).push(`${isThis}, '${column}'`);
+			}
 		}
 		const lookupFiles = lookupsArray.map(({lookup}) => `| \`input_adb_lookup(${lookup})\``);
 		const lookupNames = lookupsArray.map(({lookup, name}) => `source_lookup=${splQuote(lookup)}, ${splQuote(name)}`);
@@ -308,6 +374,14 @@ define([], function () {
 
 		lookupFiles.forEach(command);
 		if (lookupNames.length) { section('Map source lookup to source name'); command(`| eval source=case(${lookupNames.join(', ')})`); }
+		if (enrichLookups.length) { section('Mark rows from enrich-only sources (they never create or link assets)'); command(`| eval adb_auth=case(${enrichLookups.map((l) => `source_lookup=${splQuote(l)}, 0`).join(', ')}, true(), 1)`); }
+		if (rowFilters.length) { section('Row filters (written against the source columns)'); command(`| where ${rowFilters.join(' AND ')}`); }
+		if (timeMaps.length) { section('Time columns of sources that do not use _time'); command(`| eval _time=case(${timeMaps.join(', ')}, true(), _time)`); }
+		if (ageFilters.length) { section('Drop rows older than a source\'s max age'); command(`| where ${ageFilters.join(' AND ')}`); }
+		if (Object.keys(columnMaps).length) {
+			section('Map source columns to fields');
+			command(`| eval ${Object.entries(columnMaps).map(([target, cases]) => `${target} = case(${cases.join(', ')}, true(), ${target})`).join(', ')}`);
+		}
 		if (allowedSources.length) { section('Discard values from sources a field does not accept'); command(`| eval ${allowedSources.join(', ')}`); }
 		if (multivalue.length) { section('Split multivalue fields'); command(`| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`); }
 		if (normalize.length) { section('Normalize values'); normalize.forEach(command); }
@@ -328,7 +402,7 @@ define([], function () {
 		command('| search _key=*');
 		// _time is carried through the first stats so that `latest` and the recent-first multivalue order still have a timestamp in the final stats
 		if (recentMv) { section('Sort newest first (multivalue fields keep their most recent values)'); command('| sort 0 -_time'); }
-		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
+		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${((usesLatest || recentMv) ? ['latest(_time) as _time'] : []).concat(enrichLookups.length ? ['max(adb_auth) as adb_auth'] : [], keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
 		if (keys.length) { section('Deep merge assets with matching key fields (using custom command)'); command('| eval _key = ' + (keyRefs.length == 1 ? keyRefs[0] : `mvappend(${keyRefs.join(', ')})`)); }
 		command(`| adbmerge max_keys=${parseMaxKeys(fieldArray)}`);
 		command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
@@ -354,6 +428,9 @@ define([], function () {
 		checkEvalExpression: checkEvalExpression,
 		isReservedFieldName: isReservedFieldName,
 		parseMaxKeys: parseMaxKeys,
+		sourceEnabled: sourceEnabled,
+		checkBalancedParens: checkBalancedParens,
+		MAX_AGE_RE: MAX_AGE_RE,
 		parseMaxValues: parseMaxValues,
 		FIELD_NAME_RE: FIELD_NAME_RE,
 		NORMALIZERS: NORMALIZERS,

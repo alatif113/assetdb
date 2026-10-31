@@ -98,3 +98,46 @@ def test_earliest_sum_and_numeric_max(sandbox):
     assert r["first"] == ["oldest"], r
     assert r["hits"] == ["13"], r
     assert r["score"] == ["100"], r        # numeric max: 100 > 10 > 9 (a text max would pick "9")
+
+
+# --- source options -----------------------------------------------------------------------
+
+def test_disabled_source_is_ignored(sandbox):
+    sandbox.fields = [field("mac", key_field="1"), field("owner", field_type="single")]
+    sandbox.add_source("a", [{"mac": "m1", "owner": "alice"}])
+    sandbox.add_source("b", [{"mac": "m2", "owner": "bob"}], enabled=False)
+    assert [r["mac"] for r in sandbox.run()] == [["m1"]]
+
+
+def test_column_mapping_renames_columns_per_source(sandbox):
+    sandbox.fields = [field("mac", key_field="1"), field("owner", field_type="single")]
+    sandbox.add_source("a", [{"mac": "m1", "owner": "alice"}])
+    sandbox.add_source("b", [{"HW Addr": "m1", "Who": "bob-ignored", "Contact": "carol"}], columns={"mac": "HW Addr", "owner": "Who"})
+    rows = sandbox.run()
+    assert len(rows) == 1, rows         # source b's "HW Addr" column became the mac key, so it merged with source a
+    assert rows[0]["owner"] in (["alice"], ["bob-ignored"]), rows
+
+
+def test_row_filter_max_age_and_time_column_apply_to_one_source(sandbox):
+    import time
+    now = int(time.time())
+    sandbox.fields = [field("mac", key_field="1")]
+    sandbox.add_source("a", [{"mac": "keep-a", "status": "active"}, {"mac": "drop-a", "status": "decommissioned"}], filter='status!="decommissioned"')
+    sandbox.add_source("b", [{"mac": "fresh-b", "seen": now - 86400}, {"mac": "stale-b", "seen": now - 90 * 86400}],
+                       max_age="30d", time_field="seen")
+    sandbox.add_source("c", [{"mac": "old-c", "status": "decommissioned", "seen": 100}])   # no filter, no max age: untouched
+    macs = sorted(r["mac"][0] for r in sandbox.run())
+    assert macs == ["fresh-b", "keep-a", "old-c"], macs
+
+
+def test_enrich_sources_add_data_but_never_create_or_link_assets(sandbox):
+    sandbox.fields = [field("mac", key_field="1"), field("ip", key_field="1"), field("vulns", field_type="single", merge_method="max", value_type="number")]
+    sandbox.add_source("cmdb", [{"mac": "m1", "ip": "10.0.0.1"}, {"mac": "m2", "ip": "10.0.0.2"}])
+    sandbox.add_source("scan", [{"mac": "", "ip": "10.0.0.1", "vulns": 7},          # attaches to the m1 asset
+                                {"mac": "m1", "ip": "10.0.0.2", "vulns": 99},       # ambiguous: would link m1 and m2
+                                {"mac": "", "ip": "10.9.9.9", "vulns": 5}],         # matches nothing: no new asset
+                       role="enrich")
+    rows = {r["mac"][0]: r for r in sandbox.run()}
+    assert sorted(rows) == ["m1", "m2"], rows
+    assert rows["m1"]["vulns"] == ["7"], rows["m1"]
+    assert not rows["m2"].get("vulns"), rows["m2"]

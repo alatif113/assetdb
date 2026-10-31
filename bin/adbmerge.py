@@ -10,7 +10,7 @@ from splunklib.searchcommands import \
 from splunklib.searchcommands.validators import Integer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from adbmerge_core import HARD_MAX_KEYS, merge_assets
+from adbmerge_core import HARD_MAX_KEYS, merge
 
 @Configuration()
 class ADBMergeCommand(ReportingCommand):
@@ -26,15 +26,18 @@ class ADBMergeCommand(ReportingCommand):
             yield event
 
     def reduce(self, events):
-        merged, null_keys, large_keys, total = merge_assets(events, self.max_keys)
+        result = merge(events, self.max_keys)
+        stats = result.stats
 
-        for event in merged:
+        for event in result.merged:
             yield event
 
-        self.logger.info('adbmerge: {} assets in, {} ignored with null keys, {} dropped for sharing more than {} unique keys'.format(
-            total, null_keys, large_keys, self.max_keys))
-        if null_keys or large_keys:
-            self.logger.warning('adbmerge: ignored {}/{} assets with null keys and dropped {}/{} assets whose merged key set exceeds {} unique keys'.format(
-                null_keys, total, large_keys, total, self.max_keys))
+        self.logger.info('adbmerge: {total} assets in, {null_keys} ignored with null keys, {large_keys} dropped for sharing more than {max_keys} '
+                         'unique keys, {enrich_unmatched} enrich rows matched no asset, {enrich_ambiguous} matched several'.format(max_keys=self.max_keys, **stats))
+        dropped = stats['null_keys'] + stats['large_keys'] + stats['enrich_unmatched'] + stats['enrich_ambiguous']
+        if dropped:
+            self.logger.warning('adbmerge: dropped {dropped}/{total} assets (null keys {null_keys}, more than {max_keys} unique keys {large_keys}, '
+                                'unmatched enrich rows {enrich_unmatched}, ambiguous enrich rows {enrich_ambiguous})'.format(
+                                    dropped=dropped, max_keys=self.max_keys, **stats))
 
 dispatch(ADBMergeCommand, sys.argv, sys.stdin, sys.stdout, __name__)

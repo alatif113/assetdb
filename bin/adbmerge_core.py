@@ -23,35 +23,62 @@ def _find(parent, key):
     return root
 
 
-def merge_assets(events, max_keys):
+class MergeResult(object):
+    """What a merge produced: the merged events and counters for the run summary."""
+
+    def __init__(self):
+        self.merged = []
+        self.stats = {'total': 0, 'null_keys': 0, 'large_keys': 0, 'enrich_unmatched': 0, 'enrich_ambiguous': 0}
+
+
+def _clean_keys(event):
+    raw_keys = event['_key'] if isinstance(event['_key'], list) else [event['_key']]
+    key_list = []
+    for raw in raw_keys:
+        if raw is None:
+            continue
+        key = raw.strip()
+        if key and key not in key_list:
+            key_list.append(key)
+    return key_list
+
+
+def _is_enrich(event):
+    """Rows from enrich-only sources carry adb_auth=0 (the generator adds the field only when such sources exist)."""
+    value = event.get('adb_auth')
+    if isinstance(value, list):
+        value = max(value) if value else None
+    return value is not None and str(value).strip() == '0'
+
+
+def merge(events, max_keys):
     """Merge assets that share any key, directly or transitively.
+
+    Authoritative rows create assets and link assets together. Enrich-only rows (adb_auth=0) never create or link
+    assets: a row attaches to an asset only when its keys point at exactly one asset, otherwise it is dropped.
 
     :param events: iterable of dict-like events with a `_key` field (str or list of str)
     :param max_keys: clusters with more unique keys than this are dropped
-    :return: (merged_events, null_keys, large_keys, total); large_keys counts the dropped assets
+    :return: MergeResult
     """
+    result = MergeResult()
+    stats = result.stats
     max_keys = min(max_keys, HARD_MAX_KEYS)
     parent = {}  # key -> parent key (union-find forest)
     size = {}  # root -> number of unique keys in its cluster
-    entries = []  # (first_key, event) in arrival order
-    null_keys = 0
-    large_keys = 0
-    total = 0
+    entries = []  # (first_key, event) of authoritative rows, in arrival order
+    enrich = []  # (key_list, event) of enrich-only rows, in arrival order
 
     for event in events:
-        total += 1
-        raw_keys = event['_key'] if isinstance(event['_key'], list) else [event['_key']]
-        key_list = []
-
-        for raw in raw_keys:
-            if raw is None:
-                continue
-            key = raw.strip()
-            if key and key not in key_list:
-                key_list.append(key)
+        stats['total'] += 1
+        key_list = _clean_keys(event)
 
         if len(key_list) == 0:
-            null_keys += 1
+            stats['null_keys'] += 1
+            continue
+
+        if _is_enrich(event):
+            enrich.append((key_list, event))
             continue
 
         first_root = None
@@ -81,15 +108,34 @@ def merge_assets(events, max_keys):
     for first_key, event in entries:
         groups.setdefault(first_key, []).append(event)
 
-    merged = []
     for first_key, group in groups.items():
         root = _find(parent, first_key)
         if root not in members:
-            large_keys += len(group)
+            stats['large_keys'] += len(group)
             continue
         keys = sorted(members[root])
         for event in group:
             event['asset'] = list(keys)
-            merged.append(event)
+            result.merged.append(event)
 
-    return merged, null_keys, large_keys, total
+    for key_list, event in enrich:
+        roots = set(_find(parent, key) for key in key_list if key in parent)
+        if not roots:
+            stats['enrich_unmatched'] += 1
+        elif len(roots) > 1:
+            stats['enrich_ambiguous'] += 1
+        else:
+            root = roots.pop()
+            if root in members:
+                event['asset'] = sorted(members[root])
+                result.merged.append(event)
+            else:
+                stats['large_keys'] += 1
+
+    return result
+
+
+def merge_assets(events, max_keys):
+    """Backwards compatible wrapper: (merged_events, null_keys, large_keys, total); large_keys counts dropped assets."""
+    result = merge(events, max_keys)
+    return result.merged, result.stats['null_keys'], result.stats['large_keys'], result.stats['total']

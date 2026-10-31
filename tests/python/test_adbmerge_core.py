@@ -256,3 +256,51 @@ def test_max_keys_is_capped_at_the_hard_limit():
     merged, _, large, _ = run([big, ok], max_keys=10_000)
     assert [e["name"] for e in merged] == ["B"]
     assert large == 1
+
+
+# --- enrich-only sources -------------------------------------------------------------------
+
+def enr(name, keys, auth="0"):
+    return {"name": name, "_key": keys, "adb_auth": auth}
+
+
+def test_enrich_row_attaches_to_exactly_one_asset_and_gets_its_asset_list():
+    from adbmerge_core import merge
+    result = merge([ev("A", ["a", "b"]), enr("E", ["b", "zzz"])], MAX)
+    assert clusters(result.merged) == {"A": ["a", "b"], "E": ["a", "b"]}
+
+
+def test_enrich_row_never_links_two_assets():
+    from adbmerge_core import merge
+    result = merge([ev("A", ["a"]), ev("B", ["b"]), enr("E", ["a", "b"])], MAX)
+    assert clusters(result.merged) == {"A": ["a"], "B": ["b"]}
+    assert result.stats["enrich_ambiguous"] == 1
+
+
+def test_enrich_row_without_a_matching_asset_is_dropped_and_never_creates_one():
+    from adbmerge_core import merge
+    result = merge([ev("A", ["a"]), enr("E", ["unknown"])], MAX)
+    assert clusters(result.merged) == {"A": ["a"]}
+    assert result.stats["enrich_unmatched"] == 1
+
+
+def test_enrich_rows_do_not_count_toward_the_cluster_size_or_bridge_keys():
+    from adbmerge_core import merge
+    # three enrich rows each carrying a different new key do not grow the asset past max_keys=2
+    events = [ev("A", ["a", "b"])] + [enr("E%d" % i, ["a", "extra%d" % i]) for i in range(3)]
+    result = merge(events, 2)
+    assert sorted(e["name"] for e in result.merged) == ["A", "E0", "E1", "E2"]
+    assert all(e["asset"] == ["a", "b"] for e in result.merged)
+
+
+def test_enrich_row_attached_to_an_overflow_cluster_is_dropped_with_it():
+    from adbmerge_core import merge
+    result = merge([ev("A", ["a", "b", "c"]), enr("E", ["a"])], 2)
+    assert result.merged == [] and result.stats["large_keys"] == 2
+
+
+def test_auth_value_variants_and_default():
+    from adbmerge_core import merge
+    # missing adb_auth and adb_auth=1 are authoritative; a multivalue with an authoritative member is too
+    result = merge([ev("A", ["a"]), enr("B", ["b"], auth="1"), enr("C", ["c"], auth=["0", "1"])], MAX)
+    assert sorted(e["name"] for e in result.merged) == ["A", "B", "C"]

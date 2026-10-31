@@ -206,3 +206,9 @@ div[data-component='splunk-core:/splunkjs/mvc/components/MultiDropdown'] {
 	text-transform: uppercase;
 	opacity: 0.8;
 }
+
+.adb-textarea {
+	width: 100%;
+	box-sizing: border-box;
+	font-family: monospace;
+}

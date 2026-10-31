@@ -309,3 +309,48 @@ test('numeric and time value types are converted so min and max compare numbers'
 	assert.ok(!spl.includes('tonumber(label)'), spl);
 	assert.ok(spl.indexOf('tonumber(score)') < spl.indexOf('| stats values(source)'), 'before the first stats');
 });
+
+// --- source options: enabled, role, column mapping, max age, time column, row filter ---------
+
+const withSources = (sources, fields) => gen(fields || [single('mac', { key_field: '1' }), single('owner')], { name: 'general', content: { lookups: JSON.stringify(sources) } });
+
+test('disabled sources are left out completely', () => {
+	const spl = withSources([{ name: 'a', lookup: 'a.csv' }, { name: 'b', lookup: 'b.csv', enabled: false }, { name: 'c', lookup: 'c.csv', enabled: '0' }]);
+	assert.ok(spl.includes('input_adb_lookup(a.csv)'), spl);
+	assert.ok(!spl.includes('b.csv') && !spl.includes('c.csv'), spl);
+	assert.ok(spl.includes('source=case(source_lookup="a.csv", "a")'), spl);
+	assert.ok(withSources([{ name: 'a', lookup: 'a.csv', enabled: true }, { name: 'b', lookup: 'b.csv' }]).includes('b.csv'), 'enabled by default');
+});
+
+test('column mapping renames source columns into fields for that source only', () => {
+	const spl = withSources([
+		{ name: 'a', lookup: 'a.csv', columns: { mac: 'MAC Address', owner: 'Owner Name' } },
+		{ name: 'b', lookup: 'b.csv', columns: { mac: 'hw_addr' } },
+	]);
+	assert.ok(spl.includes(`| eval mac = case(source_lookup="a.csv", 'MAC Address', source_lookup="b.csv", 'hw_addr', true(), mac), owner = case(source_lookup="a.csv", 'Owner Name', true(), owner)`), spl);
+	assert.ok(spl.indexOf('Map source columns') < spl.indexOf('Build match keys'), 'mapped before the keys are built');
+	assert.throws(() => withSources([{ name: 'a', lookup: 'a.csv', columns: { 'bad field': 'x' } }]), /field name/i);
+	assert.throws(() => withSources([{ name: 'a', lookup: 'a.csv', columns: { mac: "x' OR 1=1 OR 'y" } }]), /column/i);
+});
+
+test('max age and time column filter only that source, after the time column is mapped', () => {
+	const spl = withSources([{ name: 'a', lookup: 'a.csv', max_age: '30d', time_field: 'Last Seen' }, { name: 'b', lookup: 'b.csv' }]);
+	assert.ok(spl.includes(`| eval _time=case(source_lookup="a.csv", tonumber('Last Seen'), true(), _time)`), spl);
+	assert.ok(spl.includes('| where (source_lookup!="a.csv" OR isnull(_time) OR _time >= relative_time(now(), "-30d"))'), spl);
+	assert.ok(spl.indexOf('tonumber(\'Last Seen\')') < spl.indexOf('relative_time'), 'time mapped before the age filter');
+	for (const bad of ['30', 'abc', '0d', '30d) OR (1=1']) assert.throws(() => withSources([{ name: 'a', lookup: 'a.csv', max_age: bad }]), /max age/i, bad);
+});
+
+test('row filters wrap the expression so it cannot affect other sources, and must be balanced', () => {
+	const spl = withSources([{ name: 'a', lookup: 'a.csv', filter: 'status!="decommissioned"' }, { name: 'b', lookup: 'b.csv', filter: 'like(os, "%win%")' }]);
+	assert.ok(spl.includes('| where (source_lookup!="a.csv" OR (status!="decommissioned")) AND (source_lookup!="b.csv" OR (like(os, "%win%")))'), spl);
+	for (const bad of ['1=1) OR (1=1', '(a=1', 'x | delete', 'x [search *]']) assert.throws(() => withSources([{ name: 'a', lookup: 'a.csv', filter: bad }]), /row filter|eval expression/i, bad);
+});
+
+test('enrich sources mark their rows and carry the flag through the first stats; roles are validated', () => {
+	const spl = withSources([{ name: 'a', lookup: 'a.csv' }, { name: 'scan', lookup: 'scan.csv', role: 'enrich' }]);
+	assert.ok(spl.includes('| eval adb_auth=case(source_lookup="scan.csv", 0, true(), 1)'), spl);
+	assert.ok(spl.includes('max(adb_auth) as adb_auth'), spl);
+	assert.ok(!withSources([{ name: 'a', lookup: 'a.csv' }]).includes('adb_auth'), 'no flag without enrich sources');
+	assert.throws(() => withSources([{ name: 'a', lookup: 'a.csv', role: 'boss' }]), /role/i);
+});
