@@ -34,6 +34,23 @@
   </row>
   <row>
     <panel>
+      <title>Recent changes</title>
+      <html>
+        <p>What the last runs added, removed or changed (needs Change History on the Settings tab set to the KV store collection; in index mode search <code>sourcetype=assetdb:change</code>). An asset whose keys change shows up as removed and added.</p>
+      </html>
+      <table>
+        <search>
+          <query>| inputlookup assetdb_changes | sort 0 -run_time | head 200 | eval run_time=strftime(run_time, "%F %T") | table run_time change asset changed_fields asset_id</query>
+          <earliest>-1m</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">10</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
       <title>Assets whose sources disagree</title>
       <html>
         <p>Fields marked <i>Flag Conflicts</i> that had more than one different value across the sources of an asset (first 200 assets).</p>

@@ -100,6 +100,16 @@ class Splunk(object):
                 assert m.get("type") not in ("FATAL", "ERROR"), "search error: %s" % m
         return rows
 
+    def search_job(self, spl):
+        """Run a search as a blocking job and assert it did not fail. Unlike the export endpoint this sees the job's
+        error messages (an eval error in the middle of a pipeline otherwise just yields no rows)."""
+        base = self.mgmt + "/servicesNS/nobody/%s/search/jobs" % APP
+        r = self.s.post(base, data={"search": spl, "exec_mode": "blocking", "output_mode": "json"}, timeout=600)
+        assert r.status_code < 300, "job failed to start (%s): %s" % (r.status_code, r.text[:400])
+        content = self.s.get("%s/%s" % (base, r.json()["sid"]), params={"output_mode": "json"}, timeout=60).json()["entry"][0]["content"]
+        errors = [m for m in (content.get("messages") or []) if m.get("type") in ("FATAL", "ERROR")]
+        assert not content.get("isFailed") and not errors, "search failed: %s\n%s" % (errors, spl[:400])
+
     def web_session(self):
         """Log in to Splunk Web with user/password; returns a requests.Session or skips."""
         if not (self.user and self.password):

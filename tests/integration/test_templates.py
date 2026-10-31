@@ -32,7 +32,7 @@ def test_the_hosts_template_builds_a_source_lookup_with_host_names(splunk, run_i
     lookup = "adbtest_%s_hosts.csv" % run_id
     spl = spl.replace("assetdb_src_splunk_hosts.csv", lookup)
     try:
-        splunk.search(spl)
+        splunk.search_job(spl)      # a job, not an export: the lookup file is complete when the job is done
         rows = splunk.search("| inputlookup %s | head 5" % lookup)
         assert rows and all(r.get("nt_host") for r in rows), rows
         assert all(r.get("source_lookup") == lookup for r in rows), "output_adb_lookup adds the source_lookup column"

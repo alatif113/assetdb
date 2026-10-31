@@ -91,6 +91,14 @@ def env(splunk, run_id):
             "fields_list": "_key,asset,cluster_keys,cluster_rows,source,source_lookup,run_time"})
         assert r.status_code in (200, 201), r.text
         e.created.append(lambda: splunk.delete(ns + "/data/transforms/lookups/" + e.kv + "_overflow"))
+        r = splunk.post(ns + "/storage/collections/config", {"name": e.kv + "_changes", "field.run_time": "number"})
+        assert r.status_code in (200, 201), r.text
+        e.created.append(lambda: splunk.delete(ns + "/storage/collections/config/" + e.kv + "_changes"))
+        r = splunk.post(ns + "/data/transforms/lookups", {
+            "name": e.kv + "_changes", "external_type": "kvstore", "collection": e.kv + "_changes",
+            "fields_list": "_key,run_time,change,asset_id,asset,changed_fields"})
+        assert r.status_code in (200, 201), r.text
+        e.created.append(lambda: splunk.delete(ns + "/data/transforms/lookups/" + e.kv + "_changes"))
 
         mega = "|".join("mega%02d" % i for i in range(26))  # 26 keys > max_keys=25
         data = {

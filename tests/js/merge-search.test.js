@@ -501,3 +501,28 @@ test('the explain search reuses the pipeline up to the match keys and filters to
 	assert.throws(() => buildExplainSearch(JSON.parse(JSON.stringify(load().makeMergeSearchLines([general, single('owner')]))), ['a'], []), /key field/i);
 	assert.throws(() => buildExplainSearch(lines, [], []), /No keys/i);
 });
+
+// --- change history ---------------------------------------------------------------------
+
+test('mvappend is never called with a single argument (SPL rejects it)', () => {
+	const one = gen([single('only', { track_conflicts: '1' })], { name: 'general', content: { lookups: general.content.lookups, change_history: 'kv' } });
+	assert.ok(!/mvappend\([^,()]*\)/.test(one.replace(/mvappend\([^)]*,[^)]*\)/g, '')), one);
+	assert.ok(one.includes('| eval conflicts = if(mvcount(only__v) > 1, "only", null())'), one);
+	assert.ok(one.includes('changed_fields=if(change="changed", if(mvcount(adbh_only) > 1, "only", null()), null())'), one);
+});
+
+test('change history is off by default; kv and index modes build the diff against the previous assetdb', () => {
+	const cfg = (g) => gen([single('mac', { key_field: '1' }), single('owner'), mvField('ip')], { name: 'general', content: Object.assign({ lookups: general.content.lookups }, g) });
+	assert.ok(!cfg({}).includes('assetdb_changes'), 'off by default');
+	const kv = cfg({ change_history: 'kv', history_rows: '500' });
+	assert.ok(kv.includes('| append [| inputlookup assetdb | eval adb_side="old"'), kv);
+	assert.ok(kv.includes('adbh_mac=md5(coalesce(mvjoin(mvsort(mac), "|"), ""))'), kv);
+	assert.ok(kv.includes('| inputlookup append=true assetdb_changes | sort 0 -run_time | head 500 | outputlookup assetdb_changes | where 1=0]'), kv);
+	assert.ok(kv.includes('adb_n_old < 50000'), 'skipped when the previous assetdb may have been cut off by the KV read limit');
+	assert.ok(kv.indexOf('assetdb_changes') > kv.indexOf('adb_guard=0'), 'only for runs that are written');
+	const idx = cfg({ change_history: 'index', history_index: 'assetdb_history' });
+	assert.ok(idx.includes('| eval _time=run_time | collect index=assetdb_history sourcetype="assetdb:change" source="assetdb"'), idx);
+	assert.throws(() => cfg({ change_history: 'index' }), /index name/i);
+	assert.throws(() => cfg({ change_history: 'index', history_index: 'a b; delete' }), /index name/i);
+	assert.throws(() => cfg({ change_history: 'sometimes' }), /change history mode/i);
+});

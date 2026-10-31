@@ -1284,6 +1284,35 @@ require([
 			value: String(general.runs_to_keep === undefined ? Generator.DEFAULT_RUNS_TO_KEEP : general.runs_to_keep),
 			help: 'How many runs the run history (assetdb_runs) keeps; older runs are removed on every run, so it cannot grow without bound',
 		});
+		const historyInput = new SelectInput({
+			id: 'inputChangeHistory',
+			label: 'Change History',
+			choices: [
+				{ label: 'Off', value: 'off' },
+				{ label: 'KV store collection (assetdb_changes)', value: 'kv' },
+				{ label: 'Index', value: 'index' },
+			],
+			value: general.change_history || 'off',
+			help: 'Record which assets were added, removed or changed (and which fields) on every run, by comparing with the previous asset database. Not recorded for runs blocked by the safety check, or when assetdb holds 50,000 assets or more (the KV read limit). An asset whose keys change shows up as removed and added',
+		});
+		const historyIndexInput = new TextInput({
+			id: 'inputHistoryIndex',
+			label: 'History Index',
+			value: general.history_index || '',
+			help: 'Index mode only: the index that receives the change events (sourcetype assetdb:change). It must already exist; on Splunk Cloud an admin creates it first',
+		});
+		const historyRowsInput = new TextInput({
+			id: 'inputHistoryRows',
+			label: 'History Rows',
+			value: String(general.history_rows === undefined ? Generator.DEFAULT_HISTORY_ROWS : general.history_rows),
+			help: 'KV mode only: how many change records are kept (100 to 200000); older ones are removed on every run',
+		});
+		const toggleHistory = () => {
+			const mode = historyInput.getValue();
+			mode === 'index' ? historyIndexInput.getInput().show() : historyIndexInput.getInput().hide();
+			mode === 'kv' ? historyRowsInput.getInput().show() : historyRowsInput.getInput().hide();
+		};
+		historyInput.getInput().on('change', toggleHistory);
 		const scopeFieldInput = new TextInput({
 			id: 'inputScopeField',
 			label: 'Scope Column',
@@ -1320,12 +1349,17 @@ require([
 			.append(keyBlocklistInput.getInput())
 			.append(maxKeyShareInput.getInput())
 			.append(scopeFieldInput.getInput())
+			.append(historyInput.getInput())
+			.append(historyIndexInput.getInput())
+			.append(historyRowsInput.getInput())
 			.append(minRatioInput.getInput())
 			.append(runsToKeepInput.getInput())
 			.append(scheduledInput.getInput())
 			.append(scheduleInput.getInput());
 		const $save = $('<a href="#" class="btn btn-primary btn-save-settings">Save Settings</a>');
 		$form.append($('<div class="control-group"></div>').append($('<div class="controls"></div>').append($save)));
+
+		toggleHistory();
 
 		// recent runs (read only)
 		const $runs = $('<div class="adb-runs"><h4 class="adb-group-title">Recent runs</h4><div class="adb-runs-body help-block">Loading...</div></div>');
@@ -1360,6 +1394,15 @@ require([
 				scopeFieldInput.setError('That column name has a character that is not allowed');
 				invalid = true;
 			} else scopeFieldInput.clearError();
+			if (historyInput.getValue() === 'index' && !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(historyIndexInput.getValue().trim())) {
+				historyIndexInput.setError('Enter the name of an existing index');
+				invalid = true;
+			} else historyIndexInput.clearError();
+			const historyRows = parseInt(historyRowsInput.getValue());
+			if (!/^\d+$/.test(String(historyRowsInput.getValue()).trim()) || historyRows < 100 || historyRows > 200000) {
+				historyRowsInput.setError('Enter a whole number from 100 to 200000');
+				invalid = true;
+			} else historyRowsInput.clearError();
 			const ratio = parseFloat(minRatioInput.getValue());
 			if (isNaN(ratio) || ratio < 0 || ratio > 1) {
 				minRatioInput.setError('Enter a number from 0 to 1');
@@ -1389,6 +1432,9 @@ require([
 					key_blocklist: JSON.stringify(keyBlocklistInput.getValue()),
 					max_key_share: String(parseInt(maxKeyShareInput.getValue())),
 					scope_field: scopeFieldInput.getValue().trim(),
+					change_history: historyInput.getValue(),
+					history_index: historyIndexInput.getValue().trim(),
+					history_rows: String(historyRows),
 					min_ratio: String(ratio),
 					runs_to_keep: String(keepRuns),
 				}),

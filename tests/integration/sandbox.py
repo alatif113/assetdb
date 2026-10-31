@@ -48,6 +48,15 @@ class Sandbox(object):
             "fields_list": "_key,run_time,status,assets_out,assets_prev,rows_in,null_keys,overflow_assets,enrich_unmatched,enrich_ambiguous,junk_keys,junk_rows,min_ratio"})
         assert r.status_code in (200, 201), r.text
         self._cleanup.append(lambda: self.splunk.delete(self.ns + "/data/transforms/lookups/" + self.runs))
+        self.changes = self.kv + "_changes"
+        r = self.splunk.post(self.ns + "/storage/collections/config", {"name": self.changes, "field.run_time": "number"})
+        assert r.status_code in (200, 201), r.text
+        self._cleanup.append(lambda: self.splunk.delete(self.ns + "/storage/collections/config/" + self.changes))
+        r = self.splunk.post(self.ns + "/data/transforms/lookups", {
+            "name": self.changes, "external_type": "kvstore", "collection": self.changes,
+            "fields_list": "_key,run_time,change,asset_id,asset,changed_fields"})
+        assert r.status_code in (200, 201), r.text
+        self._cleanup.append(lambda: self.splunk.delete(self.ns + "/data/transforms/lookups/" + self.changes))
         self.overflow = self.kv + "_overflow"
         r = self.splunk.post(self.ns + "/storage/collections/config", {"name": self.overflow})
         assert r.status_code in (200, 201), r.text
@@ -108,7 +117,7 @@ class Sandbox(object):
     def run(self, columns=None):
         if not self.splunk.get(self.ns + "/storage/collections/config/" + self.kv).ok:
             self.create_kv(columns or [f["name"] for f in self.fields])
-        self.splunk.search(self.spl())
+        self.splunk.search_job(self.spl())
         return self.rows()
 
     def rows(self):
@@ -118,6 +127,9 @@ class Sandbox(object):
                 if isinstance(v, str) and k not in ("_key",):
                     r[k] = [v]
         return rows
+
+    def change_rows(self):
+        return self.splunk.search("| inputlookup max=100000 %s | sort 0 run_time" % self.changes)
 
     def overflow_rows(self):
         return self.splunk.search("| inputlookup max=100000 %s" % self.overflow)

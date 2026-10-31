@@ -301,3 +301,40 @@ def test_explain_lists_the_source_rows_behind_an_asset_after_normalization(sandb
     assert by_source["cmdb"]["owner"] == "alice" and by_source["edr"]["os"] == "linux"
     assert by_source["scan"]["role"] == "enrich only" and by_source["cmdb"]["role"] == "authoritative"
     assert by_source["edr"]["mac"] == "aa:bb:cc:dd:ee:01", "shown as the merge sees it, after the normalizer"
+
+
+# --- change history ------------------------------------------------------------------------------------
+
+def test_change_history_records_added_removed_and_changed_assets(sandbox):
+    sandbox.general = {"change_history": "kv", "min_ratio": "0"}
+    sandbox.fields = [field("mac", key_field="1"), field("owner", field_type="single"), field("os", field_type="single")]
+    sandbox.add_source("a", [{"mac": "m1", "owner": "alice", "os": "linux"}, {"mac": "m2", "owner": "bob", "os": "linux"}, {"mac": "m3", "owner": "carol", "os": "linux"}])
+    sandbox.run()
+    first = sandbox.change_rows()
+    assert sorted(r["change"] for r in first) == ["added", "added", "added"], first          # a first run adds everything
+    sandbox.rewrite_source("a", [{"mac": "m1", "owner": "alice", "os": "linux"},               # unchanged
+                                 {"mac": "m2", "owner": "dave", "os": "windows"},              # owner and os changed
+                                 {"mac": "m4", "owner": "erin", "os": "linux"}])               # new; m3 is gone
+    sandbox.run()
+    later = [r for r in sandbox.change_rows() if r["run_time"] != first[0]["run_time"]]
+    by_change = {}
+    for r in later:
+        by_change.setdefault(r["change"], []).append(r)
+    assert sorted(by_change) == ["added", "changed", "removed"], later
+    assert by_change["added"][0]["asset"] == "m4" or by_change["added"][0]["asset"] == ["m4"]
+    assert sorted(by_change["changed"][0]["changed_fields"]) == ["os", "owner"], by_change["changed"]
+    assert len(later) == 3, "the unchanged asset is not recorded"
+    sandbox.run()                                                                               # nothing changed
+    assert len(sandbox.change_rows()) == len(first) + 3
+
+
+def test_change_history_is_off_by_default_and_bounded(sandbox):
+    sandbox.fields = [field("mac", key_field="1")]
+    sandbox.add_source("a", [{"mac": "m1"}])
+    sandbox.run()
+    assert sandbox.change_rows() == []
+    box_rows = 100
+    sandbox.general = {"change_history": "kv", "history_rows": str(box_rows)}
+    sandbox.rewrite_source("a", [{"mac": "n%d" % i} for i in range(130)])
+    sandbox.run()
+    assert len(sandbox.change_rows()) == box_rows
