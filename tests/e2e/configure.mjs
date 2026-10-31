@@ -40,8 +40,8 @@ await page.click('.tab[data-tab="pipeline"]');
 await page.waitForSelector('.steps button', { timeout: 30000 });
 const stageCount = await page.locator('.steps button').count();
 if (stageCount < 3) errors.push(`expected the generated search in stages, found ${stageCount}`);
-const href = await page.getAttribute('a:has-text("Open merge search")', 'href');
-if (!/^\/[a-z]{2}-[A-Z]{2}\/app\/assetdb\/search\?/.test(href)) errors.push(`Open merge search link is not locale prefixed: ${href}`);
+const href = await page.getAttribute('a:has-text("Open in Search")', 'href');
+if (!/^\/[a-z]{2}-[A-Z]{2}\/app\/assetdb\/search\?/.test(href)) errors.push(`Open in Search link is not locale prefixed: ${href}`);
 // Settings render with the saved values
 await page.click('.tab[data-tab="settings"]');
 await page.waitForSelector('#st-max_keys');

@@ -37,49 +37,49 @@ require([
 	const MERGE_CHOICES = [['latest', 'Latest'], ['earliest', 'Earliest'], ['min', 'Min'], ['max', 'Max'], ['avg', 'Average'], ['sum', 'Sum'], ['coalesce', 'Coalesce (by source order)']];
 	const AGE_UNITS = [['s', 'seconds'], ['m', 'minutes'], ['h', 'hours'], ['d', 'days'], ['w', 'weeks'], ['mon', 'months'], ['q', 'quarters'], ['y', 'years']];
 	const TIPS = {
-		name: 'Letters, digits and underscores, starting with a letter or underscore. Reserved names are not allowed. The name cannot be changed after the field is created.',
-		desc: 'What this field means, for the people who use the asset data. It has no effect on the merge.',
-		fenabled: 'A disabled field is left out of the merge but keeps its settings.',
-		key: 'Records that share a value in a key field are merged into one asset, even across sources.',
-		keyscope: 'A scoped key only matches rows of the same scope (site or tenant). Use global for values that are unique everywhere, such as MAC addresses and serial numbers. Needs a scope on the sources or a scope column in Settings.',
+		name: 'Letters, digits and underscores. Must start with a letter or underscore. Cannot be changed later.',
+		desc: 'Describes the field for the people who use the data. It does not affect the merge.',
+		fenabled: 'Turn off to leave this field out of the merge. Its settings are kept.',
+		key: 'Records with the same value in a key field are merged into one asset.',
+		keyscope: 'Scoped values only match within the same scope (site or tenant). Global values match everywhere. Scoped keys need a scope on the source or a scope column in Settings.',
 		ftype: 'Single keeps one value per asset. Multivalue keeps every unique value.',
-		merge: 'How one value is chosen when sources disagree. Latest and Earliest go by the _time of the source rows. Min, Max, Average and Sum work on numbers (set Value type to Number). Coalesce takes the first non-empty value in the order you give.',
-		order: 'The precedence of the sources for Coalesce: the first source in the list that has a value wins. Without an order a random order is used.',
-		cs: 'When off, values are matched case-insensitively (lowercased unless Keep original case is on).',
-		keepcase: 'Store the original value and lowercase it only when matching. Values that differ only by case are then kept separately. Not available with normalizers that lowercase the value (host name, FQDN, user name, email, operating system).',
-		norm: 'Rewrites every value into a canonical form before matching and merging, so the same asset matches across sources.',
-		valtype: 'Values that are not of this type are dropped (checked after normalizing).',
-		ignore: 'Values to ignore. Type a value, re:<regular expression> or cidr:<network>, for example unknown, re:^169\\.254\\. or cidr:127.0.0.0/8.',
-		inherit: 'Also ignore the values on the global ignore list in Settings.',
-		validation: 'A regular expression every value must match. Values that do not match are ignored. Case-insensitive fields are lowercased before validation.',
-		evalx: 'An SPL eval expression applied to this field before merging, for example replace(field1, "[^w]", "").',
-		fillnull: 'Fill empty values with a fixed value. Not allowed on key fields, it would merge unrelated assets.',
-		vtype: 'The type declared for the field in the KV store collection (single value fields).',
-		track: 'Record this field in the asset’s conflicts field when its sources disagree, so those assets can be reviewed. Costs memory in proportion to the distinct values.',
-		allowed: 'Only take values for this field from these sources. Leave empty for all sources.',
-		maxvals: 'The most values kept for a multivalue field.',
-		mvorder: 'Which values are kept when there are more than Max values: the most recent (needs a _time column in the source lookups) or the alphabetically first.',
-		lookup: 'The lookup file or lookup definition to read. It must be readable by this app.',
-		sname: 'The label used in the merge search. Letters, digits and underscores; it cannot be changed later.',
-		enabled: 'A disabled source is left out of the merge but keeps its settings.',
-		role: 'Authoritative sources create assets and link them. Enrich-only sources (a vulnerability scanner, a firewall log) only add data to an asset they match unambiguously and never create or link assets.',
-		scope: 'The site or tenant of every row in this source, for keys marked Scoped. The same value in two scopes stays two assets.',
-		age: 'Ignore rows older than this. Rows without a time are kept. Leave empty to keep every row.',
-		timefield: 'The column holding the epoch time of each row, when the lookup does not use _time.',
-		filter: 'Keep only rows where this where-expression is true, written against the source columns, for example status!="decommissioned".',
-		mapping: 'When this source names a column differently, map it to the asset field, for example Computer Name to nt_host. Only this source is affected.',
-		max_keys: 'The largest number of unique keys a merged asset may have. Assets in larger clusters are dropped, usually because of a shared key such as a NAT address. The hard limit is ' + Generator.HARD_MAX_KEYS + '.',
-		max_key_share: 'A key found in more rows than this is not used to match assets (0 turns it off). Catches shared keys the blocklist does not know about.',
-		min_pct: 'A run that produces fewer assets than this share of the last successful run is not written and is recorded as blocked_low_count. 0 turns the check off. A run that produces no assets never overwrites the asset database.',
-		empty: 'An empty search result would otherwise wipe the collection, so it is never written. This cannot be turned off.',
-		runs_to_keep: 'How many runs the run history keeps. Older runs are removed on every run, so it cannot grow without bound.',
-		default_cs: 'Used for new fields and for fields that do not set it themselves.',
-		default_norm: 'Applied to fields whose normalizer is Default.',
-		scope_field: 'A column in the source lookups that holds the site or tenant of each row, for sources without a fixed scope. Leave empty if you do not scope keys.',
-		blocklist: 'Values that are never used to match assets, in any key field: placeholders, loopback and similar. A blocked value still appears in the asset, it just cannot link two assets. Type a value, re:<regular expression> or cidr:<network>.',
-		gignore: 'Ignored in every field that uses the global list. Type a value, re:<regular expression> or cidr:<network>.',
+		merge: 'Which value to keep when sources disagree. Latest and Earliest use the time of the row. Min, Max, Average and Sum need numbers. Coalesce takes the first value that is not empty, in source order.',
+		order: 'For Coalesce: the first source in this list that has a value wins. Without a list the result can vary.',
+		cs: 'When off, values match regardless of case.',
+		keepcase: 'Keep the original case and ignore case only when matching. Not available with normalizers that lowercase values.',
+		norm: 'Puts values in a standard format before matching, so the same asset matches across sources.',
+		valtype: 'Values of any other type are dropped. Checked after the normalizer.',
+		ignore: 'Values to skip. Enter a value, re:regex or cidr:network. For example: unknown, re:^169\\.254\\. or cidr:127.0.0.0/8.',
+		inherit: 'Also skip the values on the global ignore list (Settings).',
+		validation: 'A regular expression. Values that do not match are dropped. Case-insensitive fields are lowercased first.',
+		evalx: 'An SPL eval expression applied to this field before merging. For example: replace(field1, "[^w]", "").',
+		fillnull: 'Replaces empty values. Not allowed on key fields, because it would merge unrelated assets.',
+		vtype: 'The data type of this field in the KV store collection.',
+		track: 'When sources disagree, add the field name to the asset’s conflicts field so you can review it. Uses more memory.',
+		allowed: 'Take values for this field only from these sources. Empty means all sources.',
+		maxvals: 'The most values kept per asset.',
+		mvorder: 'Which values to keep when there are more than the maximum. Most recent needs a _time column in the source.',
+		lookup: 'The lookup file or definition to read. This app must be able to read it.',
+		sname: 'Used in the merge search. Letters, digits and underscores. Cannot be changed later.',
+		enabled: 'Turn off to leave this source out of the merge. Its settings are kept.',
+		role: 'Authoritative sources create assets. Enrich only sources (a vulnerability scanner, for example) add data to assets that already exist and never create or link them.',
+		scope: 'The site or tenant of every row in this source. The same key in two scopes stays two assets. Only affects keys set to Scoped.',
+		age: 'Ignore rows older than this. Rows without a time are kept. Empty keeps every row.',
+		timefield: 'The column with the time of each row, in epoch seconds, if it is not _time.',
+		filter: 'Keep only rows where this expression is true. For example: status!="decommissioned".',
+		mapping: 'Map a lookup column to an asset field when the names differ, for example Computer Name to nt_host. Applies to this source only.',
+		max_keys: 'The most keys one asset may have. Larger groups are dropped, usually because of a shared key such as a NAT address. The hard limit is ' + Generator.HARD_MAX_KEYS + '.',
+		max_key_share: 'A key found in more rows than this is not used for matching. 0 turns this off. Catches shared keys that are not on the blocklist.',
+		min_pct: 'A run that produces fewer assets than this share of the last successful run is not saved and shows as Blocked in Run history. 0 turns this off.',
+		empty: 'An empty result would erase the asset database, so it is never saved. This cannot be changed.',
+		runs_to_keep: 'Older runs are removed on every run.',
+		default_cs: 'Used by fields that do not set their own.',
+		default_norm: 'Used by fields whose normalizer is Default.',
+		scope_field: 'A column in the source lookups with the site or tenant of each row. Used by sources that have no scope of their own. Leave empty if you do not use scopes.',
+		blocklist: 'Values never used for matching, in any key field, such as placeholders and loopback addresses. They still appear on the asset. Enter a value, re:regex or cidr:network.',
+		gignore: 'Skipped in every field that uses the global list. Enter a value, re:regex or cidr:network.',
 		scheduled: 'Turn off to run the merge manually only.',
-		cron: 'When the merge search runs, as a cron expression, for example 0 0 * * * for daily at midnight.',
+		cron: 'A cron expression. For example: 0 0 * * * runs every day at midnight.',
 	};
 
 	/* ---------- Small helpers ---------- */
@@ -381,15 +381,14 @@ require([
 		const out = [];
 		if (kind === 'source') {
 			const st = S.stats[item.lookup] || {};
-			if (st.error) out.push({ sev: 'bad', text: `The lookup “${item.lookup}” could not be read, so this source cannot be merged: ${st.error}` });
+			if (st.error) out.push({ sev: 'bad', text: `Cannot read the lookup, so this source is skipped: ${st.error}` });
 			else if (item.enabled && st.count === 0) out.push({ sev: 'warn', text: 'This lookup has no rows.' });
 		} else if (item.enabled && Object.keys(S.stats).length && !Object.values(S.stats).some((x) => x.pending) && !supplies(item.name)) {
-			out.push({ sev: 'warn', text: item.key ? 'No enabled source supplies this key field, so it cannot match any records. Map a column to it in a source, or enable a source that has it.' : 'No enabled source supplies this field, so it will always be empty.' });
+			out.push({ sev: 'warn', text: item.key ? 'No enabled source has this key field, so nothing can match on it. Map a column to it in a source, or enable a source that has it.' : 'No enabled source has this field, so it is always empty.' });
 		}
 		return out;
 	}
 	const attention = () => S.sources.filter((x) => problems('source', x).length).length + S.fields.filter((x) => problems('field', x).length).length;
-	const needs = (n) => `${n} ${n === 1 ? 'needs' : 'need'} attention`;
 
 	/* ---------- Shadow DOM shell ---------- */
 	const ROOT = host.attachShadow({ mode: 'open' });
@@ -443,7 +442,7 @@ require([
 	function guard(proceed) {
 		if (!anyDirty()) { proceed(); return; }
 		const what = draftDirty() ? (ui.drawer.kind === 'field' ? 'field' : 'source') : 'settings';
-		openModal({ title: 'Discard unsaved changes?', body: `Your edits to this ${what} have not been saved and will be lost.`, confirm: 'Discard changes', cancel: 'Keep editing', destructive: true,
+		openModal({ title: 'Discard unsaved changes?', body: `Your edits to this ${what} will be lost.`, confirm: 'Discard changes', cancel: 'Keep editing', destructive: true,
 			onConfirm: () => { if (ui.drawer && ui.drawer.draft) ui.drawer.orig = JSON.stringify(ui.drawer.draft); if (ui.sdraft) ui.sdraft = clone(S.settings); proceed(); } });
 	}
 
@@ -458,7 +457,7 @@ require([
 		try { const entries = safeParse(await getConf('conf-assetdb'), {}).entry || []; return itemSnapshot(kind, id, entries) !== base; } catch { return false; }
 	}
 	function confirmOverwrite(what, onOverwrite, onReload) {
-		openModal({ title: `This ${what} was changed elsewhere`, body: 'It has changed since you opened it, possibly by someone else. Overwrite their changes with yours, or reload to see them and discard your edits.', confirm: 'Overwrite', cancel: 'Reload', destructive: true, onConfirm: onOverwrite, onCancel: onReload });
+		openModal({ title: `This ${what} was changed elsewhere`, body: 'It changed after you opened it, possibly by someone else. Overwrite their changes, or reload and lose your edits.', confirm: 'Overwrite', cancel: 'Reload', destructive: true, onConfirm: onOverwrite, onCancel: onReload });
 	}
 
 	/* ---------- Write chain with visible state: config, KV collection, merge search ---------- */
@@ -483,7 +482,7 @@ require([
 		try {
 			await writes();
 		} catch (err) {
-			ui.banner = { kind: 'bad', title: `Could not save “${label}”.`, text: `${describeError(err)}. Some of the change may have been written; your edits are still open. Try again.`, action: 'Try again', act: 'retry' };
+			ui.banner = { kind: 'bad', title: `Could not save “${label}”.`, text: `${describeError(err)}. Part of the change may have been saved. Your edits are still open.`, action: 'Try again', act: 'retry' };
 			ui.retry = retry; await loadConf().catch(() => {}); setSave('failed'); live(`Could not save ${label}.`); return false;
 		}
 		ui.banner = null; let syncError = null;
@@ -492,9 +491,9 @@ require([
 			await updateSearch(); ui.searchStale = false;
 		} catch (err) {
 			ui.searchStale = true;
-			ui.banner = { kind: 'bad', title: `Saved “${label}”, but the merge search was not updated.`, text: `${describeError(err)}. The scheduled run keeps using the previous search until you regenerate it.`, action: 'Regenerate search', act: 'regen' };
+			ui.banner = { kind: 'bad', title: `Saved “${label}”, but the merge search was not updated.`, text: `${describeError(err)}. Scheduled runs use the previous search until you regenerate it.`, action: 'Regenerate search', act: 'regen' };
 		}
-		if (syncError && !ui.banner) ui.banner = { kind: 'warn', title: `Saved “${label}”. Field types are out of sync.`, text: `${describeError(syncError)}. Searches still work. Sync the KV store field types to finish.`, action: 'Retry sync', act: 'sync' };
+		if (syncError && !ui.banner) ui.banner = { kind: 'warn', title: `Saved “${label}”, but the field types were not synced.`, text: `${describeError(syncError)}. Searches still work.`, action: 'Retry sync', act: 'sync' };
 		await loadConf().catch(() => {});
 		setSave(ui.searchStale ? 'failed' : 'saved'); live(`${label} saved`);
 		inspectAll(); return true;
@@ -521,11 +520,11 @@ require([
 		const h = $q('#hdr'); const before = fid();
 		const loading = !S.loaded; const info = runInfo(); const n = loading ? 0 : attention();
 		const run = ui.running; const elapsed = run ? mmss(Date.now() - run.start) : '';
-		const meta = loading ? '' : run ? `Merge running for ${elapsed}${run.sid ? ` · <a href="${esc(makeUrl('/app/search/search') + '?sid=' + encodeURIComponent(run.sid))}" target="_blank" rel="noopener">Open job</a>` : ''}` : !info ? (S.runs === null ? '' : 'Never run') : `Last run ${esc(info.time)}${info.status === 'ok' ? '' : ` (${esc(info.raw)})`} · ${fmt(info.out)} assets${info.delta ? ` <span class="delta ${info.delta.startsWith('-') ? 'neg' : ''}">${esc(info.delta)}</span>` : ''} · merge search ${ui.searchStale ? '<span class="pill bad">out of date</span>' : 'up to date'}`;
+		const meta = loading ? '' : run ? `Merge running${run.sid ? ` · <a href="${esc(makeUrl('/app/search/search') + '?sid=' + encodeURIComponent(run.sid))}" target="_blank" rel="noopener">Open job</a>` : ''}` : !info ? (S.runs === null ? '' : 'Never run') : `<span class="muted">Last run</span> <b>${esc(info.time)}</b>${info.status === 'ok' ? '' : ` (${esc(info.raw)})`} · <b>${fmt(info.out)}</b> assets${info.delta ? ` <span class="delta ${info.delta.startsWith('-') ? 'neg' : ''}">${esc(info.delta)}</span>` : ''}${ui.searchStale ? ' · <span class="pill bad">Merge search out of date</span>' : ''}`;
 		const need = loading || !n ? '' : ` · <button class="attnlink" type="button" data-act="attn" data-fid="attn">${n} item${n > 1 ? 's' : ''} ${n > 1 ? 'need' : 'needs'} attention</button>`;
 		const ready = S.sources.some((s) => s.enabled) && enabledFields().length;
 		const runDisabled = loading || !!run || !ready;
-		const why = !loading && !run && !ready ? 'Add and enable at least one source and one field first' : '';
+		const why = !loading && !run && !ready ? 'Enable at least one source and one field first' : '';
 		h.innerHTML = `<div class="d-in" style="padding-top:8px"><div class="d-subnav"><div class="tabs" role="tablist" aria-label="Configure sections">${TABS.map(([id, label]) => `<button class="tab" role="tab" id="tab-${id}" data-tab="${id}" data-fid="tab-${id}" aria-selected="${ui.tab === id}" aria-controls="panel" tabindex="${ui.tab === id ? 0 : -1}">${label}${!loading && id === 'sources' ? `<span class="n">${S.sources.length}</span>` : ''}${!loading && id === 'fields' ? `<span class="n">${S.fields.length}</span>` : ''}</button>`).join('')}</div>
 			<div class="d-run"><span>Next run <b>${loading ? '' : esc(nextRunText())}</b></span><button class="btn" type="button" data-act="run" data-fid="run" ${runDisabled ? 'disabled' : ''} ${why ? `title="${esc(why)}"` : ''}>${run ? `<span class="spin" aria-hidden="true"></span>Merging… ${elapsed}` : `${ico('play')}Run now`}</button></div></div>
 			<div class="d-status" data-state="saved"><span class="savestate" role="status" aria-live="polite"></span><span class="d-meta">${meta}${need}</span><button class="linkbtn" type="button" data-act="runs" data-fid="status" ${loading ? 'disabled' : ''}>Run history</button></div>
@@ -543,10 +542,10 @@ require([
 		renderPane(); if (ui.drawer) mountDrawer(true);
 	}
 	function pageHead() {
-		const H = { sources: ['Sources', 'Source lookups that feed the asset list. Enrich-only sources never create assets.', `<button class="btn primary" type="button" data-act="addSource" data-fid="add-source">${ico('plus')}Add source</button>`],
-			fields: ['Fields', 'Key fields decide which records are the same asset. Every field is merged onto that asset.', `<button class="btn" type="button" data-act="preset" data-fid="presets">Add CIM preset</button><button class="btn primary" type="button" data-act="addField" data-fid="add-field">${ico('plus')}Add field</button>`],
-			pipeline: ['Pipeline', 'The merge search, stage by stage. It is regenerated whenever you save a change.', ''], settings: ['Settings', 'Options that apply to the whole merge.', ''] }[ui.tab];
-		return `<div class="d-head"><div><h1>${H[0]}</h1><p>${H[1]}</p></div><div class="d-actions">${H[2]}</div></div>`;
+		const H = { sources: ['Sources', 'The lookups that supply asset records.', `<button class="btn primary" type="button" data-act="addSource" data-fid="add-source">${ico('plus')}Add source</button>`],
+			fields: ['Fields', 'Key fields decide which records belong to the same asset.', `<button class="btn" type="button" data-act="preset" data-fid="presets">Add CIM preset</button><button class="btn primary" type="button" data-act="addField" data-fid="add-field">${ico('plus')}Add field</button>`],
+			pipeline: ['Pipeline', 'How the merge runs, generated from your sources, fields and settings.', ''], settings: ['Settings', 'These apply to every source and field.', ''] }[ui.tab];
+		return `<div class="d-head"><div><h1 class="sr-only">${H[0]}</h1><p>${H[1]}</p></div><div class="d-actions">${H[2]}</div></div>`;
 	}
 	function renderPane() {
 		const p = $q('#panel'); if (!p) return; const before = fid();
@@ -576,21 +575,20 @@ require([
 				<td>${s.role === 'enrich' ? 'Enrich only' : 'Authoritative'}</td>
 				<td class="hide-s hide-d">${s.scope ? esc(s.scope) : '—'}</td><td class="hide-s hide-d">${c.max_age ? esc(c.max_age) : '—'}</td>
 				<td class="num">${st.pending || st.count === undefined ? (st.error ? '—' : '…') : fmt(st.count)}</td>${enabledSwitch('source', s.name, s.name, s.enabled, ed)}${rowActions('source', s.name, s.name)}</tr>`; }).join('')}</tbody></table>
-			<div class="tbl-foot">${S.sources.filter((s) => s.enabled).length} of ${S.sources.length} enabled${bad ? ` · <span class="attn">${needs(bad)}</span>` : ''}.</div></div>`;
+			<div class="tbl-foot">${S.sources.filter((s) => s.enabled).length} of ${S.sources.length} enabled</div></div>`;
 	}
 	function emptyFirstRun() {
 		const st = [S.sources.length > 0, S.fields.length > 0, !!lastRun()];
-		return `<div class="panel"><div class="empty"><h2>Bring your asset lists together</h2>
-			<p>AssetDB merges records from several lookups into one asset per device, matched on the fields you choose (host name, IP, MAC).</p>
-			<div class="check"><strong>Get started</strong><ul>${[['Add a source lookup', 'addSource', 'Add source'], ['Choose the fields to match and merge', 'preset', 'Add CIM preset'], ['Run the first merge', 'run', 'Run now']].map(([t, a, b], i) => `<li data-done="${st[i]}"><span class="n">${st[i] ? ico('check') : i + 1}</span><span class="t" style="flex:1">${t}</span>${st[i] ? '' : `<button class="btn sm ${i === st.findIndex((x) => !x) ? 'primary' : ''}" type="button" data-act="${a}" ${i === 2 && (!st[0] || !st[1]) ? 'disabled' : ''}>${b}</button>`}</li>`).join('')}</ul></div>
-			<p class="hint">This card disappears once all three steps are done.</p></div></div>`;
+		return `<div class="panel"><div class="empty"><h2>Merge your asset lists</h2>
+			<p>AssetDB merges records from several lookups into one record per asset, matched on the fields you choose, such as MAC, IP or host name.</p>
+			<div class="check"><strong>Get started</strong><ul>${[['Add a source lookup', 'addSource', 'Add source'], ['Choose the fields to match and merge', 'preset', 'Add CIM preset'], ['Run the first merge', 'run', 'Run now']].map(([t, a, b], i) => `<li data-done="${st[i]}"><span class="n">${st[i] ? ico('check') : i + 1}</span><span class="t" style="flex:1">${t}</span>${st[i] ? '' : `<button class="btn sm ${i === st.findIndex((x) => !x) ? 'primary' : ''}" type="button" data-act="${a}" ${i === 2 && (!st[0] || !st[1]) ? 'disabled' : ''}>${b}</button>`}</li>`).join('')}</ul></div></div></div>`;
 	}
 	function visibleFields() {
 		const q = ui.filter.trim().toLowerCase();
 		return S.fields.filter((x) => (!q || x.name.toLowerCase().includes(q) || x.description.toLowerCase().includes(q)) && (!ui.attnOnly || problems('field', x).length)).sort((a, b) => (b.key - a.key) || a.name.localeCompare(b.name));
 	}
 	function paneFields() {
-		if (!S.fields.length) return `<div class="panel"><div class="empty"><h2>No fields yet</h2><p>Fields decide what is matched and what is kept. Start from the common security fields, or define your own.</p><div style="display:flex;gap:8px"><button class="btn primary" type="button" data-act="preset">Add CIM preset</button><button class="btn" type="button" data-act="addField">Add field</button></div></div></div>`;
+		if (!S.fields.length) return `<div class="panel"><div class="empty"><h2>No fields yet</h2><p>Fields are what AssetDB matches on and keeps. Start with the CIM asset fields, or add your own.</p><div style="display:flex;gap:8px"><button class="btn primary" type="button" data-act="preset">Add CIM preset</button><button class="btn" type="button" data-act="addField">Add field</button></div></div></div>`;
 		const bad = S.fields.filter((x) => problems('field', x).length).length;
 		if (ui.attnOnly && !bad) ui.attnOnly = false;
 		const list = visibleFields();
@@ -601,7 +599,7 @@ require([
 				<td class="grow"><span class="nmw"><span class="kslot">${x.key ? `<span class="keymark" title="Key field">${ico('key')}<span class="sr-only">Key field</span></span>` : ''}</span><span class="fname" title="${esc(x.name)}">${esc(x.name)}</span>${x.fieldType === 'multivalue' ? '<span class="tag" title="Keeps several values">multi</span>' : ''}${flag(problems('field', x))}</span></td>
 				<td class="muted desc hide-d" ${x.description ? `title="${esc(x.description)}"` : ''}>${esc(x.description) || '—'}</td>${enabledSwitch('field', x.name, x.name, x.enabled, ed)}${rowActions('field', x.name, x.name)}</tr>`; }).join('')}</tbody></table>
 			${list.length ? '' : `<div class="empty"><h2>No fields match</h2><p>Nothing matches “${esc(ui.filter)}”.</p><button class="btn" type="button" data-act="clearFilter">Clear filter</button></div>`}
-			<div class="tbl-foot">${S.fields.length} field${S.fields.length === 1 ? '' : 's'}, ${S.fields.filter((x) => x.key).length} ${S.fields.filter((x) => x.key).length === 1 ? 'is a match key' : 'are match keys'}${bad ? ` · <span class="attn">${needs(bad)}</span>` : ''}.</div></div>`;
+			<div class="tbl-foot">${S.fields.filter((x) => x.enabled).length} of ${S.fields.length} enabled · ${S.fields.filter((x) => x.key).length} ${S.fields.filter((x) => x.key).length === 1 ? 'key' : 'keys'}</div></div>`;
 	}
 
 	/* ---------- Pipeline: the generated search as one document with an outline, plus the preview ---------- */
@@ -635,8 +633,8 @@ require([
 	}
 	function previewPanel() {
 		const pv = ui.preview; const c = pv.counts || {}; const sm = pv.summary || {};
-		const link = pv.sid ? `<a class="btn" href="${esc(makeUrl('/app/search/search') + '?sid=' + encodeURIComponent(pv.sid))}" target="_blank" rel="noopener" data-fid="open-preview" title="Opens the preview search job in the Search app: one row for every asset that would be added, removed or changed">${ico('ext')}Open preview in Search</a>` : '';
-		let body = '<p class="hint" style="padding:0 20px 16px;margin:0">It does the work of a real run without the writes, so it can take a while on big inventories. Changes to the values inside an asset are included.</p>';
+		const link = pv.sid ? `<a class="btn" href="${esc(makeUrl('/app/search/search') + '?sid=' + encodeURIComponent(pv.sid))}" target="_blank" rel="noopener" data-fid="open-preview" title="Open the preview results in Search: one row for each asset that would be added, removed or changed">${ico('ext')}Open in Search</a>` : '';
+		let body = '<p class="hint" style="padding:0 20px 16px;margin:0">Runs the full merge without saving anything, so it can take a while with many assets.</p>';
 		if (pv.state === 'loading') body = `<div class="diffgrid" aria-busy="true">${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skel" style="height:28px;width:70%"></div><div class="skel" style="height:10px;width:50%;margin-top:8px"></div></div>').join('')}</div>`;
 		else if (pv.state === 'error') body = `<p class="err" style="padding:0 20px 16px;margin:0">${ico('alert')}<span>The preview could not run: ${esc(pv.error)}</span></p>`;
 		else if (pv.state === 'done') {
@@ -646,16 +644,16 @@ require([
 			const blocked = last && ratio > 0 && total < parseInt(last.assets_out || 0) * ratio;
 			body = `${blocked ? `<div class="notice" role="alert"><b>A real run would be blocked.</b> It would produce ${fmt(total)} assets, below ${fmt(Math.round(ratio * 100))}% of the last successful run (${fmt(last.assets_out)}). The asset database would stay as it is.</div>` : ''}
 				<div class="diffgrid" aria-live="polite"><div class="kpi added"><div class="v">${fmt(added)}</div><div class="k">added</div></div><div class="kpi removed"><div class="v">${fmt(removed)}</div><div class="k">removed</div></div><div class="kpi changed"><div class="v">${fmt(changed)}</div><div class="k">changed</div></div><div class="kpi"><div class="v">${fmt(same)}</div><div class="k">unchanged</div></div></div>
-				<div class="subcounters"><span>${fmt(total)} assets after the merge, ${fmt(pv.current)} now</span>${[['merge_inputs', 'rows merged'], ['overflow_clusters', 'oversized clusters'], ['rows_without_keys', 'rows without a key'], ['shared_keys_skipped', 'shared keys skipped'], ['enrich_unmatched', 'enrich rows unmatched']].map(([k, label]) => `<span><b>${fmt(sm[k] || 0)}</b> ${label}</span>`).join('')}</div>
-				${added || removed || changed ? '' : '<p class="hint" style="padding:0 20px 16px;margin:0">No difference from the current asset database.</p>'}`;
+				<div class="subcounters"><span><b>${fmt(total)}</b> assets after the merge, <b>${fmt(pv.current)}</b> now</span>${[['merge_inputs', 'rows read'], ['overflow_clusters', 'oversized clusters'], ['rows_without_keys', 'rows without a key'], ['shared_keys_skipped', 'shared keys skipped'], ['enrich_unmatched', 'enrich rows unmatched']].map(([k, label]) => `<span><b>${fmt(sm[k] || 0)}</b> ${label}</span>`).join('')}</div>
+				${added || removed || changed ? '' : '<p class="hint" style="padding:0 20px 16px;margin:0">No differences from the current assets.</p>'}`;
 		}
-		return `<div class="panel" style="margin-bottom:24px"><div class="toolbar"><h2>Preview</h2><span class="muted">What a run would add, remove or change, without saving anything.</span><span class="grow"></span><button class="btn" type="button" data-act="preview" data-fid="preview" ${pv.state === 'loading' ? 'disabled' : ''}>${pv.state === 'loading' ? '<span class="spin"></span>Running…' : `${ico('play')}Run preview`}</button>${link}</div>${body}</div>`;
+		return `<div class="panel" style="margin-bottom:24px"><div class="toolbar"><h2>Preview</h2><span class="muted">Compare a run with the current assets.</span><span class="grow"></span><button class="btn" type="button" data-act="preview" data-fid="preview" ${pv.state === 'loading' ? 'disabled' : ''}>${pv.state === 'loading' ? '<span class="spin"></span>Running…' : `${ico('play')}Run preview`}</button>${link}</div>${body}</div>`;
 	}
 	function panePipeline() {
 		const st = stages(); const total = LINES.filter((l) => l.kind === 'command').length;
 		const sel = ui.stageSel;
 		return `${previewPanel()}
-		<div class="panel"><div class="toolbar"><h2>Merge search</h2><span class="muted">${total} lines in ${st.length} stages${ui.searchStale ? ' · out of date' : ''}</span><span class="grow"></span><button class="btn sm" type="button" data-act="copy" data-fid="copy">${ico('copy')}Copy</button><a class="btn sm" href="${esc(makeUrl('/app/assetdb/search') + '?s=%2FservicesNS%2Fnobody%2Fassetdb%2Fsaved%2Fsearches%2Fassetdb-lookupgen')}" target="_blank" rel="noopener">${ico('ext')}Open merge search</a></div>
+		<div class="panel"><div class="toolbar"><h2>Merge search</h2><span class="muted">${total} lines in ${st.length} stages${ui.searchStale ? ' · out of date' : ''}</span><span class="grow"></span><button class="btn sm" type="button" data-act="copy" data-fid="copy">${ico('copy')}Copy</button><a class="btn sm" href="${esc(makeUrl('/app/assetdb/search') + '?s=%2FservicesNS%2Fnobody%2Fassetdb%2Fsaved%2Fsearches%2Fassetdb-lookupgen')}" target="_blank" rel="noopener">${ico('ext')}Open in Search</a></div>
 			${LINES_ERR ? `<p class="err" style="padding:0 20px 16px;margin:0">${ico('alert')}<span>The merge search cannot be built: ${esc(LINES_ERR)}</span></p>` : ''}
 			<div class="pipe"><nav class="pane-l" aria-label="Stages of the merge search"><h3 id="steps-h">Stages, in the order they run</h3><ol class="steps" aria-labelledby="steps-h">${st.map((s, i) => `<li><button type="button" data-act="jump" data-id="${i}" data-fid="stage-${i}" aria-current="${i === sel}"><span class="no" aria-hidden="true">${i + 1}</span><span>${esc(s.title)}</span></button></li>`).join('')}</ol></nav>
 			<div class="code" role="region" tabindex="0" aria-label="Generated search">${st.map((s, i) => s.lines.map((l, k) => `<div class="ln${i === sel ? ' sel' : ''}" data-stage="${i}" ${k === 0 ? `id="stg-${i}"` : ''}><i>${l.n}</i><span>${hl(l.text)}</span></div>`).join('')).join('')}</div></div></div>`;
@@ -697,12 +695,12 @@ require([
 		const sw = (k, label) => `<div class="srow2 center"><div class="lrow"><span class="l" id="sw-${k}-l">${label}</span>${tip(TIPS[k] || TIPS.scheduled, label)}</div><div><button class="switch" type="button" role="switch" aria-checked="${v[k]}" aria-labelledby="sw-${k}-l" data-act="sbool" data-k="${k}" data-fid="st-${k}"></button></div></div>`;
 		const chips = (id, k, label, tipKey) => `<div class="srow2"><div class="lrow"><label id="${id}-l">${label}</label>${tip(TIPS[tipKey], label)}</div>${chipsHtml(id, v[k], id + '-l')}</div>`;
 		const group = (title, desc, rows) => `<section class="sgroup" aria-labelledby="g-${title.replace(/\W/g, '')}"><header><h2 id="g-${title.replace(/\W/g, '')}">${title}</h2><p>${desc}</p></header>${rows}</section>`;
-		return `${group('Limits', 'Guards that stop bad data from merging unrelated assets.', num('max_keys', 'Max keys per asset', 1, Generator.HARD_MAX_KEYS) + num('max_key_share', 'Max rows sharing a key', 0, 1000000))}
-			${group('Run safety', 'Protects the asset list from a bad run.', num('min_pct', 'Minimum size versus last run', 0, 100, '%') + `<div class="srow2 center"><div class="lrow"><span class="l">Overwrite with an empty result</span>${tip(TIPS.empty, 'Overwrite with an empty result')}</div><div class="static">Never</div></div>`)}
-			${group('Schedule', 'When the merge search runs on its own.', sw('scheduled', 'Scheduled') + txt('cron', 'Schedule (cron)', { mono: true, w: 240 }))}
-			${group('History', 'How much run history is kept.', num('runs_to_keep', 'Runs to keep', 1, 5000))}
-			${group('Matching defaults', 'Used by fields that do not set their own.', sw('default_cs', 'Case sensitive') + sel('default_norm', 'Normalizer', NORMALIZER_CHOICES) + txt('scope_field', 'Scope column', { mono: true, w: 240 }))}
-			${group('Values to ignore', 'Placeholder values that should never link or fill assets.', chips('blocklist', 'blocklist', 'Key blocklist', 'blocklist') + chips('globalIgnore', 'ignore', 'Global ignore list', 'gignore'))}
+		return `${group('Limits', 'Stop shared keys from merging unrelated assets.', num('max_keys', 'Max keys per asset', 1, Generator.HARD_MAX_KEYS) + num('max_key_share', 'Max rows per key', 0, 1000000))}
+			${group('Run safety', 'Block runs that look wrong.', num('min_pct', 'Minimum size vs last run', 0, 100, '%') + `<div class="srow2 center"><div class="lrow"><span class="l">Save empty results</span>${tip(TIPS.empty, 'Save empty results')}</div><div class="static">Never</div></div>`)}
+			${group('Schedule', 'When the merge runs automatically.', sw('scheduled', 'Run on a schedule') + txt('cron', 'Cron schedule', { mono: true, w: 240 }))}
+			${group('Run history', 'How many past runs are kept.', num('runs_to_keep', 'Runs to keep', 1, 5000))}
+			${group('Matching defaults', 'Used by fields that do not set their own.', sw('default_cs', 'Default case sensitive') + sel('default_norm', 'Default normalizer', NORMALIZER_CHOICES) + txt('scope_field', 'Scope column', { mono: true, w: 240 }))}
+			${group('Values to ignore', 'Placeholders such as 0.0.0.0 or unknown that say nothing about an asset.', chips('blocklist', 'blocklist', 'Key blocklist', 'blocklist') + chips('globalIgnore', 'ignore', 'Global ignore list', 'gignore'))}
 			<div class="savebar"><span class="unsaved" ${dirty ? '' : 'hidden'}>Unsaved changes</span><button class="btn" type="button" data-act="sdiscard" ${dirty ? '' : 'disabled'}>Discard changes</button><button class="btn primary" type="button" data-act="ssave" data-fid="ssave" ${dirty && ui.save !== 'saving' ? '' : 'disabled'}>Save settings</button></div>`;
 	}
 	function refreshSettingsBar() {
@@ -733,7 +731,7 @@ require([
 			setConf(SAVED, { cron_schedule: draft.cron.trim(), enableSched: draft.scheduled ? '1' : '0' }),
 		]);
 		if (!await persist('settings', writes, run)) return;
-		ui.sdraft = clone(S.settings); ui.sbase = itemSnapshot('settings', '', S.entries); await refreshLines(); renderPane(); renderHeader(); toast('Saved settings.');
+		ui.sdraft = clone(S.settings); ui.sbase = itemSnapshot('settings', '', S.entries); await refreshLines(); renderPane(); renderHeader(); toast('Settings saved.');
 	}
 
 	/* ---------- Chips (draft arrays) ---------- */
@@ -816,7 +814,7 @@ require([
 			<details class="adv" id="sec-clean" ${ui.cleanOpen ? 'open' : ''}><summary>Clean-up</summary><div class="adv-in">
 				${switchRow('cs', 'Case sensitive', 'cs', x.cs)}
 				${x.key && !x.cs ? switchRow('keepCase', 'Keep original case', 'keepcase', x.keepCase) : ''}
-				${selectField('fd-norm', 'norm', 'Normalize', 'norm', normChoices, x.norm)}
+				${selectField('fd-norm', 'norm', 'Normalizer', 'norm', normChoices, x.norm)}
 				${selectField('fd-valtype', 'valType', 'Validate as', 'valtype', VALIDATION_TYPE_CHOICES, x.valType)}
 				${chipsField('ignore', 'Ignore values', 'ignore', x.ignore)}
 				${switchRow('inherit', 'Use the global ignore list', 'inherit', x.inherit)}
@@ -841,11 +839,11 @@ require([
 		const readFail = s.lookup && st.error;
 		const body = `
 			${create ? `<fieldset class="sec"><legend>Lookup</legend><div>${labelRow('pick', 'Lookup', 'lookup')}<div class="combo"><input class="inp" id="pick" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="pick-list" aria-describedby="pick-e" placeholder="${S.lookups ? 'Search by name or app' : 'Loading lookups…'}" value="${esc(s.lookup)}" data-fid="pick" autocomplete="off"><div class="listbox" id="pick-list" role="listbox" hidden></div></div><div class="err" id="pick-e" role="alert" ${readFail ? '' : 'hidden'}>${readFail ? `${ico('alert')}<span>${esc(st.error)}</span>` : ''}</div></div>
-				${s.lookup && st.count !== undefined ? `<details class="adv" open><summary>${st.count.toLocaleString()} rows, ${cols.length} columns found</summary><div class="adv-in"><div class="schema-wrap"><table class="schema"><thead><tr>${cols.map((c) => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${(st.sample || []).map((r) => `<tr>${cols.map((c) => `<td>${esc(Array.isArray(r[c]) ? r[c].join(', ') : r[c] === undefined ? '' : r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="hint" style="margin:0">A source does not have to fill every column.</p></div></details>` : s.lookup && st.pending ? '<p class="hint">Reading the lookup…</p>' : ''}</fieldset>` : ''}
+				${s.lookup && st.count !== undefined ? `<details class="adv" open><summary>${st.count.toLocaleString()} rows, ${cols.length} columns found</summary><div class="adv-in"><div class="schema-wrap"><table class="schema"><thead><tr>${cols.map((c) => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${(st.sample || []).map((r) => `<tr>${cols.map((c) => `<td>${esc(Array.isArray(r[c]) ? r[c].join(', ') : r[c] === undefined ? '' : r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div></details>` : s.lookup && st.pending ? '<p class="hint">Reading the lookup…</p>' : ''}</fieldset>` : ''}
 			${s.lookup && !readFail || !create ? `
 			<fieldset class="sec"><legend>Source</legend>
 				${create ? textField('sd-name', 'name', 'Name', 'sname', s.name, { mono: true, err: true }) : ''}
-				${!create && readFail ? `<div class="err" role="alert">${ico('alert')}<span>The lookup “${esc(s.lookup)}” could not be read: ${esc(st.error)}</span></div>` : ''}
+				${!create && readFail ? `<div class="err" role="alert">${ico('alert')}<span>Cannot read the lookup: ${esc(st.error)}</span></div>` : ''}
 				${switchRow('enabled', 'Enabled', 'enabled', s.enabled)}
 				${segField('role', 'Role', 'role', [['authoritative', 'Authoritative'], ['enrich', 'Enrich only']], s.role)}
 			</fieldset>
@@ -870,13 +868,13 @@ require([
 			const st = r.status === 'ok' ? 'ok' : /^blocked/.test(r.status || '') ? 'warn' : 'bad';
 			const label = { ok: 'Succeeded', blocked_low_count: 'Blocked: too few assets', empty: 'Empty result' }[r.status] || r.status || 'Unknown';
 			const delta = hasPrev ? (out - prev >= 0 ? '+' : '') + fmt(out - prev) : '';
-			const rows = [['rows_in', 'Rows read'], ['assets_prev', 'Assets in the previous run'], ['null_keys', 'Rows without a key'], ['overflow_assets', 'Oversized clusters'], ['junk_keys', 'Shared keys skipped'], ['enrich_unmatched', 'Enrich rows unmatched'], ['enrich_ambiguous', 'Enrich rows ambiguous']].filter(([k]) => r[k] !== undefined && r[k] !== '');
+			const rows = [['rows_in', 'Rows read'], ['null_keys', 'Rows without a key'], ['overflow_assets', 'Oversized clusters'], ['junk_keys', 'Shared keys skipped'], ['enrich_unmatched', 'Enrich rows unmatched'], ['enrich_ambiguous', 'Enrich rows ambiguous']].filter(([k]) => r[k] !== undefined && r[k] !== '');
 			return `<details class="run" ${open ? 'open' : ''}><summary><span class="when">${esc(when(r.run_time))}</span><span class="pill ${st}">${esc(label)}</span><span class="assets">${fmt(out)}</span>${delta ? `<span class="delta ${out - prev < 0 ? 'neg' : ''}">${esc(delta)}</span>` : ''}</summary><dl class="counters">${rows.map(([k, l]) => `<dt>${l}</dt><dd>${fmt(r[k])}</dd>`).join('')}</dl></details>`;
 		};
 		const keysOf = (r) => { const k = [].concat(r.asset === undefined ? [] : r.asset); return `${esc(k.slice(0, 2).join(', '))}${k.length > 2 ? ` +${k.length - 2} more` : ''}`; };
-		const runsHtml = !ui.runsLoaded ? '<p class="hint">Loading…</p>' : S.runs === null ? '<p class="hint">The run history could not be read.</p>' : !S.runs.length ? '<p class="hint">No runs yet. The first scheduled or manual run creates the first record.</p>' : `<div class="runlist">${S.runs.map((r, i) => runItem(r, i === 0)).join('')}</div>`;
+		const runsHtml = !ui.runsLoaded ? '<p class="hint">Loading…</p>' : S.runs === null ? '<p class="hint">The run history could not be read.</p>' : !S.runs.length ? '<p class="hint">No runs yet.</p>' : `<div class="runlist">${S.runs.map((r, i) => runItem(r, i === 0)).join('')}</div>`;
 		const over = S.overflowCount;
-		const overHtml = over === null || over === undefined ? '' : `<fieldset class="sec"><legend>Needs review</legend><p class="hint" style="margin:0 0 8px">${over ? `${fmt(over)} cluster${over === 1 ? ' was' : 's were'} too large to merge in the last run, usually because of a shared key.` : 'No oversized clusters in the last run.'}</p>${over && S.overflow && S.overflow.length ? `<ul class="minilist">${S.overflow.map((r) => `<li><b>${fmt(r.cluster_keys)}</b> keys in ${fmt(r.cluster_rows)} rows<div class="sub">${keysOf(r)}${r.source ? ` · ${esc([].concat(r.source).join(', '))}` : ''}</div></li>`).join('')}</ul><p class="shelf-actions"><a href="${esc(searchUrl('| inputlookup assetdb_overflow'))}" target="_blank" rel="noopener">Open all ${fmt(over)} in Search</a></p>` : ''}</fieldset>`;
+		const overHtml = over === null || over === undefined ? '' : `<fieldset class="sec"><legend>Oversized clusters</legend><p class="hint" style="margin:0 0 8px">${over ? `${fmt(over)} cluster${over === 1 ? ' was' : 's were'} too large to merge in the last run, usually because of a shared key.` : 'No oversized clusters in the last run.'}</p>${over && S.overflow && S.overflow.length ? `<ul class="minilist">${S.overflow.map((r) => `<li><b>${fmt(r.cluster_keys)}</b> keys in ${fmt(r.cluster_rows)} rows<div class="sub">${keysOf(r)}${r.source ? ` · ${esc([].concat(r.source).join(', '))}` : ''}</div></li>`).join('')}</ul><p class="shelf-actions"><a href="${esc(searchUrl('| inputlookup assetdb_overflow'))}" target="_blank" rel="noopener">Open all ${fmt(over)} in Search</a></p>` : ''}</fieldset>`;
 		const body = `<fieldset class="sec"><legend>Runs</legend>${runsHtml}</fieldset>${overHtml}`;
 		return { title: 'Run history', body, footer: '<div class="drawer-f"><button class="btn" type="button" data-act="closeDrawer">Close</button></div>' };
 	}
@@ -947,14 +945,14 @@ require([
 			if (!dr.skipStale && await changedElsewhere('field', dr.create ? x.name.trim() : dr.id, dr.base)) { confirmOverwrite('field', () => { dr.skipStale = true; saveDrawer(); }, async () => { await loadConf(); dr.orig = JSON.stringify(dr.draft); closeDrawerNow(true); await refreshLines(); renderPane(); renderHeader(); }); return; }
 			x.name = x.name.trim(); const names = S.fields.map((f) => f.name);
 			if (!await persist(x.name, () => writeField(names, x.name, fieldToConf(x), dr.create ? 'add' : 'edit'), saveDrawer)) return;
-			await refreshLines(); toast(`Saved field “${x.name}”.`); finishSave(`fld-${x.name}`, x.name);
+			await refreshLines(); toast(`Field “${x.name}” saved.`); finishSave(`fld-${x.name}`, x.name);
 		} else {
 			if (!await validateSource(x, dr.create)) return;
 			if (!dr.skipStale && await changedElsewhere('source', dr.create ? x.name.trim() : dr.id, dr.base)) { confirmOverwrite('source', () => { dr.skipStale = true; saveDrawer(); }, async () => { await loadConf(); dr.orig = JSON.stringify(dr.draft); closeDrawerNow(true); await refreshLines(); renderPane(); renderHeader(); }); return; }
 			x.name = x.name.trim();
 			const conf = dr.create ? Object.assign({ name: x.name, lookup: x.lookup }, sourceToConf(x)) : Object.assign({ name: dr.origName }, sourceToConf(x));
 			if (!await persist(x.name, () => updateLookups(conf, dr.create ? 'add' : 'update'), saveDrawer)) return;
-			await refreshLines(); toast(`Saved source “${x.name}”.`); finishSave(`src-${x.name}`, x.name);
+			await refreshLines(); toast(`Source “${x.name}” saved.`); finishSave(`src-${x.name}`, x.name);
 		}
 	}
 	function finishSave(fidv, key) {
@@ -967,19 +965,19 @@ require([
 		const on = !item.enabled; const again = () => toggleRow(kind, id);
 		const writes = () => kind === 'field' ? setConf('conf-assetdb/' + id, { enabled: on ? '1' : '0' }) : updateLookups({ name: id, enabled: on }, 'update');
 		if (!await persist(`${on ? 'enable' : 'disable'} ${item.name}`, writes, again)) return;
-		await refreshLines(); renderPane(); renderHeader(); toast(`${on ? 'Enabled' : 'Disabled'} ${kind} “${item.name}”.`); setTimeout(() => refocus(`en-${kind}-${id}`), 0);
+		await refreshLines(); renderPane(); renderHeader(); toast(`${kind[0].toUpperCase() + kind.slice(1)} “${item.name}” ${on ? 'enabled' : 'disabled'}.`); setTimeout(() => refocus(`en-${kind}-${id}`), 0);
 	}
 	function askRemove(kind, id) {
 		const isF = kind === 'field'; const item = isF ? S.fields.find((q) => q.name === id) : S.sources.find((q) => q.name === id); const name = item.name;
 		const dep = isF ? [] : S.fields.filter((x) => x.allowed.includes(name) || x.order.includes(name));
 		openModal({ title: `Remove ${kind} “${name}”?`, confirm: `Remove ${kind}`, cancel: 'Cancel', destructive: true,
-			body: isF ? 'It will no longer be matched or merged. This is saved immediately and cannot be undone, but you can add the field again.' : `It will no longer be merged; the lookup itself still exists in Splunk.${dep.length ? ` ${dep.length} field${dep.length > 1 ? 's name' : ' names'} it in their allowed sources or source order (<strong>${dep.map((d) => esc(d.name)).join(', ')}</strong>).` : ''} This is saved immediately and cannot be undone, but you can add the source again.`,
+			body: isF ? 'It will no longer be matched or merged. This is saved immediately.' : `It will no longer be merged. The lookup itself is not deleted.${dep.length ? ` Used by ${dep.length} field${dep.length > 1 ? 's' : ''} (<strong>${dep.map((d) => esc(d.name)).join(', ')}</strong>) in their allowed sources or source order.` : ''} This is saved immediately.`,
 			onConfirm: async () => {
 				const names = S.fields.map((f) => f.name);
 				const writes = () => isF ? writeField(names, name, {}, 'delete') : updateLookups({ name }, 'delete');
 				if (!await persist(`remove ${name}`, writes, null)) return;
 				if (ui.drawer && ui.drawer.id === id) { ui.drawer.orig = JSON.stringify(ui.drawer.draft); closeDrawerNow(true); }
-				await refreshLines(); renderPane(); renderHeader(); toast(`Removed ${kind} “${name}”.`); setTimeout(() => ($q('.tbl .btn.icon') || $q('#panel')).focus(), 0);
+				await refreshLines(); renderPane(); renderHeader(); toast(`${kind[0].toUpperCase() + kind.slice(1)} “${name}” removed.`); setTimeout(() => ($q('.tbl .btn.icon') || $q('#panel')).focus(), 0);
 			} });
 	}
 	function dupRow(kind, id) {
@@ -990,7 +988,7 @@ require([
 	function addCimPreset() {
 		const existing = S.fields.map((e) => e.name); const add = Generator.cimPresetFields().filter((f) => !existing.includes(f.name));
 		if (!add.length) { openModal({ title: 'Add CIM fields', body: 'All the CIM asset fields are already configured.', confirm: 'Close', cancel: 'Cancel', onConfirm() {} }); return; }
-		openModal({ title: 'Add CIM asset fields?', body: `These ${add.length} fields will be added with sensible defaults (keys, normalizers and validation for the identifiers). You can edit or remove any of them afterwards:<ul>${add.map((x) => `<li><strong>${esc(x.name)}</strong>, ${esc(x.content.description)}${x.content.key_field === '1' ? ' (key)' : ''}</li>`).join('')}</ul>`, confirm: `Add ${add.length} fields`, cancel: 'Cancel',
+		openModal({ title: 'Add CIM asset fields?', body: `Adds these ${add.length} fields from the Common Information Model (CIM), with default keys, normalizers and validation. You can edit or remove them later.<ul>${add.map((x) => `<li><strong>${esc(x.name)}</strong>, ${esc(x.content.description)}${x.content.key_field === '1' ? ' (key)' : ''}</li>`).join('')}</ul>`, confirm: `Add ${add.length} fields`, cancel: 'Cancel',
 			onConfirm: async () => {
 				const names = existing.concat(add.map((x) => x.name));
 				const writes = () => Promise.all(add.map((x) => setConf('conf-assetdb/', Object.assign({ name: x.name }, x.content))).concat([fieldsListWrite(names)]));
@@ -1083,7 +1081,7 @@ require([
 			dswitch: () => { const k = a.dataset.k; ui.drawer.draft[k] = !ui.drawer.draft[k]; if (['key', 'cs'].includes(k)) rerender(); else { a.setAttribute('aria-checked', ui.drawer.draft[k]); onDraftChange(); } },
 			sbool: () => { ui.sdraft[a.dataset.k] = !ui.sdraft[a.dataset.k]; renderPane(); refocus(a.dataset.fid); updateSaveState(); },
 			ssave: saveSettings,
-			sdiscard: () => { ui.sdraft = clone(S.settings); ui.sbase = itemSnapshot('settings', '', S.entries); renderPane(); updateSaveState(); toast('Discarded unsaved settings.'); },
+			sdiscard: () => { ui.sdraft = clone(S.settings); ui.sbase = itemSnapshot('settings', '', S.entries); renderPane(); updateSaveState(); toast('Changes discarded.'); },
 			jump: () => {
 				ui.stageSel = +id;
 				$$('.steps button').forEach((b) => b.setAttribute('aria-current', b.dataset.id === id));
@@ -1098,8 +1096,8 @@ require([
 			mapAdd: () => { const st = S.stats[ui.drawer.draft.lookup] || {}; ui.drawer.draft.map.push({ to: '', from: (st.columns || [])[0] || '' }); rerender(); },
 			mapDel: () => { ui.drawer.draft.map.splice(+a.dataset.i, 1); rerender(); },
 			retry: () => { ui.banner = null; renderBanner(); if (ui.retry) ui.retry(); },
-			regen: async () => { ui.banner = null; setSave('saving'); try { await updateSearch(); ui.searchStale = false; setSave('saved'); toast('Merge search regenerated.'); } catch (err) { ui.banner = { kind: 'bad', title: 'The merge search could not be regenerated.', text: describeError(err), action: 'Try again', act: 'regen' }; setSave('failed'); } },
-			sync: async () => { ui.banner = null; setSave('saving'); try { await syncCollection(); setSave('saved'); toast('Field types synced.'); } catch (err) { ui.banner = { kind: 'warn', title: 'Field types could not be synced.', text: describeError(err), action: 'Try again', act: 'sync' }; setSave('failed'); } },
+			regen: async () => { ui.banner = null; setSave('saving'); try { await updateSearch(); ui.searchStale = false; setSave('saved'); toast('Merge search regenerated.'); } catch (err) { ui.banner = { kind: 'bad', title: 'Could not regenerate the merge search.', text: describeError(err), action: 'Try again', act: 'regen' }; setSave('failed'); } },
+			sync: async () => { ui.banner = null; setSave('saving'); try { await syncCollection(); setSave('saved'); toast('Field types synced.'); } catch (err) { ui.banner = { kind: 'warn', title: 'Could not sync the field types.', text: describeError(err), action: 'Try again', act: 'sync' }; setSave('failed'); } },
 			dismissBanner: () => { ui.banner = null; renderBanner(); },
 		};
 		if (fns[act]) fns[act]();

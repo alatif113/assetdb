@@ -158,7 +158,7 @@ a { color: var(--link); }
 .banner .grow { flex: 1; }
 @keyframes slidedown { from { opacity: 0; transform: translateY(-6px); } }
 .d-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px; margin: 24px 0 16px; }
-.d-head h1 { font-size: var(--fs-xl); letter-spacing: -.01em; }
+
 .d-head p { margin: 2px 0 0; color: var(--text-2); font-size: var(--fs-sm); }
 .d-actions { display: flex; gap: 8px; }
 .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }

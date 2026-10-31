@@ -119,7 +119,7 @@ try {
   await page.click('[data-act=preview]');
   await page.waitForSelector('.diffgrid .kpi .v', { timeout: 180000 });
   check(/^[\d,]+$/.test(await page.locator('.diffgrid .kpi .v').first().innerText()), 'merge preview shows how many assets it would add, remove and change');
-  const link = await page.getAttribute('a:has-text("Open preview in Search")', 'href');
+  const link = await page.getAttribute('a:has-text("Open in Search")', 'href');
   check(/\/app\/search\/search\?sid=/.test(link || ''), 'Open in Search links to the preview job by SID');
 
   // remove it again

@@ -1,3 +1,4 @@
+/* global getComputedStyle */
 // Visual sweep of the Configure page: every tab and the main overlays at three widths. It checks what a person would
 // notice: tooltips that are cut off or off screen, text spilling out of its box, content wider than the page, controls
 // overlapping each other. Screenshots go to dist/visual/ for a look. Read only: nothing is saved.
@@ -63,7 +64,7 @@ const audit = (label) => page.evaluate((label) => {
   const shown = (el) => { let r = el.getBoundingClientRect(); for (let a = el.parentElement; a && a !== root.host; a = a.parentElement) { const cs = getComputedStyle(a); if (/(auto|scroll|hidden|clip)/.test(cs.overflowY + cs.overflowX)) { const q = a.getBoundingClientRect(); if (r.bottom <= q.top || r.top >= q.bottom || r.right <= q.left || r.left >= q.right) return false; } } return true; };
   const ctl = [...root.querySelectorAll('button, a[href], input, select, .switch, [role=switch]')].filter((el) => visible(el) && shown(el));
   for (let i = 0; i < ctl.length; i++) for (let j = i + 1; j < ctl.length; j++) {
-    const a = ctl[i]; const b = ctl[j]; if (a.contains(b) || b.contains(a) || a.closest('.drawer-f') || b.closest('.drawer-f')) continue; // the footer floats over scrolled content
+    const a = ctl[i]; const b = ctl[j]; if (a.contains(b) || b.contains(a) || a.closest('.drawer-f') || b.closest('.drawer-f') || !!a.closest('.scrim') !== !!b.closest('.scrim')) continue; // the footer floats over scrolled content
     const p = a.getBoundingClientRect(); const q = b.getBoundingClientRect();
     const ox = Math.min(p.right, q.right) - Math.max(p.left, q.left); const oy = Math.min(p.bottom, q.bottom) - Math.max(p.top, q.top);
     if (ox > 3 && oy > 3) out.push(`controls overlap: ${name(a)} and ${name(b)}`);
@@ -78,7 +79,7 @@ async function tooltips(label) {
   for (const h of targets) {
     if (!(await h.isVisible())) continue;
     await h.scrollIntoViewIfNeeded().catch(() => {});
-    try { await h.hover({ timeout: 1500 }); } catch (e) { continue; } // covered by an overlay: nothing to check
+    try { await h.hover({ timeout: 1500 }); } catch { continue; } // covered by an overlay: nothing to check
     const res = await h.evaluate((el) => {
       const root = el.getRootNode(); const vw = window.innerWidth; const vh = window.innerHeight;
       const t = el.closest('.tip') ? el.closest('.tip').querySelector('.tip-t') : root.querySelector('#gtip');
