@@ -103,6 +103,19 @@ AssetDB uses *Key Fields* to merge assets together into a single *Asset Database
 
 Note how although, the Asset from `lookup_A` and Asset from `lookup_C` do not share any keys, they end up being merged due to both sharing keys with the Asset from `lookup_B`.
 
+### Source templates
+
+Building the source lookups is the hardest part of setting up. The app ships four **disabled** saved searches that build a source lookup in the field names the CIM presets use. Enable one, run it once (it creates the lookup file), then add that lookup on the Configure page. Adapt the search to your data; they carry a template version number so a later release can tell them apart from your edits.
+
+| Saved search | Source | Needs | Add as |
+| --- | --- | --- | --- |
+| `assetdb-src-splunk-hosts` | every host that sends data to Splunk (`| metadata type=hosts`) | nothing | Authoritative (host name only) |
+| `assetdb-src-dhcp-cim` | IP, MAC and host name from DHCP events (CIM Network Sessions) | CIM add-on and a DHCP add-on | Authoritative, with a short Max Age |
+| `assetdb-src-vulnerabilities-cim` | vulnerability counts and highest CVSS per host (CIM Vulnerabilities) | CIM add-on and a scanner add-on | **Enrich only** |
+| `assetdb-src-ad-computers` | enabled Active Directory computer accounts | SA-LDAPSearch (adapt the domain; not tested here) | Authoritative |
+
+Only the first needs no add-on and is tested end to end; the CIM ones are checked to parse as far as the data model lookup; the Active Directory one is a starting point.
+
 ### Explore: find an asset and see where its data came from
 
 The **Explore** dashboard has two panels. The first finds assets by any key value: type an IP address, MAC address, host name, user name ... (matching is lowercase and also tries the normalized form of MAC addresses, the short form of host names and the user part of `DOMAIN\user` and `user@domain`; add a scope when keys are scoped; `*` is a wildcard) and shows the matching merged assets. Select one and the second panel lists every source row, from every source lookup, that carries one of the asset's keys, with what that source supplied for each field, so each value in the merged asset can be traced back to its source. The rows are produced by the same generated pipeline as the merge (after column mapping, normalizing, ignore lists, allowed sources and row filters), so they show what the merge saw, not the raw lookup. At most 1000 rows are shown. Wildcard searches read the first 50,000 assets of the collection.
