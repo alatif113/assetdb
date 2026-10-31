@@ -520,3 +520,17 @@ test('a disabled field (enabled=0) is left out of the merge, a field without the
 	assert.ok(!/\bowner\b/.test(spl), 'the disabled field does not appear anywhere in the search');
 	assert.equal(gen([single('mac', { key_field: '1' }), single('owner')]), gen([single('mac', { key_field: '1' }), single('owner', { enabled: '1' })]), 'enabled=1 is the same as no property');
 });
+
+test('buildPreviewDiff: reads only (no write lines), compares with assetdb, and drops only the guard condition', () => {
+	const { loadGenerator } = require('./load-generator');
+	const generator = loadGenerator();
+	const lines = JSON.parse(JSON.stringify(load().makeMergeSearchLines([general, single('mac', { key_field: '1' }), single('owner')])));
+	const diff = generator.buildPreviewDiff(lines);
+	assert.ok(!/outputlookup|\| collect\b/.test(diff.replace('inputlookup append=true assetdb', '')), 'no write command is left');
+	assert.ok(diff.includes('| inputlookup append=true assetdb'), 'compares with the current assetdb');
+	assert.ok(!diff.includes('adb_guard=0'), 'the safety check does not hide the difference');
+	assert.ok(diff.includes('| where isnull(adb_is_marker) AND isnull(adb_is_prev)'));
+	assert.ok(diff.endsWith('| table change asset changed_fields'));
+	assert.ok(diff.includes('adbh_mac') && diff.includes('adbh_owner'), 'every output field is compared');
+	assert.throws(() => generator.buildPreviewDiff([{ kind: 'command', text: '| makeresults' }]), /no asset table/);
+});

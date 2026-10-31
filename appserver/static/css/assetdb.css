@@ -54,7 +54,7 @@
 
 
 * { box-sizing: border-box; }
-:host { display: block; font: var(--fs-md)/1.5 var(--font); color: var(--text); }
+:host { display: block; font: var(--fs-md)/1.5 var(--font); color: var(--text); background: var(--bg); padding-bottom: 24px; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 h1, h2, h3 { margin: 0; font-weight: 600; }
@@ -309,3 +309,69 @@ table.runs th { color: var(--text-2); font-weight: 500; border-top: 0; backgroun
 .srow2 .static { padding-top: 8px; color: var(--text-2); }
 .savebar { display: flex; gap: 12px; align-items: center; justify-content: flex-end; max-width: 920px; padding: 12px 0; position: sticky; bottom: 0; background: var(--bg); }
 
+/* ===== Layout follows the width of the page itself (Splunk's own navigation takes room from the window) ===== */
+:host([data-narrow]) .layout.with-drawer { grid-template-columns: minmax(0, 1fr); }
+:host([data-narrow]) .layout.with-drawer #panel { display: none; }
+:host([data-narrow]) .layout .drawer { position: static; max-height: none; }
+:host([data-narrow]) .d-in, :host([data-narrow]) #main { padding-left: 20px; padding-right: 20px; }
+:host([data-compact]) .hide-s { display: none; }
+:host([data-compact]) .srow2 { grid-template-columns: 1fr; }
+.layout.with-drawer .hide-d { display: none; }
+.unsaved[hidden] { display: none; }
+
+/* name cell: the name, its key/type marks and its warning stay on one line */
+.nmw { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.tip-b.flag { margin-left: 0; }
+.tag { font-size: 11px; font-weight: 600; color: var(--text-2); background: var(--surface-3); border-radius: 6px; padding: 0 6px; line-height: 18px; }
+.attnlink { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--warn); text-decoration: underline; }
+.attnbar { display: flex; gap: 8px; align-items: center; padding: 10px 20px; background: var(--warn-soft); border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
+
+/* controls */
+.w-num.wide { max-width: 240px; }
+.srow2.center { align-items: center; }
+.srow2.center .lrow { padding-top: 0; }
+.srow2.center .switch { margin-top: 0; }
+.srow2.center .static { padding-top: 0; }
+.chip-more { border: 1px dashed var(--line-strong); background: transparent; border-radius: 6px; height: 26px; padding: 0 8px; font-size: var(--fs-sm); color: var(--link); font-weight: 600; }
+
+/* lookup picker: positioned by script so the scrolling editor never clips it */
+.listbox { position: fixed; z-index: 130; left: auto; right: auto; top: auto; max-height: 300px; margin-top: 0; }
+.opt-group { padding: 6px 12px 2px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-2); background: var(--surface-2); position: sticky; top: 0; }
+.opt-note { padding: 8px 12px; font-size: var(--fs-sm); color: var(--text-2); border-top: 1px solid var(--line); }
+
+/* run history shelf: one compact row per run */
+.runlist { display: grid; gap: 6px; }
+.run { border: 1px solid var(--line); border-radius: var(--r-control); }
+.run > summary { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; list-style: none; }
+.run > summary::-webkit-details-marker { display: none; }
+.run > summary .when { flex: 1; min-width: 0; font-weight: 500; }
+.run > summary .assets { font-variant-numeric: tabular-nums; }
+.run[open] > summary { border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.counters { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 10px 12px; margin: 0; font-size: var(--fs-sm); }
+.counters dt { color: var(--text-2); }
+.counters dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.minilist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.minilist li { border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 12px; font-size: var(--fs-sm); }
+.minilist .sub { color: var(--text-2); }
+.shelf-actions { margin-top: 8px; font-size: var(--fs-sm); }
+.shelf-actions a { color: var(--link); font-weight: 600; }
+.diffgrid { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 12px; padding: 0 20px 12px; }
+.diffgrid .kpi.added .v { color: var(--success); }
+.diffgrid .kpi.removed .v { color: var(--error); }
+.diffgrid .kpi.changed .v { color: var(--warn); }
+.subcounters { display: flex; flex-wrap: wrap; gap: 4px 20px; padding: 0 20px 16px; font-size: var(--fs-sm); color: var(--text-2); }
+.subcounters b { color: var(--text); font-variant-numeric: tabular-nums; }
+.notice { margin: 0 20px 16px; padding: 10px 14px; border-radius: 10px; font-size: var(--fs-sm); background: var(--warn-soft); border: 1px solid var(--warn-fill); }
+
+/* pipeline: one search with an outline */
+.pipe { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 20px; padding: 0 20px 20px; align-items: start; }
+:host([data-narrow]) .pipe { grid-template-columns: 1fr; }
+.outline { position: sticky; top: 8px; display: grid; gap: 2px; max-height: 70vh; overflow: auto; }
+.outline button { display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; background: none; padding: 6px 10px; border-radius: 6px; color: var(--text-2); font-size: var(--fs-sm); }
+.outline button:hover { background: var(--surface-2); color: var(--text); }
+.outline button[aria-current="true"] { background: var(--selected); color: var(--text); font-weight: 600; }
+.outline .ct { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.stg { display: block; padding: 6px 12px 6px 52px; font: 600 12px var(--font); color: var(--text-2); background: var(--surface-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.stg:first-child { border-top: 0; }
+.stg.flash { animation: rowflash 1200ms var(--ease-out); }
+.code { max-height: none; }

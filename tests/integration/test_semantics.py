@@ -289,6 +289,37 @@ def test_preview_summarises_the_merge_without_writing_anything(sandbox):
 
 
 
+def test_preview_diff_lists_added_removed_and_changed_assets_without_writing(sandbox):
+    sandbox.general = {"min_ratio": "0"}
+    sandbox.fields = [field("mac", key_field="1"), field("owner", field_type="single"), field("os", field_type="single")]
+    sandbox.add_source("a", [{"mac": "m1", "owner": "alice", "os": "linux"}, {"mac": "m2", "owner": "bob", "os": "linux"}, {"mac": "m3", "owner": "carol", "os": "linux"}])
+    sandbox.run()
+    runs_before = len(sandbox.runs_rows())
+    first = sandbox.preview()["diff"]
+    assert first == [], "a preview of the same data shows no difference: %s" % first
+    sandbox.rewrite_source("a", [{"mac": "m1", "owner": "alice", "os": "linux"},                # unchanged
+                                 {"mac": "m2", "owner": "dave", "os": "windows"},               # owner and os changed
+                                 {"mac": "m4", "owner": "erin", "os": "linux"}])                # new; m3 is gone
+    diff = sandbox.preview()["diff"]
+    by_change = {}
+    for r in diff:
+        by_change.setdefault(r["change"], []).append(r)
+    assert sorted(by_change) == ["added", "changed", "removed"], diff
+    assert sorted(by_change["changed"][0]["changed_fields"]) == ["os", "owner"], by_change["changed"]
+    assert len(diff) == 3, "the unchanged asset is not listed"
+    assert len(sandbox.rows()) == 3 and len(sandbox.runs_rows()) == runs_before, "the preview wrote nothing (assets, run record)"
+    assert sandbox.change_rows() == [], "and no change history"
+
+
+def test_preview_diff_shows_everything_as_added_on_an_empty_assetdb(sandbox):
+    sandbox.fields = [field("mac", key_field="1"), field("owner", field_type="single")]
+    sandbox.add_source("a", [{"mac": "m1", "owner": "alice"}, {"mac": "m2", "owner": "bob"}])
+    sandbox.create_kv(["mac", "owner"])
+    diff = sandbox.preview()["diff"]
+    assert sorted(r["change"] for r in diff) == ["added", "added"], diff
+    assert sandbox.rows() == []
+
+
 # --- change history ------------------------------------------------------------------------------------
 
 def test_change_history_records_added_removed_and_changed_assets(sandbox):

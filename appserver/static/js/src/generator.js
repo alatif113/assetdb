@@ -266,6 +266,35 @@ define([], function () {
 	}
 
 	/**
+	 * The merge up to the asset table without any write, compared with the assetdb it would replace: one row per asset that
+	 * would be added, removed or changed (and which fields changed). The side effects of the real search (overflow list, run
+	 * record, change history, the assetdb itself) are the lines that write, so dropping those lines is what makes it read
+	 * only. The safety check is left out on purpose so the preview still shows the difference of a run that would be blocked.
+	 *
+	 * @param {Array}	lines	Lines from buildSearchLines
+	 * @return {String}		SPL; ends with `| table change asset changed_fields`
+	 */
+	function buildPreviewDiff(lines) {
+		const outputLine = lines.find((line) => line.kind === 'command' && /^\| table _key, asset, source, source_lookup, last_seen/.test(line.text));
+		if (!outputLine) throw new Error('The merge search has no asset table to compare');
+		const fixed = ['_key', 'asset', 'source', 'source_lookup', 'last_seen', 'scope', 'conflicts'];
+		const table = outputLine.text.replace(/^\| table /, '').split(', ').map((n) => n.trim()).filter((n) => !fixed.includes(n));
+		if (!table.length) throw new Error('The merge search has no fields to compare');
+		const guard = '| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0';
+		const writes = /\boutputlookup\b|\|\s*collect\b/;
+		const base = lines.filter((line) => line.kind === 'command' && !writes.test(line.text)).map((line) => (line.text === guard ? guard.replace(' AND adb_guard=0', '') : line.text)).join('\n');
+		const hashes = table.map((n) => `adbh_${n}=md5(coalesce(mvjoin(mvsort(${n}), "|"), ""))`).join(', ');
+		const hashNames = table.map((n) => `adbh_${n}`);
+		const changedFields = mvappendOf(table.map((n) => `if(mvcount(adbh_${n}) > 1, "${n}", null())`));
+		return `${base}\n| eval adb_side="new" | inputlookup append=true assetdb | eval adb_side=coalesce(adb_side, "old"), ${hashes} | fields _key adb_side asset ${hashNames.join(' ')}`
+			+ ' | eventstats count(eval(adb_side="new")) as adb_n_new | where adb_n_new > 0'
+			+ ` | stats values(adb_side) as sides, latest(asset) as asset, ${hashNames.map((h) => `values(${h}) as ${h}`).join(', ')} by _key`
+			+ ' | eval change=case(mvcount(sides)=1 AND sides="new", "added", mvcount(sides)=1 AND sides="old", "removed", true(), "changed")'
+			+ ` | eval changed_fields=if(change="changed", ${changedFields}, null()) | where change!="changed" OR isnotnull(changed_fields)`
+			+ ' | sort 0 change | table change asset changed_fields';
+	}
+
+	/**
 	 * CIM-shaped asset fields (the names of the Splunk Common Information Model / ES asset schema) with sensible
 	 * defaults. Only names and defaults: nothing here needs the CIM add-on or Enterprise Security.
 	 */
@@ -661,6 +690,7 @@ define([], function () {
 		NORMALIZERS: NORMALIZERS,
 		cimPresetFields: cimPresetFields,
 		buildPreviewSearches: buildPreviewSearches,
+		buildPreviewDiff: buildPreviewDiff,
 		VALIDATION_TYPES: VALIDATION_TYPES,
 		VALUE_TYPES: VALUE_TYPES,
 		HARD_MAX_KEYS: HARD_MAX_KEYS,

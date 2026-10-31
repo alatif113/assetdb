@@ -66,6 +66,7 @@ try {
 
   // add the field with cleaning options, then check what was written
   await page.fill('#fd-desc', 'e2e test field');
+  await page.click('summary:has-text("Clean-up")');
   await page.selectOption('#fd-norm', 'trim');
   await page.selectOption('#fd-valtype', 'ipv4');
   await page.click('input[name=keyScope][value=scoped]', { force: true });
@@ -116,9 +117,9 @@ try {
   // merge preview: a real search job whose SID can be opened in Search
   await page.click('.tab[data-tab="pipeline"]');
   await page.click('[data-act=preview]');
-  await page.waitForSelector('.cards3 .kpi .v', { timeout: 180000 });
-  check(/^\d+$/.test(await page.locator('.cards3 .kpi .v').first().innerText()), 'merge preview shows how many assets the merge would produce');
-  const link = await page.getAttribute('a:has-text("Open in Search") >> nth=0', 'href');
+  await page.waitForSelector('.diffgrid .kpi .v', { timeout: 180000 });
+  check(/^[\d,]+$/.test(await page.locator('.diffgrid .kpi .v').first().innerText()), 'merge preview shows how many assets it would add, remove and change');
+  const link = await page.getAttribute('a:has-text("Open preview in Search")', 'href');
   check(/\/app\/search\/search\?sid=/.test(link || ''), 'Open in Search links to the preview job by SID');
 
   // remove it again

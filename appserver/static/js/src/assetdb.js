@@ -93,11 +93,29 @@ require([
 	/** A jQuery/SDK deferred as a native promise; the SDK resolves with (data, ...), so the first argument is the data. */
 	const P = (d) => new Promise((resolve, reject) => $.when(d).then((data) => resolve(data), reject));
 	const ico = (n) => `<svg class="ico" aria-hidden="true"><use href="#i-${n}"/></svg>`;
+	/** One number format everywhere (thousands separators). */
+	const fmt = (n) => (n === undefined || n === null || n === '' || isNaN(Number(n)) ? String(n ?? '') : Number(n).toLocaleString());
+	/** An epoch time as "Today 12:00 AM", "Yesterday 11:01 PM" or "Oct 29 3:10 AM". */
+	function when(epoch) {
+		const d = new Date(parseFloat(epoch) * 1000); if (isNaN(d)) return '';
+		const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+		const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+		const diff = Math.round((day(new Date()) - day(d)) / 864e5);
+		return diff === 0 ? `Today ${t}` : diff === 1 ? `Yesterday ${t}` : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${t}`;
+	}
+	/** Run fn over items with at most `limit` in flight (every source costs two searches, so they are not all started at once). */
+	function pool(items, limit, fn) {
+		let i = 0;
+		return Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => { while (i < items.length) await fn(items[i++]); }));
+	}
 
 	function makeUrl(path) {
 		const root = (typeof window !== 'undefined' && window.$C && window.$C.MRSPARKLE_ROOT_PATH) || '';
 		return `${root}/${MvcUtils.getPageInfo().locale}${path}`;
 	}
+
+	/** A search opened in the Search app (a new window is opened by the link's target). */
+	const searchUrl = (q) => `${makeUrl('/app/search/search')}?q=${encodeURIComponent(q)}`;
 
 	/**
 	 * Best-effort readable message from a failed Splunk REST call.
@@ -306,17 +324,19 @@ require([
 
 	/* ---------- State ---------- */
 	const S = { loaded: false, general: {}, entries: [], fields: [], sources: [], settings: null, sched: { cron: '', enabled: true, next: '' }, stats: {}, lookups: null, runs: null, overflow: null, changes: null };
-	const ui = { tab: 'fields', filter: '', drawer: null, save: 'idle', banner: null, running: false, searchStale: false, expanded: new Set(), retry: null, preview: { state: 'idle', sid: '', summary: null, sources: null, clusters: null, current: null, error: '' }, sdraft: null, advOpen: false };
+	const store = { get(k) { try { return localStorage.getItem('assetdb.' + k) === '1'; } catch { return false; } }, set(k, v) { try { localStorage.setItem('assetdb.' + k, v ? '1' : '0'); } catch { /* storage unavailable: the choice is just not remembered */ } } };
+	const ui = { attnOnly: false, chipsOpen: new Set(), cleanOpen: store.get('cleanOpen'), runsLoaded: false, runTimer: null, tab: 'fields', filter: '', drawer: null, save: 'idle', banner: null, running: false, searchStale: false, expanded: new Set(), retry: null, preview: { state: 'idle', sid: '', summary: null, counts: null, current: null, error: '' }, sdraft: null, advOpen: store.get('advOpen') };
 
 	async function loadConf() {
-		const [data, sched] = await Promise.all([getConf('conf-assetdb'), getConf(SAVED).catch(() => null)]);
+		const [data, sched, live] = await Promise.all([getConf('conf-assetdb'), getConf(SAVED).catch(() => null), P(SERVICE.get('/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen', { output_mode: 'json' }).promise()).catch(() => null)]);
 		S.entries = safeParse(data, {}).entry || [];
 		S.general = (S.entries.find((e) => e.name === 'general') || {}).content || {};
 		S.fields = S.entries.filter((e) => e.name !== 'general').map((e) => fieldFromEntry(e, S.general)).sort((a, b) => a.name.localeCompare(b.name));
 		S.sources = getLookupArray(S.entries).map(sourceFromConf).concat([]);
 		S.sourceConf = getLookupArray(S.entries);
 		const ss = ((safeParse(sched, {}).entry || [])[0] || {}).content || {};
-		S.sched = { cron: ss.cron_schedule || '0 0 * * *', enabled: !!parseInt(ss.enableSched ?? 1), next: ss.next_scheduled_time || '' };
+		const liveContent = ((safeParse(live, {}).entry || [])[0] || {}).content || {};
+		S.sched = { cron: ss.cron_schedule || '0 0 * * *', enabled: !!parseInt(ss.enableSched ?? 1), next: liveContent.next_scheduled_time || '' };
 		S.settings = settingsFromConf(S.general, S.entries, S.sched);
 		S.loaded = true;
 	}
@@ -335,16 +355,19 @@ require([
 		}, (err) => { S.stats[lookup] = { error: describeError(err) }; return S.stats[lookup]; });
 	}
 	function inspectAll(force) {
-		return Promise.all(S.sources.map((s) => inspectLookup(s.lookup, force))).then(() => { if (!ui.drawer || !draftDirty()) renderPane(); renderHeader(); });
+		return pool(S.sources, 3, (s) => inspectLookup(s.lookup, force).then(() => { if (!ui.drawer || !draftDirty()) renderPane(); })).then(() => renderHeader());
 	}
 
 	async function loadRuns() {
-		const [runs, overflow, changes] = await Promise.all([
+		const [runs, overflowCount, overflow, changeCounts, changes] = await Promise.all([
 			oneshot('| inputlookup assetdb_runs | sort 0 -run_time | head 10', 10).catch(() => null),
-			oneshot('| inputlookup assetdb_overflow | head 10', 10).catch(() => null),
-			oneshot('| inputlookup assetdb_changes | sort 0 -run_time | head 15', 15).catch(() => null),
+			oneshot('| inputlookup assetdb_overflow | stats count', 1).catch(() => null),
+			oneshot('| inputlookup assetdb_overflow | head 5', 5).catch(() => null),
+			oneshot('| inputlookup assetdb_changes | eventstats max(run_time) as adb_last | where run_time=adb_last | stats count by change', 10).catch(() => null),
+			oneshot('| inputlookup assetdb_changes | sort 0 -run_time | head 5', 5).catch(() => null),
 		]);
-		S.runs = runs; S.overflow = overflow; S.changes = changes;
+		S.runs = runs; S.overflow = overflow; S.overflowCount = overflowCount ? parseInt((overflowCount[0] || {}).count || 0) : null;
+		S.changes = changes; S.changeCounts = changeCounts; ui.runsLoaded = true;
 	}
 	const lastRun = () => (S.runs && S.runs[0]) || null;
 
@@ -439,6 +462,20 @@ require([
 			onConfirm: () => { if (ui.drawer && ui.drawer.draft) ui.drawer.orig = JSON.stringify(ui.drawer.draft); if (ui.sdraft) ui.sdraft = clone(S.settings); proceed(); } });
 	}
 
+	/* ---------- Has it changed since it was opened? (two people editing the same config) ---------- */
+	function itemSnapshot(kind, id, entries) {
+		if (kind === 'field') { const e = entries.find((x) => x.name === id); return e ? JSON.stringify(e.content) : ''; }
+		if (kind === 'source') { const x = getLookupArray(entries).find((q) => q.name === id); return x ? JSON.stringify(x) : ''; }
+		const c = Object.assign({}, (entries.find((x) => x.name === 'general') || {}).content || {}); delete c.lookups;
+		return JSON.stringify([c, S.sched.cron, S.sched.enabled]);
+	}
+	async function changedElsewhere(kind, id, base) {
+		try { const entries = safeParse(await getConf('conf-assetdb'), {}).entry || []; return itemSnapshot(kind, id, entries) !== base; } catch { return false; }
+	}
+	function confirmOverwrite(what, onOverwrite, onReload) {
+		openModal({ title: `This ${what} was changed elsewhere`, body: 'It has changed since you opened it, possibly by someone else. Overwrite their changes with yours, or reload to see them and discard your edits.', confirm: 'Overwrite', cancel: 'Reload', destructive: true, onConfirm: onOverwrite, onCancel: onReload });
+	}
+
 	/* ---------- Write chain with visible state: config, KV collection, merge search ---------- */
 	function updateSaveState() {
 		const el = $q('.savestate'); if (!el) return;
@@ -492,18 +529,22 @@ require([
 		if (!r) return null;
 		const out = parseInt(r.assets_out || 0); const prev = parseInt(r.assets_prev || 0);
 		const status = r.status === 'ok' ? 'ok' : /^blocked/.test(r.status || '') ? 'warn' : 'bad';
-		return { time: r.run_time ? new Date(parseFloat(r.run_time) * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '', status, out, delta: prev || out ? (out - prev >= 0 ? '+' : '') + (out - prev).toLocaleString() : '', raw: r.status };
+		return { time: when(r.run_time), status, out, delta: prev || out ? (out - prev >= 0 ? '+' : '') + (out - prev).toLocaleString() : '', raw: r.status };
 	}
+	const mmss = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
 	function renderHeader() {
 		const h = $q('#hdr'); const before = fid();
 		const loading = !S.loaded; const info = runInfo(); const n = loading ? 0 : attention();
-		const meta = loading ? '' : !info ? (S.runs === null ? '' : 'Never run') : `Last run ${esc(info.time)}${info.status === 'ok' ? '' : ` (${esc(info.raw)})`} · ${info.out.toLocaleString()} assets${info.delta ? ` <span class="delta ${info.delta.startsWith('-') ? 'neg' : ''}">${esc(info.delta)}</span>` : ''} · merge search ${ui.searchStale ? '<span class="pill bad">out of date</span>' : 'up to date'}`;
-		const need = loading ? '' : n ? ` · <span class="attn">${n} item${n > 1 ? 's' : ''} ${n > 1 ? 'need' : 'needs'} attention</span>` : '';
-		const runDisabled = loading || ui.running || !(S.sources.some((s) => s.enabled) && enabledFields().length);
+		const run = ui.running; const elapsed = run ? mmss(Date.now() - run.start) : '';
+		const meta = loading ? '' : run ? `Merge running for ${elapsed}${run.sid ? ` · <a href="${esc(makeUrl('/app/search/search') + '?sid=' + encodeURIComponent(run.sid))}" target="_blank" rel="noopener">Open job</a>` : ''}` : !info ? (S.runs === null ? '' : 'Never run') : `Last run ${esc(info.time)}${info.status === 'ok' ? '' : ` (${esc(info.raw)})`} · ${fmt(info.out)} assets${info.delta ? ` <span class="delta ${info.delta.startsWith('-') ? 'neg' : ''}">${esc(info.delta)}</span>` : ''} · merge search ${ui.searchStale ? '<span class="pill bad">out of date</span>' : 'up to date'}`;
+		const need = loading || !n ? '' : ` · <button class="attnlink" type="button" data-act="attn" data-fid="attn">${n} item${n > 1 ? 's' : ''} ${n > 1 ? 'need' : 'needs'} attention</button>`;
+		const ready = S.sources.some((s) => s.enabled) && enabledFields().length;
+		const runDisabled = loading || !!run || !ready;
+		const why = !loading && !run && !ready ? 'Add and enable at least one source and one field first' : '';
 		h.innerHTML = `<div class="d-in" style="padding-top:8px"><div class="d-subnav"><div class="tabs" role="tablist" aria-label="Configure sections">${TABS.map(([id, label]) => `<button class="tab" role="tab" id="tab-${id}" data-tab="${id}" data-fid="tab-${id}" aria-selected="${ui.tab === id}" aria-controls="panel" tabindex="${ui.tab === id ? 0 : -1}">${label}${!loading && id === 'sources' ? `<span class="n">${S.sources.length}</span>` : ''}${!loading && id === 'fields' ? `<span class="n">${S.fields.length}</span>` : ''}</button>`).join('')}</div>
-			<div class="d-run"><span>Next run <b>${loading ? '' : esc(nextRunText())}</b></span><button class="btn" type="button" data-act="run" data-fid="run" ${runDisabled ? 'disabled' : ''}>${ui.running ? '<span class="spin" aria-hidden="true"></span>Merging…' : `${ico('play')}Run now`}</button></div></div>
+			<div class="d-run"><span>Next run <b>${loading ? '' : esc(nextRunText())}</b></span><button class="btn" type="button" data-act="run" data-fid="run" ${runDisabled ? 'disabled' : ''} ${why ? `title="${esc(why)}"` : ''}>${run ? `<span class="spin" aria-hidden="true"></span>Merging… ${elapsed}` : `${ico('play')}Run now`}</button></div></div>
 			<div class="d-status" data-state="saved"><span class="savestate" role="status" aria-live="polite"></span><span class="d-meta">${meta}${need}</span><button class="linkbtn" type="button" data-act="runs" data-fid="status" ${loading ? 'disabled' : ''}>Run history</button></div>
-			<div class="runbar ${ui.running ? 'on' : ''}" aria-hidden="true"></div><div id="banner"></div></div>`;
+			<div class="runbar ${run ? 'on' : ''}" aria-hidden="true"></div><div id="banner"></div></div>`;
 		updateSaveState(); renderBanner(); refocus(before);
 	}
 	function renderBanner() {
@@ -536,16 +577,20 @@ require([
 	const enabledSwitch = (kind, id, name, on, editing) => `<td class="sw"><button class="switch" type="button" role="switch" aria-checked="${on}" aria-label="Enabled, ${kind} ${esc(name)}" data-act="toggleRow" data-kind="${kind}" data-id="${esc(id)}" data-fid="en-${kind}-${esc(id)}" ${editing ? 'disabled title="Being edited: change it in the editor"' : ''}></button></td>`;
 	const rowActions = (kind, id, name) => `<td class="act"><button class="btn icon" type="button" data-act="${kind === 'field' ? 'editField' : 'editSource'}" data-id="${esc(id)}" data-fid="${kind === 'field' ? 'fld' : 'src'}-${esc(id)}" aria-label="Edit ${kind} ${esc(name)}" title="Edit">${ico('edit')}</button><button class="btn icon" type="button" data-act="dupRow" data-kind="${kind}" data-id="${esc(id)}" aria-label="Duplicate ${kind} ${esc(name)}" title="Duplicate">${ico('dup')}</button><button class="btn icon danger" type="button" data-act="rmRow" data-kind="${kind}" data-id="${esc(id)}" aria-label="Remove ${kind} ${esc(name)}" title="Remove">${ico('trash')}</button></td>`;
 
+	/** Rows shown when only the items that need attention are wanted. */
+	const attnBar = () => (ui.attnOnly ? `<div class="attnbar">${ico('alert')}Showing only the items that need attention. <button class="attnlink" type="button" data-act="attnClear" data-fid="attn-clear">Show all</button></div>` : '');
 	function paneSources() {
 		if (!S.sources.length) return emptyFirstRun();
 		const bad = S.sources.filter((x) => problems('source', x).length).length;
-		return `<div class="panel"><table class="tbl"><caption class="sr-only">Source lookups</caption>
+		if (ui.attnOnly && !bad) ui.attnOnly = false;
+		const list = ui.attnOnly ? S.sources.filter((x) => problems('source', x).length) : S.sources;
+		return `<div class="panel">${attnBar()}<table class="tbl"><caption class="sr-only">Source lookups</caption>
 			<thead><tr><th scope="col">Source</th><th scope="col">Role</th><th scope="col" class="hide-s hide-d">Scope</th><th scope="col" class="hide-s hide-d">Max age</th><th scope="col" class="num">Rows</th><th scope="col">Enabled</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
-			<tbody>${S.sources.map((s) => { const ed = !!ui.drawer && ui.drawer.kind === 'source' && ui.drawer.id === s.name; const st = S.stats[s.lookup] || {}; const c = S.sourceConf.find((q) => q.name === s.name) || {}; return `<tr data-open data-id="${esc(s.name)}" data-active="${ed}" class="${s.enabled ? '' : 'off'}">
-				<td><span class="fname">${esc(s.name)}</span>${flag(problems('source', s))}<small>${esc(s.lookup)}</small></td>
+			<tbody>${list.map((s) => { const ed = !!ui.drawer && ui.drawer.kind === 'source' && ui.drawer.id === s.name; const st = S.stats[s.lookup] || {}; const c = S.sourceConf.find((q) => q.name === s.name) || {}; return `<tr data-open data-id="${esc(s.name)}" data-active="${ed}" class="${s.enabled ? '' : 'off'}">
+				<td><span class="nmw"><span class="fname">${esc(s.name)}</span>${flag(problems('source', s))}</span><small>${esc(s.lookup)}</small></td>
 				<td>${s.role === 'enrich' ? 'Enrich only' : 'Authoritative'}</td>
 				<td class="hide-s hide-d">${s.scope ? esc(s.scope) : '—'}</td><td class="hide-s hide-d">${c.max_age ? esc(c.max_age) : '—'}</td>
-				<td class="num">${st.pending || st.count === undefined ? (st.error ? '—' : '…') : st.count.toLocaleString()}</td>${enabledSwitch('source', s.name, s.name, s.enabled, ed)}${rowActions('source', s.name, s.name)}</tr>`; }).join('')}</tbody></table>
+				<td class="num">${st.pending || st.count === undefined ? (st.error ? '—' : '…') : fmt(st.count)}</td>${enabledSwitch('source', s.name, s.name, s.enabled, ed)}${rowActions('source', s.name, s.name)}</tr>`; }).join('')}</tbody></table>
 			<div class="tbl-foot">${S.sources.filter((s) => s.enabled).length} of ${S.sources.length} enabled${bad ? ` · <span class="attn">${needs(bad)}</span>` : ''}.</div></div>`;
 	}
 	function emptyFirstRun() {
@@ -557,30 +602,36 @@ require([
 	}
 	function visibleFields() {
 		const q = ui.filter.trim().toLowerCase();
-		return S.fields.filter((x) => !q || x.name.toLowerCase().includes(q) || x.description.toLowerCase().includes(q)).sort((a, b) => (b.key - a.key) || a.name.localeCompare(b.name));
+		return S.fields.filter((x) => (!q || x.name.toLowerCase().includes(q) || x.description.toLowerCase().includes(q)) && (!ui.attnOnly || problems('field', x).length)).sort((a, b) => (b.key - a.key) || a.name.localeCompare(b.name));
 	}
 	function paneFields() {
 		if (!S.fields.length) return `<div class="panel"><div class="empty"><h2>No fields yet</h2><p>Fields decide what is matched and what is kept. Start from the common security fields, or define your own.</p><div style="display:flex;gap:8px"><button class="btn primary" type="button" data-act="preset">Add CIM preset</button><button class="btn" type="button" data-act="addField">Add field</button></div></div></div>`;
-		const list = visibleFields(); const bad = S.fields.filter((x) => problems('field', x).length).length;
-		return `<div class="panel"><div class="searchbar"><div class="search"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><input id="f-filter" class="inp" type="search" placeholder="Filter fields   ( / )" aria-label="Filter fields" value="${esc(ui.filter)}" data-fid="filter"></div></div>
+		const bad = S.fields.filter((x) => problems('field', x).length).length;
+		if (ui.attnOnly && !bad) ui.attnOnly = false;
+		const list = visibleFields();
+		return `<div class="panel">${attnBar()}<div class="searchbar"><div class="search"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><input id="f-filter" class="inp" type="search" placeholder="Filter fields   ( / )" aria-label="Filter fields" value="${esc(ui.filter)}" data-fid="filter"></div></div>
 			<table class="tbl"><caption class="sr-only">Fields. Match keys are listed first.</caption>
 			<thead><tr><th scope="col">Field</th><th scope="col">Description</th><th scope="col">Enabled</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
 			<tbody>${list.map((x) => { const ed = !!ui.drawer && ui.drawer.kind === 'field' && ui.drawer.id === x.name; return `<tr data-open data-id="${esc(x.name)}" data-active="${ed}" class="${x.enabled ? '' : 'off'}">
-				<td><span class="kslot">${x.key ? `<span class="keymark" title="Key field">${ico('key')}<span class="sr-only">Key field</span></span>` : ''}</span><span class="fname">${esc(x.name)}</span>${flag(problems('field', x))}</td>
+				<td><span class="nmw"><span class="kslot">${x.key ? `<span class="keymark" title="Key field">${ico('key')}<span class="sr-only">Key field</span></span>` : ''}</span><span class="fname">${esc(x.name)}</span>${x.fieldType === 'multivalue' ? '<span class="tag" title="Keeps several values">multi</span>' : ''}${flag(problems('field', x))}</span></td>
 				<td class="muted">${esc(x.description) || '—'}</td>${enabledSwitch('field', x.name, x.name, x.enabled, ed)}${rowActions('field', x.name, x.name)}</tr>`; }).join('')}</tbody></table>
 			${list.length ? '' : `<div class="empty"><h2>No fields match</h2><p>Nothing matches “${esc(ui.filter)}”.</p><button class="btn" type="button" data-act="clearFilter">Clear filter</button></div>`}
 			<div class="tbl-foot">${S.fields.length} field${S.fields.length === 1 ? '' : 's'}, ${S.fields.filter((x) => x.key).length} ${S.fields.filter((x) => x.key).length === 1 ? 'is a match key' : 'are match keys'}${bad ? ` · <span class="attn">${needs(bad)}</span>` : ''}.</div></div>`;
 	}
 
-	/* ---------- Pipeline: the generated search, grouped by the generator's own section comments ---------- */
+	/* ---------- Pipeline: the generated search as one document with an outline, plus the preview ---------- */
 	let LINES = []; let LINES_ERR = '';
 	function refreshLines() {
 		return makeMergeSearchLines(S.entries).then((lines) => { LINES = lines; LINES_ERR = ''; }, (err) => { LINES = []; LINES_ERR = describeError(err); });
 	}
+	/** The generator marks each section with a comment line; those become the stages. Code lines are numbered, comments are not. */
 	function stages() {
-		const out = []; let cur = null;
-		LINES.forEach((l, i) => {
-			if (l.kind === 'comment') { cur = { title: l.text.replace(/^\s*```?|```?\s*$/g, '').replace(/^\/\*|\*\/$/g, '').trim() || 'Search', lines: [] }; out.push(cur); } else { if (!cur) { cur = { title: 'Search', lines: [] }; out.push(cur); } cur.lines.push({ text: l.text, n: i + 1 }); }
+		const out = []; let cur = null; let n = 0;
+		const title = (t) => t.replace(/^[\s`#]+/, '').replace(/[\s`#]+$/, '');
+		LINES.forEach((l) => {
+			if (l.kind === 'comment') { cur = { title: title(l.text) || 'Search', lines: [] }; out.push(cur); return; }
+			if (!cur) { cur = { title: 'Load the source lookups', lines: [] }; out.push(cur); }
+			n++; cur.lines.push({ text: l.text, n });
 		});
 		return out;
 	}
@@ -590,60 +641,71 @@ require([
 			return c ? `<span class="${c}">${esc(t.text)}</span>` : esc(t.text);
 		}).join('');
 	}
-	const codeBlock = (lines) => `<div class="code" role="region" tabindex="0" aria-label="Generated search">${lines.map((l) => `<div class="ln"><i>${l.n}</i><span>${hl(l.text)}</span></div>`).join('')}</div>`;
+	function previewPanel() {
+		const pv = ui.preview; const c = pv.counts || {}; const sm = pv.summary || {};
+		const link = pv.sid ? `<a class="btn" href="${esc(makeUrl('/app/search/search') + '?sid=' + encodeURIComponent(pv.sid))}" target="_blank" rel="noopener" data-fid="open-preview" title="Opens the preview search job in the Search app: one row for every asset that would be added, removed or changed">${ico('ext')}Open preview in Search</a>` : '';
+		let body = '<p class="hint" style="padding:0 20px 16px;margin:0">It does the work of a real run without the writes, so it can take a while on big inventories. Changes to the values inside an asset are included.</p>';
+		if (pv.state === 'loading') body = `<div class="diffgrid" aria-busy="true">${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skel" style="height:28px;width:70%"></div><div class="skel" style="height:10px;width:50%;margin-top:8px"></div></div>').join('')}</div>`;
+		else if (pv.state === 'error') body = `<p class="err" style="padding:0 20px 16px;margin:0">${ico('alert')}<span>The preview could not run: ${esc(pv.error)}</span></p>`;
+		else if (pv.state === 'done') {
+			const total = parseInt(sm.assets || 0); const added = parseInt(c.added || 0); const removed = parseInt(c.removed || 0); const changed = parseInt(c.changed || 0);
+			const same = Math.max(0, total - added - changed);
+			const last = (S.runs || []).find((r) => r.status === 'ok'); const ratio = parseFloat(S.general.min_ratio === undefined ? Generator.DEFAULT_MIN_RATIO : S.general.min_ratio);
+			const blocked = last && ratio > 0 && total < parseInt(last.assets_out || 0) * ratio;
+			body = `${blocked ? `<div class="notice" role="alert"><b>A real run would be blocked.</b> It would produce ${fmt(total)} assets, below ${fmt(Math.round(ratio * 100))}% of the last successful run (${fmt(last.assets_out)}). The asset database would stay as it is.</div>` : ''}
+				<div class="diffgrid" aria-live="polite"><div class="kpi added"><div class="v">${fmt(added)}</div><div class="k">added</div></div><div class="kpi removed"><div class="v">${fmt(removed)}</div><div class="k">removed</div></div><div class="kpi changed"><div class="v">${fmt(changed)}</div><div class="k">changed</div></div><div class="kpi"><div class="v">${fmt(same)}</div><div class="k">unchanged</div></div></div>
+				<div class="subcounters"><span>${fmt(total)} assets after the merge, ${fmt(pv.current)} now</span>${[['merge_inputs', 'rows merged'], ['overflow_clusters', 'oversized clusters'], ['rows_without_keys', 'rows without a key'], ['shared_keys_skipped', 'shared keys skipped'], ['enrich_unmatched', 'enrich rows unmatched']].map(([k, label]) => `<span><b>${fmt(sm[k] || 0)}</b> ${label}</span>`).join('')}</div>
+				${added || removed || changed ? '' : '<p class="hint" style="padding:0 20px 16px;margin:0">No difference from the current asset database.</p>'}`;
+		}
+		return `<div class="panel" style="margin-bottom:24px"><div class="toolbar"><h2>Preview</h2><span class="muted">What a run would add, remove or change, without saving anything.</span><span class="grow"></span><button class="btn" type="button" data-act="preview" data-fid="preview" ${pv.state === 'loading' ? 'disabled' : ''}>${pv.state === 'loading' ? '<span class="spin"></span>Running…' : `${ico('play')}Run preview`}</button>${link}</div>${body}</div>`;
+	}
 	function panePipeline() {
-		const pv = ui.preview;
-		const kp = pv.state === 'loading' ? Array.from({ length: 4 }, () => `<div class="kpi"><div class="skel" style="height:28px;width:70%"></div><div class="skel" style="height:10px;width:50%;margin-top:8px"></div></div>`).join('') : pv.summary ? [['assets', 'assets after merge'], ['overflow_clusters', 'oversized clusters'], ['rows_without_keys', 'rows without a key'], ['shared_keys_skipped', 'shared keys skipped'], ['merge_inputs', 'rows merged'], ['enrich_unmatched', 'enrich rows unmatched']].map(([k, label]) => `<div class="kpi"><div class="v">${esc(pv.summary[k] || 0)}</div><div class="k">${label}</div></div>`).join('') : '';
-		const st = stages();
-		return `<div class="panel" style="margin-bottom:24px"><div class="toolbar"><h2>Preview</h2><span class="muted">Runs the merge without saving it${pv.current !== null && pv.state === 'done' ? `; the asset database holds ${esc(pv.current)} now` : ''}.</span><span class="grow"></span><button class="btn" type="button" data-act="preview" data-fid="preview" ${pv.state === 'loading' ? 'disabled' : ''}>${pv.state === 'loading' ? '<span class="spin"></span>Running…' : `${ico('play')}Run preview`}</button>${pv.sid ? `<a class="btn" href="${esc(makeUrl('/app/search/search') + '?sid=' + encodeURIComponent(pv.sid))}" target="_blank" rel="noopener" data-fid="open-preview" title="Open this preview search job in the Search app, in a new window">${ico('ext')}Open in Search</a>` : ''}</div>
-			${pv.error ? `<p class="err" style="padding:0 20px 16px;margin:0">${ico('alert')}<span>The preview could not run: ${esc(pv.error)}</span></p>` : kp ? `<div class="cards3" aria-live="polite">${kp}</div>` : '<p class="hint" style="padding:0 20px 16px;margin:0">It does the work of a real run without the writes, so it can take a while on big inventories.</p>'}
-			${pv.state === 'done' && pv.sources && pv.sources.length ? `<div style="padding:0 20px 20px"><table class="runs"><thead><tr><th>Source</th><th>Assets</th></tr></thead><tbody>${pv.sources.map((r) => `<tr><td>${esc(r.source)}</td><td>${esc(r.assets)}</td></tr>`).join('')}</tbody></table></div>` : ''}</div>
-		<div class="panel"><div class="toolbar"><h2>Stages</h2><span class="muted">${LINES.length} lines</span><span class="grow"></span><button class="btn" type="button" data-act="expandAll">Expand all</button></div>
-		${LINES_ERR ? `<p class="err" style="padding:0 20px 16px;margin:0">${ico('alert')}<span>The merge search cannot be built: ${esc(LINES_ERR)}</span></p>` : ''}
-		<div class="stages">${st.map((s, i) => { const open = ui.expanded.has(i); return `<div class="stage"><button class="stage-h" type="button" data-act="stage" data-id="${i}" data-fid="stage-${i}" aria-expanded="${open}" aria-controls="sb-${i}"><span class="num">${i + 1}</span><span class="grow"><span class="t">${esc(s.title)}</span></span><span class="muted" style="font-size:13px">${s.lines.length} line${s.lines.length === 1 ? '' : 's'}</span>${ico('chev').replace('class="ico"', 'class="ico chev"')}</button><div class="stage-body" id="sb-${i}" ${open ? '' : 'hidden'}>${s.lines.length ? codeBlock(s.lines) : '<p class="hint">No lines.</p>'}</div></div>`; }).join('')}</div></div>
-		<details class="panel" style="margin-top:24px" ${ui.expanded.has('raw') ? 'open' : ''} data-act-toggle="raw"><summary style="padding:14px 20px;cursor:pointer;font-weight:600">Raw search <span class="muted" style="font-weight:400">(${LINES.length} lines${ui.searchStale ? ' · out of date' : ''})</span></summary>
-			<div style="padding:0 20px 20px"><div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn sm" type="button" data-act="copy" data-fid="copy">${ico('copy')}Copy</button><a class="btn sm" href="${esc(makeUrl('/app/assetdb/search') + '?s=%2FservicesNS%2Fnobody%2Fassetdb%2Fsaved%2Fsearches%2Fassetdb-lookupgen')}" target="_blank" rel="noopener">${ico('ext')}Open in Search</a></div>${codeBlock(LINES.map((l, i) => ({ text: l.text, n: i + 1 })))}</div></details>`;
+		const st = stages(); const total = LINES.filter((l) => l.kind === 'command').length;
+		return `${previewPanel()}
+		<div class="panel"><div class="toolbar"><h2>Merge search</h2><span class="muted">${total} lines in ${st.length} stages${ui.searchStale ? ' · out of date' : ''}</span><span class="grow"></span><button class="btn sm" type="button" data-act="copy" data-fid="copy">${ico('copy')}Copy</button><a class="btn sm" href="${esc(makeUrl('/app/assetdb/search') + '?s=%2FservicesNS%2Fnobody%2Fassetdb%2Fsaved%2Fsearches%2Fassetdb-lookupgen')}" target="_blank" rel="noopener">${ico('ext')}Open merge search</a></div>
+			${LINES_ERR ? `<p class="err" style="padding:0 20px 16px;margin:0">${ico('alert')}<span>The merge search cannot be built: ${esc(LINES_ERR)}</span></p>` : ''}
+			<div class="pipe"><nav class="outline" aria-label="Stages of the merge search">${st.map((s, i) => `<button type="button" data-act="jump" data-id="${i}" data-fid="stage-${i}" aria-current="${i === 0}"><span>${esc(s.title)}</span><span class="ct">${s.lines.length}</span></button>`).join('')}</nav>
+			<div class="code" role="region" tabindex="0" aria-label="Generated search">${st.map((s, i) => `<div class="stg" id="stg-${i}">${i + 1}. ${esc(s.title)}</div>${s.lines.map((l) => `<div class="ln"><i>${l.n}</i><span>${hl(l.text)}</span></div>`).join('')}`).join('')}</div></div></div>`;
 	}
 
 	/**
-	 * Run the merge up to adbmerge without writing anything. The summary runs as a normal search job so its SID can be
-	 * opened in the Search app; the per source table and the current size are small one-shot searches.
+	 * Run the merge without writing anything and compare it with the asset database. The comparison runs as a normal
+	 * search job (one row per asset that would be added, removed or changed) so its SID can be opened in the Search app;
+	 * the counters come from a cheaper one-shot search that stops at adbmerge.
 	 */
 	async function runPreview() {
-		const pv = ui.preview; Object.assign(pv, { state: 'loading', sid: '', summary: null, sources: null, clusters: null, current: null, error: '' }); renderPane();
+		const pv = ui.preview; Object.assign(pv, { state: 'loading', sid: '', summary: null, counts: null, current: null, error: '' }); renderPane();
 		try {
-			const lines = await makeMergeSearchLines(S.entries); const searches = Generator.buildPreviewSearches(lines);
-			const created = safeParse(await P(SERVICE.post(JOBS, { search: searches.summary, output_mode: 'json', exec_mode: 'normal' }).promise()), {});
+			const lines = await makeMergeSearchLines(S.entries); const searches = Generator.buildPreviewSearches(lines); const diff = Generator.buildPreviewDiff(lines);
+			const summaryP = oneshot(searches.summary); const currentP = oneshot(searches.current); summaryP.catch(() => {}); currentP.catch(() => {});
+			const created = safeParse(await P(SERVICE.post(JOBS, { search: diff, output_mode: 'json', exec_mode: 'normal' }).promise()), {});
 			pv.sid = created.sid || ''; renderPane();
 			if (!pv.sid) throw new Error('the search job could not be created');
-			let dispatchState = '';
-			for (let i = 0; i < 1200; i++) {
+			for (let i = 0; i < 3600; i++) {
 				const job = ((safeParse(await P(SERVICE.get(`${JOBS}/${pv.sid}`, { output_mode: 'json' }).promise()), {}).entry || [])[0] || {}).content || {};
-				dispatchState = job.dispatchState;
-				if (job.isFailed || dispatchState === 'FAILED') throw new Error((job.messages && job.messages[0] && job.messages[0].text) || 'the preview search failed');
-				if (job.isDone || dispatchState === 'DONE') break;
+				if (job.isFailed || job.dispatchState === 'FAILED') throw new Error((job.messages && job.messages[0] && job.messages[0].text) || 'the preview search failed');
+				if (job.isDone || job.dispatchState === 'DONE') break;
 				await wait(1000);
 			}
-			const res = safeParse(await P(SERVICE.get(`${JOBS}/${pv.sid}/results`, { output_mode: 'json', count: 0 }).promise()), {}).results || [];
-			pv.summary = res[0] || {};
-			const [sources, current] = await Promise.all([oneshot(searches.sources).catch(() => []), oneshot(searches.current).catch(() => [])]);
-			pv.sources = sources; pv.current = current[0] ? current[0].assets : null; pv.state = 'done';
+			const [summary, current, counts] = await Promise.all([summaryP, currentP, oneshot(`| loadjob ${pv.sid} | stats count by change`)]);
+			pv.summary = summary[0] || {}; pv.current = current[0] ? current[0].assets : 0;
+			pv.counts = {}; counts.forEach((r) => { pv.counts[r.change] = r.count; }); pv.state = 'done';
 		} catch (err) { pv.state = 'error'; pv.error = describeError(err); }
-		renderPane(); refocus('preview'); live(pv.error ? 'The preview failed' : 'Preview finished');
+		renderPane(); refocus('preview'); live(pv.state === 'error' ? 'The preview failed' : 'Preview finished');
 	}
 
 	/* ---------- Settings (a draft with its own Save bar) ---------- */
 	function paneSettings() {
-		if (!ui.sdraft) ui.sdraft = clone(S.settings);
+		if (!ui.sdraft) { ui.sdraft = clone(S.settings); ui.sbase = itemSnapshot('settings', '', S.entries); }
 		const v = ui.sdraft; const dirty = settingsDirty();
 		const num = (k, label, min, max, suffix) => `<div class="srow2"><div class="lrow"><label for="st-${k}">${label}</label>${tip(TIPS[k], label)}</div><div><div class="w-num">${suffix ? `<div class="compound"><input class="inp" type="number" id="st-${k}" min="${min}" max="${max}" value="${esc(v[k])}" data-s="${k}" data-min="${min}" data-max="${max}" data-fid="st-${k}" aria-describedby="st-${k}-e"><span class="suffix">${suffix}</span></div>` : `<input class="inp" type="number" id="st-${k}" min="${min}" max="${max}" value="${esc(v[k])}" data-s="${k}" data-min="${min}" data-max="${max}" data-fid="st-${k}" aria-describedby="st-${k}-e">`}</div><div class="err" id="st-${k}-e" hidden></div></div></div>`;
 		const txt = (k, label, o = {}) => `<div class="srow2"><div class="lrow"><label for="st-${k}">${label}</label>${tip(TIPS[k], label)}</div><div><input class="inp ${o.mono ? 'mono' : ''}" style="max-width:${o.w || 320}px" id="st-${k}" value="${esc(v[k])}" data-s="${k}" data-text data-fid="st-${k}" aria-describedby="st-${k}-e" autocomplete="off" spellcheck="false"><div class="err" id="st-${k}-e" hidden></div></div></div>`;
 		const sel = (k, label, list) => `<div class="srow2"><div class="lrow"><label for="st-${k}">${label}</label>${tip(TIPS[k], label)}</div><div><select class="inp" style="max-width:320px" id="st-${k}" data-s="${k}" data-text data-fid="st-${k}">${opts(list, v[k])}</select></div></div>`;
-		const sw = (k, label) => `<div class="srow2"><div class="lrow"><span class="l" id="sw-${k}-l">${label}</span>${tip(TIPS[k] || TIPS.scheduled, label)}</div><div><button class="switch" type="button" role="switch" aria-checked="${v[k]}" aria-labelledby="sw-${k}-l" data-act="sbool" data-k="${k}" data-fid="st-${k}"></button></div></div>`;
+		const sw = (k, label) => `<div class="srow2 center"><div class="lrow"><span class="l" id="sw-${k}-l">${label}</span>${tip(TIPS[k] || TIPS.scheduled, label)}</div><div><button class="switch" type="button" role="switch" aria-checked="${v[k]}" aria-labelledby="sw-${k}-l" data-act="sbool" data-k="${k}" data-fid="st-${k}"></button></div></div>`;
 		const chips = (id, k, label, tipKey) => `<div class="srow2"><div class="lrow"><label id="${id}-l">${label}</label>${tip(TIPS[tipKey], label)}</div>${chipsHtml(id, v[k], id + '-l')}</div>`;
 		const group = (title, desc, rows) => `<section class="sgroup" aria-labelledby="g-${title.replace(/\W/g, '')}"><header><h2 id="g-${title.replace(/\W/g, '')}">${title}</h2><p>${desc}</p></header>${rows}</section>`;
 		return `${group('Limits', 'Guards that stop bad data from merging unrelated assets.', num('max_keys', 'Max keys per asset', 1, Generator.HARD_MAX_KEYS) + num('max_key_share', 'Max rows sharing a key', 0, 1000000))}
-			${group('Run safety', 'Protects the asset list from a bad run.', num('min_pct', 'Minimum size versus last run', 0, 100, '%') + `<div class="srow2"><div class="lrow"><span class="l">Overwrite with an empty result</span>${tip(TIPS.empty, 'Overwrite with an empty result')}</div><div class="static">Never</div></div>`)}
+			${group('Run safety', 'Protects the asset list from a bad run.', num('min_pct', 'Minimum size versus last run', 0, 100, '%') + `<div class="srow2 center"><div class="lrow"><span class="l">Overwrite with an empty result</span>${tip(TIPS.empty, 'Overwrite with an empty result')}</div><div class="static">Never</div></div>`)}
 			${group('Schedule', 'When the merge search runs on its own.', sw('scheduled', 'Scheduled') + txt('cron', 'Schedule (cron)', { mono: true, w: 240 }))}
 			${group('History', 'How much run and change history is kept.', num('runs_to_keep', 'Runs to keep', 1, 5000) + sel('change_history', 'Change history', [['off', 'Off'], ['kv', 'KV store collection (assetdb_changes)'], ['index', 'Index']]) + (v.change_history === 'index' ? txt('history_index', 'History index', { mono: true, w: 240 }) : '') + (v.change_history === 'kv' ? num('history_rows', 'Change log rows', 100, 200000) : ''))}
 			${group('Matching defaults', 'Used by fields that do not set their own.', sw('default_cs', 'Case sensitive') + sel('default_norm', 'Normalizer', NORMALIZER_CHOICES) + txt('scope_field', 'Scope column', { mono: true, w: 240 }))}
@@ -668,6 +730,8 @@ require([
 		if (v.scope_field.trim() && /['"\\|`[\]]/.test(v.scope_field)) fail('st-scope_field', 'That column name has a character that is not allowed');
 		if (!CRON_RE.test(v.cron)) fail('st-cron', 'Enter a cron expression with 5 fields, e.g. 0 0 * * *');
 		if (bad) { bad.focus(); return; }
+		if (!ui.skipSettingsStale && await changedElsewhere('settings', '', ui.sbase)) { confirmOverwrite('configuration', () => { ui.skipSettingsStale = true; saveSettings(); }, async () => { await loadConf(); ui.sdraft = null; renderPane(); renderHeader(); }); return; }
+		ui.skipSettingsStale = false;
 		const draft = clone(v); const run = () => saveSettings();
 		const writes = () => Promise.all([
 			setConf('conf-assetdb/general/', {
@@ -678,13 +742,16 @@ require([
 			setConf(SAVED, { cron_schedule: draft.cron.trim(), enableSched: draft.scheduled ? '1' : '0' }),
 		]);
 		if (!await persist('settings', writes, run)) return;
-		ui.sdraft = clone(S.settings); await refreshLines(); renderPane(); renderHeader(); toast('Saved settings.');
+		ui.sdraft = clone(S.settings); ui.sbase = itemSnapshot('settings', '', S.entries); await refreshLines(); renderPane(); renderHeader(); toast('Saved settings.');
 	}
 
 	/* ---------- Chips (draft arrays) ---------- */
+	const CHIP_LIMIT = 8;
 	function chipsHtml(id, vals, labelledby) {
 		const listId = id === 'allowed' || id === 'order' ? 'src-list' : '';
-		return `<div data-chipwrap="${id}"><div class="chips" data-chips="${id}" role="group" aria-labelledby="${labelledby}">${vals.map((v, i) => chipHtml(id, v, i)).join('')}<input type="text" data-chip-input="${id}" data-fid="ci-${id}" aria-label="Add value" ${listId ? `list="${listId}"` : ''} placeholder="${vals.length ? '' : (listId ? 'All sources' : 'Type a value, press Enter')}"></div>${listId ? `<datalist id="src-list">${S.sources.map((s) => `<option value="${esc(s.name)}">`).join('')}</datalist>` : ''}<div class="err" data-chip-err="${id}" hidden role="alert"></div></div>`;
+		const collapsed = vals.length > CHIP_LIMIT && !ui.chipsOpen.has(id);
+		const shown = collapsed ? vals.slice(0, CHIP_LIMIT) : vals;
+		return `<div data-chipwrap="${id}"><div class="chips" data-chips="${id}" role="group" aria-labelledby="${labelledby}">${shown.map((v, i) => chipHtml(id, v, i)).join('')}${vals.length > CHIP_LIMIT ? `<button type="button" class="chip-more" data-act="chipMore" data-id="${id}" data-fid="more-${id}">${collapsed ? `+${vals.length - CHIP_LIMIT} more` : 'Show fewer'}</button>` : ''}<input type="text" data-chip-input="${id}" data-fid="ci-${id}" aria-label="Add value" ${listId ? `list="${listId}"` : ''} placeholder="${vals.length ? '' : (listId ? 'All sources' : 'Type a value, press Enter')}"></div>${listId ? `<datalist id="src-list">${S.sources.map((s) => `<option value="${esc(s.name)}">`).join('')}</datalist>` : ''}<div class="err" data-chip-err="${id}" hidden role="alert"></div></div>`;
 	}
 	function chipHtml(id, v, i) {
 		const kind = v.startsWith('re:') ? 'regex' : v.startsWith('cidr:') ? 'cidr' : '';
@@ -708,7 +775,7 @@ require([
 			let draft = null;
 			if (kind === 'field') draft = extra.create ? extra.draft : clone(S.fields.find((x) => x.name === id));
 			if (kind === 'source') draft = extra.create ? extra.draft : clone(S.sources.find((x) => x.name === id));
-			ui.drawer = { kind, id, returnFid, create: !!extra.create, draft, orig: draft ? JSON.stringify(extra.create && !extra.dup ? draft : extra.dup ? (kind === 'field' ? blankField() : blankSource()) : draft) : '', origName: draft ? draft.name : '' };
+			ui.drawer = { base: kind === 'runs' || extra.create ? '' : itemSnapshot(kind, id, S.entries), kind, id, returnFid, create: !!extra.create, draft, orig: draft ? JSON.stringify(extra.create && !extra.dup ? draft : extra.dup ? (kind === 'field' ? blankField() : blankSource()) : draft) : '', origName: draft ? draft.name : '' };
 			if (kind === 'runs') loadRuns().then(() => { if (ui.drawer && ui.drawer.kind === 'runs') mountDrawer(true); renderHeader(); });
 			if (kind === 'source') { loadLookups().then(() => { if (ui.drawer && ui.drawer.kind === 'source' && ui.drawer.create) rerender(); }); if (draft.lookup) inspectLookup(draft.lookup).then(() => { if (ui.drawer && ui.drawer.kind === 'source') rerender(); }); }
 			mountDrawer(false); renderPane(); updateSaveState();
@@ -718,6 +785,9 @@ require([
 	}
 	function focusTitle() { const t = $q('#dr-title'); if (t) t.focus({ preventScroll: true }); }
 	function mountDrawer(silent) {
+		// keep the sections the user opened or closed across a re-render (the toggle event arrives after the click)
+		const dc = $q('#sec-clean'); if (dc) { ui.cleanOpen = dc.open; store.set('cleanOpen', dc.open); }
+		const da = $q('#sec-adv'); if (da) { ui.advOpen = da.open; store.set('advOpen', da.open); }
 		const o = editorModel(); const d = $q('#drawer'); d.hidden = false; const keep = $q('.drawer-body') ? $q('.drawer-body').scrollTop : 0;
 		d.innerHTML = `<div class="drawer" role="dialog" aria-modal="false" aria-labelledby="dr-title"><div class="drawer-h"><h2 id="dr-title" tabindex="-1">${o.title}</h2><span data-unsaved-pill>${draftDirty() ? '<span class="unsaved">Unsaved</span>' : ''}</span><button class="btn icon" type="button" data-act="closeDrawer" aria-label="Close editor (Esc)">${ico('x')}</button></div><div class="drawer-body">${o.body}</div>${o.footer}</div>`;
 		$q('#layout').classList.add('with-drawer'); if (keep) $q('.drawer-body').scrollTop = keep;
@@ -752,14 +822,14 @@ require([
 				${selectField('fd-merge', 'method', 'Method', 'merge', MERGE_CHOICES, x.method)}
 				${x.method === 'coalesce' ? chipsField('order', 'Source order', 'order', x.order) : ''}
 			</fieldset>` : ''}
-			<fieldset class="sec"><legend>Clean-up</legend>
+			<details class="adv" id="sec-clean" ${ui.cleanOpen ? 'open' : ''}><summary>Clean-up</summary><div class="adv-in">
 				${switchRow('cs', 'Case sensitive', 'cs', x.cs)}
 				${x.key && !x.cs ? switchRow('keepCase', 'Keep original case', 'keepcase', x.keepCase) : ''}
 				${selectField('fd-norm', 'norm', 'Normalize', 'norm', normChoices, x.norm)}
 				${selectField('fd-valtype', 'valType', 'Validate as', 'valtype', VALIDATION_TYPE_CHOICES, x.valType)}
 				${chipsField('ignore', 'Ignore values', 'ignore', x.ignore)}
 				${switchRow('inherit', 'Use the global ignore list', 'inherit', x.inherit)}
-			</fieldset>
+			</div></details>
 			<details class="adv" id="sec-adv" ${ui.advOpen ? 'open' : ''}><summary>Advanced</summary><div class="adv-in">
 				${textField('fd-validation', 'validation', 'Validation pattern', 'validation', x.validation, { optional: true, mono: true, err: true })}
 				${textField('fd-eval', 'evalExpr', 'Eval expression', 'evalx', x.evalExpr, { optional: true, mono: true, err: true })}
@@ -789,7 +859,7 @@ require([
 				${segField('role', 'Role', 'role', [['authoritative', 'Authoritative'], ['enrich', 'Enrich only']], s.role)}
 			</fieldset>
 			<fieldset class="sec"><legend>Rows</legend>
-				<div>${labelRow('sd-age', 'Max row age', 'age', true)}<div class="w-num"><div class="compound"><input class="inp" type="number" id="sd-age" min="1" value="${esc(s.ageN)}" placeholder="No limit" data-d="ageN" data-fid="sd-age"><select class="inp" aria-label="Unit" data-d="ageUnit">${opts(AGE_UNITS, s.ageUnit)}</select></div></div></div>
+				<div>${labelRow('sd-age', 'Max row age', 'age', true)} <div class="w-num wide"><div class="compound"><input class="inp" type="number" id="sd-age" min="1" value="${esc(s.ageN)}" placeholder="No limit" data-d="ageN" data-fid="sd-age"><select class="inp" aria-label="Unit" data-d="ageUnit">${opts(AGE_UNITS, s.ageUnit)}</select></div></div></div>
 				${textField('sd-filter', 'filter', 'Row filter', 'filter', s.filter, { mono: true, optional: true, ph: 'status!="decommissioned"', err: true })}
 				${textField('sd-scope', 'scope', 'Scope', 'scope', s.scope, { optional: true, err: true })}
 				${textField('sd-time', 'timeField', 'Time column', 'timefield', s.timeField, { optional: true, mono: true })}
@@ -804,11 +874,22 @@ require([
 	}
 
 	function runsModel() {
-		const table = (rows, cols, empty) => rows === null ? '<p class="hint">Could not be read.</p>' : !rows.length ? `<p class="hint">${empty}</p>` : `<table class="runs"><thead><tr>${cols.map((c) => `<th>${esc(c.replace(/_/g, ' '))}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((c) => { const v = r[c]; return `<td>${esc(c === 'run_time' && v ? new Date(parseFloat(v) * 1000).toLocaleString() : Array.isArray(v) ? v.join(', ') : v === undefined ? '' : v)}</td>`; }).join('')}</tr>`).join('')}</tbody></table>`;
-		const dyn = (rows) => rows && rows.length ? Object.keys(rows[0]).filter((k) => !k.startsWith('_')).slice(0, 7) : [];
-		const body = `<fieldset class="sec"><legend>Runs</legend>${S.runs === null && !ui.runsLoaded ? '<p class="hint">Loading…</p>' : table(S.runs, ['run_time', 'status', 'assets_out', 'assets_prev', 'rows_in', 'null_keys', 'overflow_assets', 'junk_keys'], 'No runs recorded yet. The first scheduled or manual run creates the first record.')}</fieldset>
-			<fieldset class="sec"><legend>Needs review</legend>${table(S.overflow, dyn(S.overflow), 'No oversized clusters in the last run.')}</fieldset>
-			<fieldset class="sec"><legend>Recent changes</legend>${table(S.changes, dyn(S.changes), 'No changes recorded. Turn on Change history in Settings to record them.')}</fieldset>`;
+		const runItem = (r, open) => {
+			const out = parseInt(r.assets_out || 0); const hasPrev = r.assets_prev !== undefined && r.assets_prev !== ''; const prev = hasPrev ? parseInt(r.assets_prev) : 0;
+			const st = r.status === 'ok' ? 'ok' : /^blocked/.test(r.status || '') ? 'warn' : 'bad';
+			const label = { ok: 'Succeeded', blocked_low_count: 'Blocked: too few assets', empty: 'Empty result' }[r.status] || r.status || 'Unknown';
+			const delta = hasPrev ? (out - prev >= 0 ? '+' : '') + fmt(out - prev) : '';
+			const rows = [['rows_in', 'Rows read'], ['assets_prev', 'Assets in the previous run'], ['null_keys', 'Rows without a key'], ['overflow_assets', 'Oversized clusters'], ['junk_keys', 'Shared keys skipped'], ['enrich_unmatched', 'Enrich rows unmatched'], ['enrich_ambiguous', 'Enrich rows ambiguous']].filter(([k]) => r[k] !== undefined && r[k] !== '');
+			return `<details class="run" ${open ? 'open' : ''}><summary><span class="when">${esc(when(r.run_time))}</span><span class="pill ${st}">${esc(label)}</span><span class="assets">${fmt(out)}</span>${delta ? `<span class="delta ${out - prev < 0 ? 'neg' : ''}">${esc(delta)}</span>` : ''}</summary><dl class="counters">${rows.map(([k, l]) => `<dt>${l}</dt><dd>${fmt(r[k])}</dd>`).join('')}</dl></details>`;
+		};
+		const keysOf = (r) => { const k = [].concat(r.asset === undefined ? [] : r.asset); return `${esc(k.slice(0, 2).join(', '))}${k.length > 2 ? ` +${k.length - 2} more` : ''}`; };
+		const runsHtml = !ui.runsLoaded ? '<p class="hint">Loading…</p>' : S.runs === null ? '<p class="hint">The run history could not be read.</p>' : !S.runs.length ? '<p class="hint">No runs yet. The first scheduled or manual run creates the first record.</p>' : `<div class="runlist">${S.runs.map((r, i) => runItem(r, i === 0)).join('')}</div>`;
+		const over = S.overflowCount;
+		const overHtml = over === null || over === undefined ? '' : `<fieldset class="sec"><legend>Needs review</legend><p class="hint" style="margin:0 0 8px">${over ? `${fmt(over)} cluster${over === 1 ? ' was' : 's were'} too large to merge in the last run, usually because of a shared key.` : 'No oversized clusters in the last run.'}</p>${over && S.overflow && S.overflow.length ? `<ul class="minilist">${S.overflow.map((r) => `<li><b>${fmt(r.cluster_keys)}</b> keys in ${fmt(r.cluster_rows)} rows<div class="sub">${keysOf(r)}${r.source ? ` · ${esc([].concat(r.source).join(', '))}` : ''}</div></li>`).join('')}</ul><p class="shelf-actions"><a href="${esc(searchUrl('| inputlookup assetdb_overflow'))}" target="_blank" rel="noopener">Open all ${fmt(over)} in Search</a></p>` : ''}</fieldset>`;
+		const mode = S.settings ? S.settings.change_history : 'off';
+		const counts = {}; (S.changeCounts || []).forEach((r) => { counts[r.change] = r.count; });
+		const changeHtml = mode === 'off' ? '<p class="hint" style="margin:0">Change history is off. Turn it on in Settings to record what changes between runs.</p>' : !S.changes || !S.changes.length ? '<p class="hint" style="margin:0">No changes recorded yet.</p>' : `<p class="hint" style="margin:0 0 8px">Last run: ${['added', 'removed', 'changed'].filter((k) => counts[k]).map((k) => `${fmt(counts[k])} ${k}`).join(', ') || 'no changes'}.</p><ul class="minilist">${S.changes.map((r) => `<li><span class="pill ${r.change === 'added' ? 'ok' : r.change === 'removed' ? 'bad' : 'warn'}">${esc(r.change)}</span> ${keysOf(r)}${r.changed_fields ? `<div class="sub">${esc([].concat(r.changed_fields).join(', '))}</div>` : ''}</li>`).join('')}</ul><p class="shelf-actions"><a href="${esc(searchUrl(mode === 'index' ? `index=${S.settings.history_index} sourcetype="assetdb:change"` : '| inputlookup assetdb_changes | sort 0 -run_time'))}" target="_blank" rel="noopener">Open all in Search</a></p>`;
+		const body = `<fieldset class="sec"><legend>Runs</legend>${runsHtml}</fieldset>${overHtml}<fieldset class="sec"><legend>Changes</legend>${changeHtml}</fieldset>`;
 		return { title: 'Run history', body, footer: '<div class="drawer-f"><button class="btn" type="button" data-act="closeDrawer">Close</button></div>' };
 	}
 	function footerHtml(kind) {
@@ -845,7 +926,7 @@ require([
 			try { checkEvalExpression(x.evalExpr); } catch (e) { fail('fd-eval', e.message); }
 			if (!bad) { try { await validateQuery(`| makeresults | eval a=${x.evalExpr}`); } catch (err) { const m = (safeParse(err?.responseText, {}).messages || err?.data?.messages || [])[0]; fail('fd-eval', m ? m.text : 'Invalid eval expression'); } }
 		}
-		if (bad) { $q('#sec-adv') && ['fd-validation', 'fd-eval', 'fd-fill'].includes(bad.id) && ($q('#sec-adv').open = true); bad.focus(); return false; }
+		if (bad) { const d = bad.closest('details'); if (d) d.open = true; bad.focus(); return false; }
 		return true;
 	}
 	async function validateSource(x, create) {
@@ -875,11 +956,13 @@ require([
 		const x = clone(dr.draft); ui.banner = null; renderBanner();
 		if (dr.kind === 'field') {
 			if (!await validateField(x, dr.create)) return;
+			if (!dr.skipStale && await changedElsewhere('field', dr.create ? x.name.trim() : dr.id, dr.base)) { confirmOverwrite('field', () => { dr.skipStale = true; saveDrawer(); }, async () => { await loadConf(); dr.orig = JSON.stringify(dr.draft); closeDrawerNow(true); await refreshLines(); renderPane(); renderHeader(); }); return; }
 			x.name = x.name.trim(); const names = S.fields.map((f) => f.name);
 			if (!await persist(x.name, () => writeField(names, x.name, fieldToConf(x), dr.create ? 'add' : 'edit'), saveDrawer)) return;
 			await refreshLines(); toast(`Saved field “${x.name}”.`); finishSave(`fld-${x.name}`, x.name);
 		} else {
 			if (!await validateSource(x, dr.create)) return;
+			if (!dr.skipStale && await changedElsewhere('source', dr.create ? x.name.trim() : dr.id, dr.base)) { confirmOverwrite('source', () => { dr.skipStale = true; saveDrawer(); }, async () => { await loadConf(); dr.orig = JSON.stringify(dr.draft); closeDrawerNow(true); await refreshLines(); renderPane(); renderHeader(); }); return; }
 			x.name = x.name.trim();
 			const conf = dr.create ? Object.assign({ name: x.name, lookup: x.lookup }, sourceToConf(x)) : Object.assign({ name: dr.origName }, sourceToConf(x));
 			if (!await persist(x.name, () => updateLookups(conf, dr.create ? 'add' : 'update'), saveDrawer)) return;
@@ -928,10 +1011,12 @@ require([
 	}
 	/** Dispatch the saved search now and follow the job until it finishes. */
 	async function runNow() {
-		if (ui.running) return; ui.running = true; renderHeader(); live('Merging started');
+		if (ui.running) return; ui.running = { sid: '', start: Date.now() }; renderHeader(); live('Merging started');
+		ui.runTimer = setInterval(renderHeader, 1000);
 		try {
 			const sid = (safeParse(await P(SERVICE.post('/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen/dispatch', { output_mode: 'json' }).promise()), {}) || {}).sid;
 			if (!sid) throw new Error('the search job could not be started');
+			ui.running.sid = sid; renderHeader();
 			for (let i = 0; i < 3600; i++) {
 				const job = ((safeParse(await P(SERVICE.get(`${JOBS}/${sid}`, { output_mode: 'json' }).promise()), {}).entry || [])[0] || {}).content || {};
 				if (job.isFailed) throw new Error((job.messages && job.messages[0] && job.messages[0].text) || 'the merge search failed');
@@ -939,14 +1024,14 @@ require([
 				await wait(2000);
 			}
 			await Promise.all([loadRuns(), loadConf()]);
-			const info = runInfo(); toast(info ? `Run finished: ${info.out.toLocaleString()} assets${info.delta ? ` (${info.delta})` : ''}.` : 'Run finished.'); live('Run finished');
+			const info = runInfo(); toast(info ? `Run finished: ${fmt(info.out)} assets${info.delta ? ` (${info.delta})` : ''}.` : 'Run finished.'); live('Run finished');
 		} catch (err) { ui.banner = { kind: 'bad', title: 'The merge run failed.', text: describeError(err), action: 'Dismiss', act: 'dismissBanner' }; }
-		ui.running = false; renderHeader(); renderPane(); inspectAll(true);
+		clearInterval(ui.runTimer); ui.running = null; renderHeader(); renderPane(); inspectAll(true);
 	}
 
 	/* ---------- Modal ---------- */
 	let modalState = null;
-	function openModal({ title, body, confirm, cancel = 'Cancel', destructive, onConfirm }) {
+	function openModal({ title, body, confirm, cancel = 'Cancel', destructive, onConfirm, onCancel }) {
 		const sc = document.createElement('div'); sc.className = 'scrim';
 		sc.innerHTML = `<div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="m-t" aria-describedby="m-b"><h2 id="m-t">${esc(title)}</h2><div id="m-b" class="muted">${body}</div><div class="actions"><button class="btn" type="button" data-m="cancel">${esc(cancel)}</button><button class="btn ${destructive ? 'destructive' : 'primary'}" type="button" data-m="ok">${esc(confirm)}</button></div></div>`;
 		ROOT.append(sc); const prevActive = ROOT.activeElement; modalState = { sc, prevActive };
@@ -955,7 +1040,7 @@ require([
 			if (e.key === 'Escape') { e.stopPropagation(); closeModal(); }
 			if (e.key === 'Tab') { const bs = $$('button', sc); const i = bs.indexOf(ROOT.activeElement); if (e.shiftKey && i === 0) { e.preventDefault(); bs[bs.length - 1].focus(); } else if (!e.shiftKey && i === bs.length - 1) { e.preventDefault(); bs[0].focus(); } }
 		});
-		sc.addEventListener('click', (e) => { const m = e.target.closest('[data-m]'); if (e.target === sc || (m && m.dataset.m === 'cancel')) closeModal(); else if (m) { closeModal(true); onConfirm(); } });
+		sc.addEventListener('click', (e) => { const m = e.target.closest('[data-m]'); if (e.target === sc || (m && m.dataset.m === 'cancel')) { closeModal(); if (m && onCancel) onCancel(); } else if (m) { closeModal(true); onConfirm(); } });
 	}
 	function closeModal(skipFocus) {
 		if (!modalState) return; const { sc, prevActive } = modalState; sc.remove(); modalState = null; $q('#hdr').inert = false; $q('#main').inert = false;
@@ -1000,9 +1085,11 @@ require([
 			dswitch: () => { const k = a.dataset.k; ui.drawer.draft[k] = !ui.drawer.draft[k]; if (['key', 'cs'].includes(k)) rerender(); else { a.setAttribute('aria-checked', ui.drawer.draft[k]); onDraftChange(); } },
 			sbool: () => { ui.sdraft[a.dataset.k] = !ui.sdraft[a.dataset.k]; renderPane(); refocus(a.dataset.fid); updateSaveState(); },
 			ssave: saveSettings,
-			sdiscard: () => { ui.sdraft = clone(S.settings); renderPane(); updateSaveState(); toast('Discarded unsaved settings.'); },
-			stage: () => { const i = +id; ui.expanded.has(i) ? ui.expanded.delete(i) : ui.expanded.add(i); renderPane(); refocus(`stage-${i}`); },
-			expandAll: () => { stages().forEach((_, i) => ui.expanded.add(i)); renderPane(); },
+			sdiscard: () => { ui.sdraft = clone(S.settings); ui.sbase = itemSnapshot('settings', '', S.entries); renderPane(); updateSaveState(); toast('Discarded unsaved settings.'); },
+			jump: () => { const t = $q(`#stg-${id}`); if (t) { t.scrollIntoView({ block: 'start', behavior: reduced() ? 'auto' : 'smooth' }); t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash'); } $$('.outline button').forEach((b) => b.setAttribute('aria-current', b.dataset.id === id)); },
+			attn: () => { const t = S.sources.some((x) => problems('source', x).length) ? 'sources' : 'fields'; ui.attnOnly = true; if (ui.tab !== t) switchTab(t); else renderPane(); },
+			attnClear: () => { ui.attnOnly = false; renderPane(); },
+			chipMore: () => { ui.chipsOpen.has(id) ? ui.chipsOpen.delete(id) : ui.chipsOpen.add(id); refreshChips(id); },
 			preview: runPreview,
 			copy: () => { try { navigator.clipboard.writeText(LINES.map((l) => l.text).join('\n')); toast('Search copied.'); } catch (er) { toast('Copying is not available in this browser.'); } },
 			mapAdd: () => { const st = S.stats[ui.drawer.draft.lookup] || {}; ui.drawer.draft.map.push({ to: '', from: (st.columns || [])[0] || '' }); rerender(); },
@@ -1031,8 +1118,8 @@ require([
 			if (k === 'change_history') { renderPane(); refocus(`st-${k}`); } updateSaveState(); refreshSettingsBar();
 		}
 	});
-	ROOT.addEventListener('change', (e) => { const t = e.target; if (t.tagName === 'SELECT' && t.dataset.d && ui.drawer) { ui.drawer.draft[t.dataset.d] = t.value; if (['method', 'norm', 'fieldType'].includes(t.dataset.d)) rerender(); else onDraftChange(); } });
-	ROOT.addEventListener('toggle', (e) => { if (e.target.dataset && e.target.dataset.actToggle === 'raw') { e.target.open ? ui.expanded.add('raw') : ui.expanded.delete('raw'); } if (e.target.id === 'sec-adv') ui.advOpen = e.target.open; }, true);
+	ROOT.addEventListener('change', (e) => { const t = e.target; if (t.tagName === 'SELECT' && t.dataset.d && ui.drawer) { ui.drawer.draft[t.dataset.d] = t.value; if (['method', 'fieldType'].includes(t.dataset.d)) rerender(); else onDraftChange(); } });
+	ROOT.addEventListener('toggle', (e) => { if (e.target.dataset && e.target.dataset.actToggle === 'raw') { e.target.open ? ui.expanded.add('raw') : ui.expanded.delete('raw'); } if (e.target.id === 'sec-adv') { ui.advOpen = e.target.open; store.set('advOpen', ui.advOpen); } if (e.target.id === 'sec-clean') { ui.cleanOpen = e.target.open; store.set('cleanOpen', ui.cleanOpen); } }, true);
 
 	ROOT.addEventListener('keydown', (e) => {
 		const t = e.target;
@@ -1055,6 +1142,13 @@ require([
 			e.preventDefault(); const id = tabs[i].dataset.tab; switchTab(id); setTimeout(() => { const n = $q(`#tab-${id}`); if (n) n.focus(); }, 30); return;
 		}
 		if (t.id === 'pick') { pickerKey(e, t); if (e.defaultPrevented) return; }
+		if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && t.matches && t.matches('.tbl tbody button') && !e.altKey) {
+			const tr = t.closest('tr'); const own = $$('button:not([disabled])', tr); const col = $$('button', tr).indexOf(t);
+			let target = null;
+			if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') target = own[own.indexOf(t) + (e.key === 'ArrowRight' ? 1 : -1)];
+			else { const row = e.key === 'ArrowDown' ? tr.nextElementSibling : tr.previousElementSibling; if (row) target = $$('button', row)[col]; if (target && target.disabled) target = $$('button:not([disabled])', row)[0]; }
+			if (target) { e.preventDefault(); target.focus(); return; }
+		}
 		if ((e.key === 's' || e.key === 'S') && (e.metaKey || e.ctrlKey) && ui.drawer && ui.drawer.draft) { e.preventDefault(); saveDrawer(); return; }
 		if (e.key === 'Escape') { if (modalState) return; if (ui.drawer) { e.preventDefault(); requestClose(); } return; }
 		const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable;
@@ -1066,20 +1160,29 @@ require([
 	// Escape also closes the editor when the focus has landed on the page itself rather than inside the shadow root
 	document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && e.target === document.body && ui.drawer && !modalState) { e.preventDefault(); requestClose(); } });
 
-	/* source picker (combobox) */
+	/* source picker (combobox): the list is fixed-positioned so the scrolling editor never clips it */
 	let pickIdx = -1;
+	const PICK_LIMIT = 100;
+	function placeList(input, lb) {
+		const r = input.getBoundingClientRect(); lb.style.left = `${r.left}px`; lb.style.top = `${r.bottom + 2}px`; lb.style.width = `${r.width}px`;
+		lb.style.maxHeight = `${Math.max(160, Math.min(320, window.innerHeight - r.bottom - 16))}px`;
+	}
 	function pickerInput(t) {
 		const q = t.value.toLowerCase(); const lb = $q('#pick-list');
-		const items = (S.lookups || []).filter((c) => !S.sources.some((s) => s.lookup === c.name) && (c.name.toLowerCase().includes(q) || c.app.toLowerCase().includes(q))).slice(0, 100);
-		lb.innerHTML = items.length ? items.map((c, i) => `<div class="opt" role="option" id="po-${i}" data-lk="${esc(c.name)}" aria-selected="false"><span>${esc(c.name)}</span><small>${esc(c.app)}</small></div>`).join('') : `<div class="opt muted" role="option" aria-disabled="true">${S.lookups ? 'No lookups match' : 'Loading lookups…'}</div>`;
-		lb.hidden = false; t.setAttribute('aria-expanded', 'true'); pickIdx = -1;
+		const all = (S.lookups || []).filter((c) => !S.sources.some((s) => s.lookup === c.name) && (c.name.toLowerCase().includes(q) || c.app.toLowerCase().includes(q)));
+		const items = all.slice().sort((a, b) => a.app.localeCompare(b.app) || a.name.localeCompare(b.name)).slice(0, PICK_LIMIT);
+		let app = null; let n = 0;
+		lb.innerHTML = items.length ? items.map((c) => { const head = c.app !== app ? `<div class="opt-group" role="presentation">${esc(c.app || 'No app')}</div>` : ''; app = c.app; return `${head}<div class="opt" role="option" id="po-${n++}" data-lk="${esc(c.name)}" aria-selected="false"><span>${esc(c.name)}</span></div>`; }).join('') + (all.length > PICK_LIMIT ? `<div class="opt-note" role="presentation">Showing ${PICK_LIMIT} of ${all.length}. Keep typing to narrow the list.</div>` : '') : `<div class="opt muted" role="option" aria-disabled="true">${S.lookups ? 'No lookups match' : 'Loading lookups…'}</div>`;
+		placeList(t, lb); lb.hidden = false; t.setAttribute('aria-expanded', 'true'); pickIdx = -1;
 		lb.onmousedown = (ev) => { const o = ev.target.closest('[data-lk]'); if (o) { ev.preventDefault(); chooseLookup(o.dataset.lk); } };
 	}
+	const closeList = () => { const lb = $q('#pick-list'); if (lb) lb.hidden = true; const t = $q('#pick'); if (t) t.setAttribute('aria-expanded', 'false'); };
+	window.addEventListener('scroll', closeList, true); window.addEventListener('resize', closeList);
 	function pickerKey(e, t) {
 		const lb = $q('#pick-list'); const o = $$('[data-lk]', lb);
 		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (lb.hidden) pickerInput(t); const l = $$('[data-lk]', lb); if (!l.length) return; pickIdx = (pickIdx + (e.key === 'ArrowDown' ? 1 : -1) + l.length) % l.length; l.forEach((x, i) => x.setAttribute('aria-selected', i === pickIdx)); t.setAttribute('aria-activedescendant', l[pickIdx].id); l[pickIdx].scrollIntoView({ block: 'nearest' }); }
 		else if (e.key === 'Enter' && pickIdx >= 0 && o[pickIdx]) { e.preventDefault(); chooseLookup(o[pickIdx].dataset.lk); }
-		else if (e.key === 'Escape' && !lb.hidden) { e.preventDefault(); e.stopPropagation(); lb.hidden = true; t.setAttribute('aria-expanded', 'false'); }
+		else if (e.key === 'Escape' && !lb.hidden) { e.preventDefault(); e.stopPropagation(); closeList(); }
 	}
 	async function chooseLookup(name) {
 		const s = ui.drawer.draft; s.lookup = name; s.name = name.replace(/[^A-Za-z0-9_]/g, '_').replace(/_+$/, ''); s.map = [];
@@ -1092,7 +1195,9 @@ require([
 
 	/* ---------- Start ---------- */
 	function init() {
-		detectTheme(); renderHeader(); renderMain();
+		const watch = () => { const w = host.getBoundingClientRect().width; host.toggleAttribute('data-narrow', w < 1100); host.toggleAttribute('data-compact', w < 760); };
+		if (window.ResizeObserver) new window.ResizeObserver(watch).observe(host);
+		watch(); detectTheme(); renderHeader(); renderMain();
 		loadConf().then(() => { renderHeader(); renderMain(); inspectAll(); refreshLines(); loadRuns().then(() => { renderHeader(); }); })
 			.catch((err) => { $q('#main').innerHTML = `<div class="d-in"><div class="banner bad" role="alert">${ico('alert')}<div class="grow"><b>The configuration could not be read.</b><div class="muted">${esc(describeError(err))}</div></div></div></div>`; });
 	}
