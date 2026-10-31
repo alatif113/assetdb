@@ -8,7 +8,7 @@ private **dev** Splunk instance (`splunk.home`); the scripts refuse any host not
 
 | Tool | Version used | Notes |
 | --- | --- | --- |
-| Python | 3.9+ (developed on 3.13) | creates `.venv`; pins in `requirements-dev.txt` (pytest, pytest-cov, requests, splunk-appinspect 4.4.0, shellcheck-py) |
+| Python | 3.9+ (developed on 3.13) | creates `.venv`; pins in `requirements-dev.txt` (pytest, requests, splunk-appinspect 4.4.0, shellcheck-py) |
 | Node / npm | 22 (any recent LTS) | `npm ci` uses `package-lock.json` (babel, terser, underscore) |
 | bash, rsync, ssh, jq, curl, tar, gzip | system | bash 3.2 (macOS) compatible |
 
@@ -144,8 +144,7 @@ touched. If a run is killed, remove leftovers matching `adbtest_*` under Setting
 
 `make lint` = shellcheck (`scripts/`, `tests/shell/`), ESLint (`eslint.config.js`; 0 errors required,
 existing `==` / unused-variable warnings are tolerated up to a cap) and ruff (`pyproject.toml`).
-`lib/`, `*.min*.js` and `dist/` are excluded. Prettier settings are in `.prettierrc`
-(tabs, single quotes, 140 columns) but formatting is not enforced.
+`lib/`, `*.min*.js` and `dist/` are excluded.
 
 ## Static file caching after a deploy
 

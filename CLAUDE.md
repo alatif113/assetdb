@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-AssetDB is a Splunk app (no Splunk Enterprise Security required) that merges asset records from multiple lookup files into a single KV store collection (`assetdb`). The repo root is the app directory itself (`$SPLUNK_HOME/etc/apps/assetdb`). Tests, packaging and deploy tooling are described in `docs/TESTING.md`; `make lint` runs shellcheck, ESLint (`eslint.config.js`, warnings allowed, errors fail) and ruff (`pyproject.toml`); `.prettierrc` records the formatting style (not enforced).
+AssetDB is a Splunk app (no Splunk Enterprise Security required) that merges asset records from multiple lookup files into a single KV store collection (`assetdb`). The repo root is the app directory itself (`$SPLUNK_HOME/etc/apps/assetdb`). Tests, packaging and deploy tooling are described in `docs/TESTING.md`; `make lint` runs shellcheck, ESLint (`eslint.config.js`, warnings allowed, errors fail) and ruff (`pyproject.toml`).
 
 ## Commands
 
