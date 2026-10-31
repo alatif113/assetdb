@@ -1,6 +1,6 @@
 # AssetDB feature proposals
 
-Status: proposal only, nothing here is implemented. Written against the code as of commit `1522af9`.
+Status: written against the code as of commit `1522af9`. **Implemented since:** P1, P3, P6, P7, P8, P9, P12, P13 (without stable IDs, so a re-keyed asset is one removal plus one addition), P16 (four templates instead of the full list), P17, P19, plus the source and field options and global settings discussed afterwards. **Not implemented:** P2, P4, P5, P10, P11, P14, P15, P18, P20. The designs below are the original proposals; the README describes what was built.
 
 ## Where AssetDB stands today
 

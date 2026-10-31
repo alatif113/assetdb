@@ -20,23 +20,20 @@ AssetDB is a Splunk app (no Splunk Enterprise Security required) that merges ass
 
 The pieces only make sense together:
 
-1. **Configure UI** (`default/data/ui/views/configure.xml` → `js/assetdb.min.js`): a Simple XML dashboard that mounts a custom SPA into `#ab_config`. All configuration is stored through Splunk REST config endpoints (`/servicesNS/nobody/assetdb/configs/conf-assetdb/...`), i.e. in `assetdb.conf`:
-   - `[general]` stanza: `lookups` — a JSON array of `{name, lookup}` objects (the source lookup files).
-   - One stanza per asset field, with properties documented in README.md ("Field Properties").
-   The helper modules (`modal`, `textInput`, `radioInput`, `spinnerInput`, `multiselectInput`, `format`, `prism`) are small Splunk-MVC/jQuery widgets used by `assetdb.js`.
-
-2. **Search generation** (`makeMergeSearch()` in `assetdb.js`): whenever lookups or fields change, the UI regenerates the full SPL merge search from the field config and writes it to the `search` attribute of saved search `assetdb-lookupgen` (`conf-savedsearches`). The `default/savedsearches.conf` entry is just a `| makeresults` placeholder with a daily cron. To change merge behavior, edit the generator in `makeMergeSearch()`, not the saved search. The generated pipeline: inputlookup each source → split multivalue fields (`|`-delimited) → lowercase/validate/ignore/fill-null → build `_key` from key fields → shallow `stats ... by _key` → `adbmerge` → `md5` of merged key set as the final `_key` → second `stats` → coalesce/trim → `outputlookup assetdb`.
-
-3. **`adbmerge` custom command** (`bin/adbmerge.py`, registered in `default/commands.conf`, uses vendored `lib/splunklib`): a `ReportingCommand` whose `reduce` does transitive merging — assets sharing any key (even indirectly through a third asset) get the same `asset` multivalue set of keys. Assets with no keys are dropped; clusters with more than `max_keys` unique keys are dropped (counted and logged as a warning). The README's merge diagram describes this algorithm.
-
-4. **Storage** (`default/collections.conf`, `transforms.conf`): KV store collection `assetdb` with a `lookup` definition of the same name (`fields_list = _key,asset`), so searches can use `| lookup assetdb ...` against the merged data.
-
-5. **Macros** (`default/macros.conf`): `input_adb_lookup(1)` is used by the generated search; the others (`normalize_mac`, `normalize_os`, `host_from_dns`, `ageout_adb_lookup`, `retain_adb_lookup`, `output_adb_lookup`, `join_mv_fields`/`split_mv_fields`) are helpers for users building the per-source lookup-generation searches. Multivalue fields are stored in lookups as `|`-joined strings.
+1. **Generator** (`appserver/static/js/src/generator.js`): a pure AMD module (no DOM/REST) that turns the `assetdb.conf` field array into the merge search as typed `{kind, text}` lines (`buildSearchLines`), plus the read-only preview searches (`buildPreviewSearches`) and the "which source supplied what" search (`buildExplainSearch`). **To change merge behaviour edit the generator**, never the saved search. Everything it emits is covered by golden files (`tests/fixtures/golden`) and by tests that run the generated SPL on a real Splunk (`tests/integration/sandbox.py`). Gotchas learned the hard way: fields that start with `_` are internal and vanish through `stats`; `mvappend` with one argument is an eval error (use `mvappendOf`); `outputlookup` with zero results empties a KV collection unless `override_if_empty=false`.
+2. **Configure UI** (`default/data/ui/views/configure.xml` → `js/assetdb.min.js`): a Simple XML page that mounts a SPA into `#ab_config`. Tabs: Asset Lookups (sources with options), Asset Fields, Asset Merge Search (preview), Settings. All config is stored through Splunk REST in `assetdb.conf`: the `[general]` stanza holds `lookups` (a JSON array of source objects: `name`, `lookup`, `enabled`, `role`, `scope`, `max_age`, `time_field`, `filter`, `columns`) and the global settings (`max_keys`, `max_key_share`, `key_blocklist`, `ignore_values`, `min_ratio`, `runs_to_keep`, `scope_field`, `default_*`, `change_history`...); every other stanza is a field. Saving regenerates the saved search `assetdb-lookupgen` (writes are chained and failures shown in a modal), keeps the KV collection (indexes on key fields, field types) and the `adb_enrich_outputs` macro in line, and reloads from the server. Edit only `src/*.js`; `*.min.js` are committed build output.
+3. **Dashboards** (`explore.xml` -> `js/explore.min.js`, `review.xml`): Explore finds an asset by any key and traces its source rows through the generator's explain search; Review shows runs, overflow clusters, conflicts and recent changes.
+4. **`adbmerge` custom command** (`bin/adbmerge.py` thin wrapper, `bin/adbmerge_core.py` pure logic, vendored `lib/splunklib` 3.x, Python 3.13): union-find merge of rows that share any key; enrich-only rows (`adb_auth=0`) attach to exactly one asset and never link; keys shared by more than `max_key_share` rows are skipped; clusters over `max_keys` (hard cap 100) are dropped or emitted for review (`overflow=emit`); counters are stamped on the output for the run record. The chunked protocol takes column names from the first record, hence `with_common_fields`.
+5. **Storage** (`collections.conf`, `transforms.conf`): `assetdb` (merged assets), `assetdb_runs` (bounded run history), `assetdb_overflow` (last run's oversized clusters), `assetdb_changes` (bounded change log); each with a lookup definition.
+6. **Macros** (`macros.conf`): `input_adb_lookup`, the `normalize_*` presets (multivalue safe, used by the generator), `adb_enrich*` (exported), `output_adb_lookup` and helpers.
+7. **Templates**: disabled `assetdb-src-*` saved searches that build source lookups.
 
 `lookups/assetdb_demo_assets.csv` is the demo source lookup registered by default in `assetdb.conf`.
 
 ## Gotchas
 
-- `bin/adbmerge.py` has a `python2.7` shebang but `commands.conf` sets `python.version = python3`; keep the code compatible with Python 3 (and ideally 2).
-- Field names `_key` and `asset` are reserved (created by the merge process).
-- Field definitions in `assetdb.conf` store booleans as `0`/`1` strings (`key_field`, `case_sensitive`) and list values like `ignore_values` as JSON; the generator parses them accordingly.
+- `python.required = 3.13` and splunk-sdk 3.x mean `adbmerge` needs a Splunk whose custom commands run on Python 3.13 (not 10.0).
+- Field names `_key`, `asset`, `source`, `source_lookup`, `last_seen`, `scope`, `conflicts` are reserved (created by the merge).
+- Booleans in `assetdb.conf` are `0`/`1` strings; lists (`ignore_values`, `key_blocklist`) are JSON strings; the generator parses them with fallbacks.
+- Splunk Web caches app static files per build: after a deploy restart splunkd (`/_bump` is refused on Splunk Free) and hard-refresh.
+- Integration/e2e tests need `.env.local` and write only to temporary objects (`adbtest_*`); the e2e flow edits the real config and restores it. If a flow run is interrupted, remove a leftover `adbtest_*` field by hand and check the saved search is `| makeresults` again.

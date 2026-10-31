@@ -153,3 +153,9 @@ Splunk Web serves app JS/CSS from a cache keyed by its static version, so a depl
 showing the old files. On a licensed instance use `/en-US/_bump` (what `scripts/reload.sh` tries); on
 Splunk Free it is refused (403) and a splunkd restart (`scripts/reload.sh --restart --yes`) is what
 reliably refreshes the files. Browsers also cache them for a year: hard-refresh after a deploy.
+
+## What runs on Splunk
+
+`make integration` (needs `.env.local`) runs the tests in `tests/integration`. Most behaviour of the generated search is checked by `test_semantics.py`: it builds temporary CSV source lookups and temporary KV collections (`adbtest_<tag>_<run>` with their own `_runs`, `_overflow` and `_changes`), runs the app's own generated search against them as a job (`search_job` fails on any eval/parser error, which the export endpoint would hide) and asserts the merged rows, run records, overflow list and change history. `test_normalizers.py` evaluates the `normalize_*` macros, `test_enrichment.py` the `adb_enrich*` macros, `test_templates.py` the source templates. The real `assetdb` collections are never written.
+
+`scripts/e2e.sh --flow` drives the Configure and Explore pages with a headless browser (Playwright, `npm i --no-save playwright && npx playwright install chromium`). It edits the real configuration (a test field, source options, settings, the CIM presets) and a marked test asset, and restores everything afterwards; a failed run may leave an `adbtest_*` field behind.
