@@ -33,8 +33,10 @@ try {
 
   originalSearch = await savedSearch();
   originalLookups = (await generalConf()).lookups;
-  originalFieldsList = await fieldsList();
-  originalMacro = (await rest('/servicesNS/nobody/assetdb/data/macros/adb_enrich_outputs')).entry[0].content.definition;
+  // derived from the fields configured now, not read back: a previous interrupted run may have left both stale
+  const startFields = (await conf()).filter((e) => e.name !== 'general').map((e) => e.name);
+  originalFieldsList = startFields.concat(['_key', 'asset', 'source', 'source_lookup', 'last_seen', 'scope', 'conflicts']).join(',');
+  originalMacro = ['_key AS asset_id', 'source AS asset_source', 'source_lookup AS asset_source_lookup', 'last_seen AS asset_last_seen'].concat(startFields.map((n) => `${n} AS asset_${n}`)).join(', ');
 
   // F-08: cancelling Remove Lookup must not change anything
   const lookupsBefore = (await conf()).find((e) => e.name === 'general').content.lookups;
