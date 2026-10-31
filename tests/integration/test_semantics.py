@@ -59,3 +59,42 @@ def test_typed_validation_drops_invalid_values_but_keeps_the_asset(sandbox):
     sandbox.add_source("a", [{"mac": "m1", "ip": "10.0.0.1|999.1.1.1|not-an-ip"}])
     r = only(sandbox.run())
     assert r["ip"] == ["10.0.0.1"], r
+
+
+def test_ignore_exact_regex_cidr_and_the_global_list(sandbox):
+    sandbox.general = {"ignore_values": '["n/a"]'}
+    sandbox.fields = [field("mac", key_field="1"),
+                      field("ip", case_sensitive="0", ignore_values='["unknown", "re:^169\\\\.254\\\\.", "cidr:10.0.0.0/8"]')]
+    sandbox.add_source("a", [{"mac": "m1", "ip": "Unknown|10.1.2.3|169.254.9.9|192.168.1.5|N/A|8.8.8.8"}])
+    r = only(sandbox.run())
+    assert sorted(r["ip"]) == ["192.168.1.5", "8.8.8.8"], r
+
+
+def test_a_field_can_opt_out_of_the_global_ignore_list(sandbox):
+    sandbox.general = {"ignore_values": '["n/a"]'}
+    sandbox.fields = [field("mac", key_field="1"), field("note", ignore_values="[]", inherit_ignore="0")]
+    sandbox.add_source("a", [{"mac": "m1", "note": "n/a|x"}])
+    assert sorted(only(sandbox.run())["note"]) == ["n/a", "x"]
+
+
+def test_allowed_sources_discard_values_from_other_sources(sandbox):
+    sandbox.fields = [field("mac", key_field="1"), field("owner", field_type="single", allowed_sources="cmdb")]
+    sandbox.add_source("cmdb", [{"mac": "m1", "owner": ""}])
+    sandbox.add_source("edr", [{"mac": "m1", "owner": "from-edr"}])
+    assert only(sandbox.run()).get("owner") in (None, [""], []), "edr must not provide the owner"
+
+
+def test_earliest_sum_and_numeric_max(sandbox):
+    sandbox.fields = [field("mac", key_field="1"),
+                      field("first", field_type="single", merge_method="earliest"),
+                      field("hits", field_type="single", merge_method="sum", value_type="number"),
+                      field("score", field_type="single", merge_method="max", value_type="number")]
+    sandbox.add_source("a", [{"_time": 1700000300, "mac": "m1", "first": "newer", "hits": 5, "score": 9},
+                             {"_time": 1700000100, "mac": "m1", "first": "oldest", "hits": 7, "score": 10}],
+                       header=["_time", "mac", "first", "hits", "score"])
+    sandbox.add_source("b", [{"_time": 1700000200, "mac": "m1", "first": "middle|pipe", "hits": 1, "score": 100}],
+                       header=["_time", "mac", "first", "hits", "score"])
+    r = only(sandbox.run())
+    assert r["first"] == ["oldest"], r
+    assert r["hits"] == ["13"], r
+    assert r["score"] == ["100"], r        # numeric max: 100 > 10 > 9 (a text max would pick "9")

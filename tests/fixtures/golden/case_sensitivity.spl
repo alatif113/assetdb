@@ -1,10 +1,10 @@
 | `input_adb_lookup(a.csv)`
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="a.csv", "a")
 ```### Split multivalue fields ###```
 | foreach sensitive, insensitive, insensitive2 [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Convert case insensitive fields to lowercase ###```
 | foreach insensitive, insensitive2 [eval <<FIELD>>=lower(<<FIELD>>)]
-```### Map source lookup to source name ###```
-| eval source=case(source_lookup="a.csv", "a")
 | search _key=*
 ```### Sort newest first (multivalue fields keep their most recent values) ###```
 | sort 0 -_time

@@ -49,6 +49,7 @@ try {
   await page.waitForSelector('#ab_config a.tab-label:has-text("Settings")');
   await page.waitForTimeout(1500);
   check((await generalConf()).max_keys === '30', 'max keys saved to the [general] stanza');
+  check(Array.isArray(JSON.parse((await generalConf()).ignore_values || 'null')), 'global ignore list saved as a JSON array');
   check((await savedSearch()).includes('adbmerge max_keys=30'), 'saved search regenerated with the new max keys');
   await page.click('#ab_config a.tab-label:has-text("Settings")');
   await page.fill('#inputMaxKeys input', originalMaxKeys || '25');

@@ -1,10 +1,10 @@
 | `input_adb_lookup(a.csv)`
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="a.csv", "a")
 ```### Split multivalue fields ###```
 | foreach os, owner, empty [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Ignore values ###```
-| eval os = if(in(os, "null", "none", "unknown"), null(), os) owner = if(in(owner, "say \"hi\"", "<b>&", "it's"), null(), owner)
-```### Map source lookup to source name ###```
-| eval source=case(source_lookup="a.csv", "a")
+| eval os = mvfilter(NOT (in(os, "null", "none", "unknown"))), owner = mvfilter(NOT (in(owner, "say \"hi\"", "<b>&", "it's")))
 | search _key=*
 ```### Sort newest first (multivalue fields keep their most recent values) ###```
 | sort 0 -_time

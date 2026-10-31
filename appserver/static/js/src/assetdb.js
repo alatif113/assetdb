@@ -435,7 +435,26 @@ require([
 			allowCustomValues: true,
 			choices: [{value: "null"}, {value: "unknown"}, {value: ""}],
 			value: (field?.content?.ignore_values) ? safeParse(field.content.ignore_values, []) : [],
-			help: '[Optional] Select from a list of common values to ignore or input your own',
+			help: '[Optional] Values to ignore: type a value, re:<regular expression> or cidr:<network>, e.g. unknown, re:^169\\.254\\., cidr:127.0.0.0/8',
+		});
+
+		let inheritIgnoreInput = new RadioInput({
+			id: 'inputInheritIgnore',
+			label: 'Use Global Ignore List',
+			choices: [
+				{ label: 'Yes', value: 1 },
+				{ label: 'No', value: 0 },
+			],
+			value: field?.content?.inherit_ignore ?? 1,
+			help: 'Also ignore the values in the global ignore list (Settings)',
+		});
+
+		let allowedSourcesInput = new MultiSelectInput({
+			id: 'inputAllowedSources',
+			label: 'Allowed Sources',
+			choices: lookupArray.map((lookup) => ({ label: lookup.name, value: lookup.name })),
+			value: field?.content?.allowed_sources ? field.content.allowed_sources.split(',') : [],
+			help: '[Optional] Only take values for this field from these sources (leave empty for all sources)',
 		});
 
 		let fillnullInput = new TextInput({
@@ -475,13 +494,15 @@ require([
 			label: 'Merge Method',
 			choices: [
 				{ label: 'Latest', value: 'latest' },
+				{ label: 'Earliest', value: 'earliest' },
 				{ label: 'Min', value: 'min' },
 				{ label: 'Max', value: 'max' },
 				{ label: 'Avg', value: 'avg' },
+				{ label: 'Sum', value: 'sum' },
 				{ label: 'Coalesce', value: 'coalesce' },
 			],
 			value: field?.content?.merge_method || 'latest',
-			help: 'Use the most recent value, minimum value, maximum value, average value, or define a precedence based on the source data',
+			help: 'Use the most recent or earliest value (by the _time of the source rows), the minimum, maximum, average or sum (numbers: set Value Type to Number), or define a precedence based on the source data',
 		});
 
 		let mergeOrderInput = new MultiSelectInput({
@@ -538,6 +559,8 @@ require([
 			.append(validationTypeInput.getInput())
 			.append(validationInput.getInput())
 			.append(ignoreValuesInput.getInput())
+			.append(inheritIgnoreInput.getInput())
+			.append(allowedSourcesInput.getInput())
 			.append(evalExpInput.getInput());
 
 		$('.input-group-merging', $form).append(fillnullInput.getInput());
@@ -576,6 +599,7 @@ require([
 			onRemove: function () {
 				mvc.Components.getInstance(mergeOrderInput.getId()).dispose();
 				mvc.Components.getInstance(ignoreValuesInput.getId()).dispose();
+				mvc.Components.getInstance(allowedSourcesInput.getId()).dispose();
 			},
 			onPrimaryBtnClick: function () {
 				let error = false;
@@ -644,6 +668,8 @@ require([
 						field_type: fieldTypeInput.getValue(),
 						merge_method: mergeMethodInput.getValue(),
 						merge_order: mergeOrderInput.getValue(),
+						inherit_ignore: inheritIgnoreInput.getValue(),
+						allowed_sources: allowedSourcesInput.getValue(),
 						max_values: spinnerInput.getValue() || 2,
 						mv_order: mvOrderInput.getValue(),
 						keep_case: parseInt(keyFieldInput.getValue()) === 1 && parseInt(caseSensitiveInput.getValue()) === 0 ? keepCaseInput.getValue() : 0,
@@ -876,6 +902,16 @@ require([
 			value: parseInt(general.default_case_sensitive) || 0,
 			help: 'Used for new fields and for fields that do not set it themselves',
 		});
+		// the widget registers itself globally, so drop the one from a previous render of this tab
+		if (mvc.Components.getInstance('inputGlobalIgnore')) mvc.Components.getInstance('inputGlobalIgnore').dispose();
+		const globalIgnoreInput = new MultiSelectInput({
+			id: 'inputGlobalIgnore',
+			label: 'Ignore Values (global)',
+			allowCustomValues: true,
+			choices: [{ value: 'null' }, { value: 'unknown' }, { value: 'n/a' }, { value: 'none' }],
+			value: general.ignore_values ? safeParse(general.ignore_values, []) : [],
+			help: 'Ignored in every field that uses the global list. Type a value, re:<regular expression> or cidr:<network>',
+		});
 		const defaultNormalizerInput = new SelectInput({
 			id: 'inputDefaultNormalizer',
 			label: 'Normalizer (default)',
@@ -888,6 +924,7 @@ require([
 			.append(maxKeysInput.getInput())
 			.append(defaultCaseInput.getInput())
 			.append(defaultNormalizerInput.getInput())
+			.append(globalIgnoreInput.getInput())
 			.append(scheduledInput.getInput())
 			.append(scheduleInput.getInput());
 		const $save = $('<a href="#" class="btn btn-primary btn-save-settings">Save Settings</a>');
@@ -919,6 +956,7 @@ require([
 					max_keys: String(maxKeys),
 					default_case_sensitive: String(parseInt(defaultCaseInput.getValue()) ? 1 : 0),
 					default_normalizer: defaultNormalizerInput.getValue(),
+					ignore_values: JSON.stringify(globalIgnoreInput.getValue()),
 				}),
 				setConf('conf-savedsearches/assetdb-lookupgen', {
 					cron_schedule: scheduleInput.getValue().trim(),
@@ -1062,7 +1100,8 @@ require([
 								<dl class="list-dotted">
 									<dt>Key Field</dt><dd>${isKey ? 'Yes' : 'No'}</dd>
 									<dt>Case Sensitive</dt><dd>${caseSensitive ? 'Yes' : 'No'}</dd>
-									<dt>Ignore Values</dt><dd>${_.escape(formatIgnoreValues(field.content?.ignore_values))}</dd>
+									<dt>Ignore Values</dt><dd>${_.escape(formatIgnoreValues(field.content?.ignore_values))}${parseInt(field.content?.inherit_ignore ?? 1) ? ' (+ global list)' : ''}</dd>
+									<dt>Allowed Sources</dt><dd>${_.escape(field.content?.allowed_sources || 'all')}</dd>
 									<dt>Fill Null</dt><dd>${_.escape(field.content?.fillnull || 'N/A')}</dd>
 									<dt>Description</dt><dd>${_.escape(field.content?.description || 'N/A')}</dd>
 									<dt>Normalizer</dt><dd>${_.escape(field.content?.normalizer || 'default')}</dd>

@@ -128,9 +128,9 @@ test('ignore values are SPL-escaped, lowercased for case-insensitive fields, and
 		single('cs', { case_sensitive: '1', ignore_values: JSON.stringify(['Unknown']) }),
 		single('none', { ignore_values: '[]' }),
 	]);
-	assert.ok(spl.includes('ci = if(in(ci, "unknown", "say \\"hi\\""), null(), ci)'), spl);
-	assert.ok(spl.includes('cs = if(in(cs, "Unknown"), null(), cs)'), spl);
-	assert.ok(!/in\(none/.test(spl), spl);
+	assert.ok(spl.includes('ci = mvfilter(NOT (in(lower(ci), "unknown", "say \\"hi\\"")))'), spl);
+	assert.ok(spl.includes('cs = mvfilter(NOT (in(cs, "Unknown")))'), spl);
+	assert.ok(!/none = mvfilter/.test(spl), spl);
 	assert.ok(!spl.includes('&quot;'), spl);
 });
 
@@ -267,4 +267,45 @@ test('every normalizer preset has a macro in macros.conf', () => {
 	for (const [preset, macro] of Object.entries(NORMALIZERS)) {
 		if (macro) assert.ok(macros.includes(`[${macro}(1)]`), `${preset} -> ${macro}`);
 	}
+});
+
+// --- ignore regex / CIDR / global list, allowed sources, merge methods, numeric types ------
+
+test('ignore entries can be exact values, re: regexes or cidr: networks', () => {
+	const spl = gen([single('ip', { case_sensitive: '0', ignore_values: JSON.stringify(['unknown', 're:^169\\.254\\.', 'cidr:10.0.0.0/8']) })]);
+	assert.ok(spl.includes('ip = mvfilter(NOT (in(lower(ip), "unknown") OR match(lower(ip), "^169\\\\.254\\\\.") OR cidrmatch("10.0.0.0/8", ip)))'), spl);
+	assert.throws(() => gen([single('f', { ignore_values: JSON.stringify(['re:(unclosed']) })]), /ignore regex/i);
+	assert.throws(() => gen([single('f', { ignore_values: JSON.stringify(['cidr:not-a-network']) })]), /ignore CIDR/i);
+});
+
+test('the global ignore list is inherited unless a field opts out', () => {
+	const cfg = (fields) => gen(fields, { name: 'general', content: { lookups: general.content.lookups, ignore_values: JSON.stringify(['n/a', 'cidr:127.0.0.0/8']) } });
+	const spl = cfg([single('a', { ignore_values: '[]', case_sensitive: '0' }), single('b', { ignore_values: '[]', inherit_ignore: '0' }), single('c', { ignore_values: JSON.stringify(['x']), case_sensitive: '1' })]);
+	assert.ok(spl.includes('a = mvfilter(NOT (in(lower(a), "n/a") OR cidrmatch("127.0.0.0/8", a)))'), spl);
+	assert.ok(!/b = mvfilter/.test(spl), 'field b opted out: ' + spl);
+	assert.ok(spl.includes('c = mvfilter(NOT (in(c, "x", "n/a") OR cidrmatch("127.0.0.0/8", c)))'), spl);
+});
+
+test('allowed sources null out values from other sources, after the source name is known', () => {
+	const lookups = JSON.stringify([{ name: 'cmdb', lookup: 'a.csv' }, { name: 'edr', lookup: 'b.csv' }]);
+	const spl = gen([single('owner', { allowed_sources: 'cmdb' })], { name: 'general', content: { lookups } });
+	assert.ok(spl.includes('owner = if(in(source, "cmdb"), owner, null())'), spl);
+	assert.ok(spl.indexOf('| eval source=case(') < spl.indexOf('in(source, "cmdb")'), 'source mapped first');
+	assert.ok(spl.indexOf('in(source, "cmdb")') < spl.indexOf('| search _key=*') || !spl.includes('| search _key=*'), spl);
+	assert.throws(() => gen([single('owner', { allowed_sources: 'a"b' })]), /allowed source/i);
+});
+
+test('earliest picks the first value exactly through both stats; sum is a plain sum', () => {
+	const spl = gen([single('first_name', { merge_method: 'earliest' }), single('hits', { merge_method: 'sum' })]);
+	assert.ok(spl.includes('first_name__e = if(isnotnull(first_name), printf("%015.3f", coalesce(_time, 0)) . "|" . first_name, null())'), spl);
+	assert.equal((spl.match(/min\(first_name__e\) as first_name__e/g) || []).length, 2, 'both stats');
+	assert.ok(spl.includes('first_name = replace(first_name__e, "^[^|]*\\|", "")'), spl);
+	assert.equal((spl.match(/sum\(hits\) as hits/g) || []).length, 2, spl);
+});
+
+test('numeric and time value types are converted so min and max compare numbers', () => {
+	const spl = gen([single('score', { merge_method: 'max', value_type: 'number' }), single('label', { merge_method: 'max', value_type: 'string' })]);
+	assert.ok(/\| eval score = tonumber\(score\)\n/.test(spl), spl);
+	assert.ok(!spl.includes('tonumber(label)'), spl);
+	assert.ok(spl.indexOf('tonumber(score)') < spl.indexOf('| stats values(source)'), 'before the first stats');
 });

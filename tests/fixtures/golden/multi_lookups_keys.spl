@@ -1,11 +1,11 @@
 | `input_adb_lookup(crowdstrike.csv)`
 | `input_adb_lookup(nessus.csv)`
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="crowdstrike.csv", "crowdstrike", source_lookup="nessus.csv", "nessus")
 ```### Split multivalue fields ###```
 | foreach mac, nt_host, ip [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Convert case insensitive fields to lowercase ###```
 | foreach mac, nt_host [eval <<FIELD>>=lower(<<FIELD>>)]
-```### Map source lookup to source name ###```
-| eval source=case(source_lookup="crowdstrike.csv", "crowdstrike", source_lookup="nessus.csv", "nessus")
 ```### Build match keys (lowercased where the field is case insensitive) ###```
 | eval adbk_mac = mac, adbk_nt_host = nt_host
 ```### Shallow merge assets with matching key fields (using basic stats) ###```

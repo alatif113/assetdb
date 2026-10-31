@@ -1,10 +1,10 @@
 | `input_adb_lookup(a.csv)`
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="a.csv", "a")
 ```### Split multivalue fields ###```
 | foreach mac [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Validate field values ###```
 | eval mac=mvfilter(match(mac, "^([0-9a-f]{2}:){5}[0-9a-f]{2}$"))
-```### Map source lookup to source name ###```
-| eval source=case(source_lookup="a.csv", "a")
 ```### Eval expression fields ###```
 | eval label = upper(owner) . "-" . priority
 ```### Build match keys (lowercased where the field is case insensitive) ###```

@@ -1,9 +1,9 @@
 | `input_adb_lookup(one.csv)`
 | `input_adb_lookup(two.csv)`
-```### Split multivalue fields ###```
-| foreach ip [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Map source lookup to source name ###```
 | eval source=case(source_lookup="one.csv", "one.csv", source_lookup="two.csv", "two.csv")
+```### Split multivalue fields ###```
+| foreach ip [eval <<FIELD>>=split(<<FIELD>>, "|")]
 | search _key=*
 ```### Sort newest first (multivalue fields keep their most recent values) ###```
 | sort 0 -_time

@@ -1,10 +1,10 @@
 | `input_adb_lookup(demo.csv)`
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="demo.csv", "demo")
 ```### Split multivalue fields ###```
 | foreach nt_host [eval <<FIELD>>=split(<<FIELD>>, "|")]
 ```### Convert case insensitive fields to lowercase ###```
 | foreach nt_host [eval <<FIELD>>=lower(<<FIELD>>)]
-```### Map source lookup to source name ###```
-| eval source=case(source_lookup="demo.csv", "demo")
 ```### Build match keys (lowercased where the field is case insensitive) ###```
 | eval adbk_nt_host = nt_host
 ```### Shallow merge assets with matching key fields (using basic stats) ###```

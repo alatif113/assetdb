@@ -17,8 +17,9 @@ define([], function () {
 	const SOURCE_NAME_RE = /^[A-Za-z0-9_.-]+$/;
 	const LOOKUP_FILE_RE = /^[A-Za-z0-9_.-]+$/;
 	const MERGE_ORDER_RE = /^[A-Za-z0-9_]+$/;
-	const MERGE_METHODS = ['latest', 'min', 'max', 'avg', 'coalesce'];
+	const MERGE_METHODS = ['latest', 'earliest', 'min', 'max', 'avg', 'sum', 'coalesce'];
 	const DEFAULT_MAX_KEYS = 25;
+	const CIDR_RE = /^[0-9a-fA-F:.]+\/\d{1,3}$/;
 	// Normaliser presets: each maps to a macro in macros.conf that rewrites every value of one field.
 	const NORMALIZERS = {
 		none: null,
@@ -148,6 +149,10 @@ define([], function () {
 
 		const general = (fieldArray.find((e) => e.name === 'general') || {}).content || {};
 		let normalize = [];
+		let allowedSources = [];
+		let typed = [];
+		let earliestEval = [];
+		let earliestFinal = [];
 		let keyTemps = [];
 		let keyFields = [];
 		const lookupsArray = getLookupArray(fieldArray);
@@ -187,14 +192,42 @@ define([], function () {
 				keyTemps.push(`adbk_${name} = ${keepCase ? `lower(${name})` : name}`);
 			}
 
-			const ignored = content.ignore_values ? safeParse(content.ignore_values, null) : null;
-			if (Array.isArray(ignored)) {
-				if (ignored.length) {
-					const lower = !caseSensitive;
-					const quoted = ignored.map(n => splQuote(lower ? String(n).toLowerCase() : n));
-					ignoreValues.push(`${name} = if(in(${name}, ${quoted.join(', ')}), null(), ${name})`);
+			// Ignore list: the field's own entries plus the global list (unless the field opts out). An entry is an exact
+			// value, `re:<regex>` or `cidr:<network>`. Exact values and regexes are compared lowercased on case insensitive fields.
+			const ownIgnored = content.ignore_values ? safeParse(content.ignore_values, null) : null;
+			const inheritIgnore = content.inherit_ignore === undefined || content.inherit_ignore === '' ? true : !!parseInt(content.inherit_ignore);
+			const globalIgnored = inheritIgnore ? safeParse(general.ignore_values, []) : [];
+			if (Array.isArray(ownIgnored)) {
+				const entries = ownIgnored.concat(Array.isArray(globalIgnored) ? globalIgnored : []);
+				if (entries.length) {
+					const cmp = caseSensitive ? name : `lower(${name})`;
+					const exact = [];
+					const tests = [];
+					for (const entry of entries) {
+						const text = String(entry);
+						if (text.startsWith('re:')) {
+							const pattern = text.slice(3);
+							try { new RegExp(pattern); } catch { throw new Error(`Invalid ignore regex "${pattern}" for field ${name}`); }
+							tests.push(`match(${cmp}, ${splQuote(caseSensitive ? pattern : pattern.toLowerCase())})`);
+						} else if (text.startsWith('cidr:')) {
+							const network = text.slice(5);
+							if (!CIDR_RE.test(network)) throw new Error(`Invalid ignore CIDR "${network}" for field ${name}`);
+							tests.push(`cidrmatch(${splQuote(network)}, ${name})`);
+						} else {
+							exact.push(splQuote(caseSensitive ? text : text.toLowerCase()));
+						}
+					}
+					if (exact.length) tests.unshift(`in(${cmp}, ${exact.join(', ')})`);
+					ignoreValues.push(`${name} = mvfilter(NOT (${tests.join(' OR ')}))`);
 				}
 			}
+
+			// Allowed sources: values from any other source are discarded before the merge.
+			const allowed = (content.allowed_sources || '').split(',').map((x) => x.trim()).filter(Boolean);
+			for (const src of allowed) {
+				if (!SOURCE_NAME_RE.test(src)) throw new Error(`Invalid allowed source "${src}" for field ${name}`);
+			}
+			if (allowed.length) allowedSources.push(`${name} = if(in(source, ${allowed.map(splQuote).join(', ')}), ${name}, null())`);
 
 			if (content?.fillnull && !parseInt(content.key_field)) {
 				fillnull.push(`${name} = if(isnull(${name}), ${splQuote(content.fillnull)}, ${name})`);
@@ -212,6 +245,8 @@ define([], function () {
 			if (!caseSensitive && !keepCase) {
 				caseInsensitive.push(name);
 			}
+
+			if (content.field_type == 'single' && ['number', 'time'].includes(content.value_type)) typed.push(`${name} = tonumber(${name})`);
 
 			if (content.field_type == 'single') {
 				if (content.merge_method == 'latest') {
@@ -234,6 +269,13 @@ define([], function () {
 					const postEvalMerge = mergeOrderArray.map((lookup) => `'${lookup}_${name}'`);
 					coalesce.push(`${name} = coalesce(${postEvalMerge.join(', ')})`);
 
+				} else if (content.merge_method == 'earliest') {
+					// Exact first value without relying on event order: prefix each value with its zero padded time,
+					// take the lexicographic min through both stats, then strip the prefix.
+					earliestEval.push(`${name}__e = if(isnotnull(${name}), printf("%015.3f", coalesce(_time, 0)) . "|" . ${name}, null())`);
+					stats.push(`min(${name}__e) as ${name}__e`);
+					statsFinal.push(`min(${name}__e) as ${name}__e`);
+					earliestFinal.push(`${name} = replace(${name}__e, "^[^|]*\\|", "")`);
 				} else if (content.merge_method == 'avg') {
 					// An average of per-group averages is wrong for unequal groups: carry sum and count instead.
 					stats.push(`sum(${name}) as ${name}__sum, count(${name}) as ${name}__count`);
@@ -265,13 +307,16 @@ define([], function () {
 		const command = (text) => lines.push({ kind: 'command', text });
 
 		lookupFiles.forEach(command);
+		if (lookupNames.length) { section('Map source lookup to source name'); command(`| eval source=case(${lookupNames.join(', ')})`); }
+		if (allowedSources.length) { section('Discard values from sources a field does not accept'); command(`| eval ${allowedSources.join(', ')}`); }
 		if (multivalue.length) { section('Split multivalue fields'); command(`| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`); }
 		if (normalize.length) { section('Normalize values'); normalize.forEach(command); }
 		if (caseInsensitive.length) { section('Convert case insensitive fields to lowercase'); command(`| foreach ${caseInsensitive.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`); }
 		if (validation.length) { section('Validate field values'); command(`| eval ${validation.join(', ')}`); }
-		if (ignoreValues.length) { section('Ignore values'); command(`| eval ${ignoreValues.join(' ')}`); }
-		if (lookupNames.length) { section('Map source lookup to source name'); command(`| eval source=case(${lookupNames.join(', ')})`); }
+		if (ignoreValues.length) { section('Ignore values'); command(`| eval ${ignoreValues.join(', ')}`); }
 		if (evalExp.length) { section('Eval expression fields'); command(`| eval ${evalExp.join(', ')}`); }
+		if (typed.length) { section('Convert numeric fields'); command(`| eval ${typed.join(', ')}`); }
+		if (earliestEval.length) { section('Tag values with their time (for the earliest merge method)'); command(`| eval ${earliestEval.join(', ')}`); }
 		if (fieldSplit.length) { section('Create lookup specific fields for priority based coalesce'); command(`| eval ${fieldSplit.join(', ')}`); }
 		const keyRefs = keyFields.map((n) => `adbk_${n}`);
 		if (keys.length) {
@@ -290,6 +335,7 @@ define([], function () {
 		if (recentMv) command('| sort 0 -_time');
 		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${statsFinal.join(', ')} by _key`);
 		if (avgEval.length) { section('Calculate averages'); command(`| eval ${avgEval.join(', ')}`); }
+		if (earliestFinal.length) { section('Pick the earliest values'); command(`| eval ${earliestFinal.join(', ')}`); }
 		if (coalesce.length) { section('Define coalesce fields based on lookup priority'); command(`| eval ${coalesce.join(', ')}`); }
 		if (fillnull.length) { section('Fill null values (after the merge, only where an asset has no value at all)'); command(`| eval ${fillnull.join(', ')}`); }
 		if (dedupMv.length) { section('De-duplicate multivalue fields (order is kept)'); command(`| eval ${dedupMv.map((n) => `${n} = mvdedup(${n})`).join(', ')}`); }
