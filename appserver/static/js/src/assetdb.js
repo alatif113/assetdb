@@ -1015,7 +1015,8 @@ require([
 		if (ui.running) return; ui.running = { sid: '', start: Date.now() }; renderHeader(); live('Merging started');
 		ui.runTimer = setInterval(renderHeader, 1000);
 		try {
-			const sid = (safeParse(await P(SERVICE.post('/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen/dispatch', { output_mode: 'json' }).promise()), {}) || {}).sid;
+			// the dispatch handler rejects an output_mode argument (the SDK already asks for JSON), so none is sent
+			const sid = (safeParse(await P(SERVICE.post('/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen/dispatch', {}).promise()), {}) || {}).sid;
 			if (!sid) throw new Error('the search job could not be started');
 			ui.running.sid = sid; renderHeader();
 			for (let i = 0; i < 3600; i++) {

@@ -149,6 +149,14 @@ try {
   const accel = await collection();
   check(['ip', 'mac', 'nt_host', 'dns'].every((n) => accel[`accelerated_fields.${n}`]), 'the four CIM key fields are indexed');
 
+  // Run now dispatches the saved search and follows the job (a harmless search stands in so the asset database is not rewritten;
+  // the saved search is put back below)
+  const csrfNow = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
+  await ctx.request.post(`${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen`, { headers: { 'X-Splunk-Form-Key': csrfNow.value, 'X-Requested-With': 'XMLHttpRequest' }, form: { search: '| makeresults' } });
+  await page.click('[data-act=run]');
+  await page.waitForFunction(() => { const r = document.querySelector('#ab_config').shadowRoot; return !r.querySelector('.runbar.on') && !!r.querySelector('.toast, #banner .banner'); }, null, { timeout: 120000 });
+  check((await page.locator('.toast').innerText().catch(() => '')).startsWith('Run finished'), 'Run now dispatches the saved search and finishes without an error');
+
   // Sources: the first source's options are edited as a draft (max age, row filter, scope, column mapping)
   await page.click('.tab[data-tab="sources"]');
   const firstSource = JSON.parse((await generalConf()).lookups)[0].name;
@@ -189,7 +197,8 @@ try {
   const csrf = (await ctx.cookies()).find((k) => /csrf_token/.test(k.name));
   const hdr = csrf ? { 'X-Splunk-Form-Key': csrf.value, 'X-Requested-With': 'XMLHttpRequest' } : {};
   const root = `${base}/en-US/splunkd/__raw/servicesNS/nobody/assetdb`;
-  const post = (path, form) => ctx.request.post(`${root}${path}`, { headers: hdr, form: { ...form, output_mode: 'json' } }).catch(() => {});
+  // no output_mode in the body: several handlers (macros, transforms, dispatch) reject it as an argument
+  const post = (path, form) => ctx.request.post(`${root}${path}?output_mode=json`, { headers: hdr, form }).catch(() => {});
   // best-effort cleanup so a failed run leaves nothing behind
   const present = (await conf().catch(() => [])).map((e) => e.name);
   for (const n of [name, `${name}_copy`].concat(presetsAdded ? presetNames : []).filter((x) => present.includes(x))) await ctx.request.delete(`${root}/configs/conf-assetdb/${n}`, { headers: hdr }).catch(() => {});
@@ -209,6 +218,8 @@ try {
   check(!after.some((e) => [name, `${name}_copy`].concat(presetNames).includes(e.name)), 'test fields cleaned up');
   check(!originalGeneral || (await generalConf().catch(() => ({}))).lookups === originalLookups, 'lookups config restored');
   check((await savedSearch().catch(() => ({}))).search === originalSearch, 'saved search restored to its original text');
+  check((await fieldsList().catch(() => '')) === originalFieldsList, 'transforms fields_list restored');
+  check(((await rest('/servicesNS/nobody/assetdb/data/macros/adb_enrich_outputs').catch(() => ({ entry: [{ content: {} }] }))).entry[0].content.definition) === originalMacro, 'adb_enrich_outputs restored');
   await page.screenshot({ path: 'dist/e2e-flow.png' }).catch(() => {});
   await browser.close();
 }
