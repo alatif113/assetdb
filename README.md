@@ -16,7 +16,7 @@ AssetDB combines asset records from several lookups into one list of assets. Rec
 2. Restart Splunk if asked.
 3. Open **AssetDB**. The Configure page is the home page of the app.
 
-Upgrading? Read the breaking changes in the [changelog](CHANGELOG.md) first. The merge search is updated the first time you save something on the Configure page. Until then, scheduled runs use the old one.
+Upgrading from 1.5.7 or earlier? Read the [breaking changes](#breaking-changes-in-160) first.
 
 ## Quick start
 
@@ -198,3 +198,40 @@ The first template needs no add-on. The others are starting points: check the fi
 - **Search head clusters.** The configuration you save is copied to all members. The merge runs on one member, and the collections are shared.
 - **Memory.** The merge keeps the keys of each asset in memory. That is why *Max keys per asset* is capped at 100.
 - **Permissions.** Only admins can change the configuration, the merge search and the collections. Everyone with read access to the app can read the asset list. If it is sensitive, limit access under **Permissions** in Splunk Web.
+
+## Changelog
+
+### 1.6.0
+
+#### Breaking changes in 1.6.0
+
+Read these before upgrading from 1.5.7 or earlier.
+
+- **Splunk 10.2 or later is required.** The merge command now needs Python 3.13, which older versions cannot use for search commands. Upgrade Splunk first.
+- **Your merge search is updated on your first save.** After upgrading, scheduled runs keep using the old search until you save something on the Configure page (for example, change a setting and save). Run *Run preview* on the Pipeline tab before the next scheduled run to see what will change.
+- **You may get fewer, larger assets.** Earlier versions silently failed to join records that were far apart in a large input. They now join.
+- **Some data is skipped by default.** A key found in more than 50 rows is no longer used for matching, and a built-in list of placeholder values (for example `0.0.0.0`, `unknown`, `n/a`, all-zero MAC addresses) is ignored in key fields. Change both in Settings.
+- **Bad runs are blocked.** A run that produces fewer than half of the last run's assets is not saved, and a run with no assets never replaces the asset list. If your inventory legitimately shrinks by more than half, lower *Minimum size vs last run*.
+- **Multivalue fields keep the most recent values.** When a field has more values than *Max values*, it used to keep the first ones alphabetically. Set *Value order* to *Alphabetical* to get the old result. *Max values* is now limited to 1 to 100.
+- **Fill null works differently.** It now fills only assets that have no value in any source. Before, it competed with real values.
+- **Keep original case** cannot be combined with the host name, FQDN, user name, email or operating system normalizers. Change one of the two if a field uses both.
+- **Five macros are removed:** `retain_adb_lookup`, `ageout_adb_lookup`, `join_mv_fields`, `split_mv_fields` and `host_from_dns`. The merge did not use them. If your own searches do, copy their definitions from version 1.5.7.
+- **Two macros behave differently.** `input_adb_lookup` also sets `source_lookup`, and `normalize_mac` now returns lowercase.
+- **Only `admin` can change the app.** The `power` role could change app-level objects before.
+- **The Search entry is gone from the app menu.** Use the Search app.
+- **The asset list has new columns:** `source`, `source_lookup`, `last_seen`, `scope` and `conflicts`. Existing columns are unchanged, and your existing field configuration still works.
+
+#### New
+
+- A rewritten Configure page: Sources, Fields, Pipeline and Settings tabs, a status strip, and edits that are saved only when you click *Save*.
+- *Run preview*: see how many assets a run would add, remove or change before you run it.
+- Run history, with counts for each run and the groups that were too big to merge.
+- Options for sources (role, scope, max row age, row filter, field mapping) and for fields (normalizers, validation, ignore lists, merge methods, conflict flags).
+- Scoped keys, so the same address in two sites does not merge.
+- Safety checks: key blocklist, *Max rows per key*, and blocking of runs that look wrong.
+- A CIM preset for the standard asset fields, and macros to add asset details to events (`adb_enrich` and related).
+- Seven disabled saved searches that build source lookups.
+- A new app icon and logo, and help text in tooltips.
+- A faster merge (about 45% on a large test input).
+
+The full list is in [CHANGELOG.md](CHANGELOG.md).
