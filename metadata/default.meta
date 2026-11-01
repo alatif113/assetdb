@@ -2,18 +2,38 @@
 # Application-level permissions
 
 []
-access = read : [ * ], write : [ admin, power ]
+access = read : [ * ], write : [ admin ]
 
-### EVENT TYPES
+### CONFIGURATION: only admins change the merge configuration, the scheduled search that runs the
+### generated SPL, and the data model. Read access follows the app default; adjust in local.meta
+### (or in Splunk Web under Permissions) to restrict who can read the merged assets.
 
-[eventtypes]
-export = system
+[assetdb]
+access = read : [ * ], write : [ admin ]
 
+[savedsearches/assetdb-lookupgen]
+access = read : [ * ], write : [ admin ]
 
-### PROPS
+[collections/assetdb]
+access = read : [ * ], write : [ admin ]
 
-[props]
-export = system
+[transforms/assetdb]
+access = read : [ * ], write : [ admin ]
+
+[collections/assetdb_runs]
+access = read : [ * ], write : [ admin ]
+
+[collections/assetdb_overflow]
+access = read : [ * ], write : [ admin ]
+
+[transforms/assetdb_overflow]
+access = read : [ * ], write : [ admin ]
+
+[transforms/assetdb_runs]
+access = read : [ * ], write : [ admin ]
+
+[savedsearches/assetdb-run-alert]
+access = read : [ * ], write : [ admin ]
 
 
 ### TRANSFORMS
@@ -28,8 +48,7 @@ export = system
 export = system
 
 
-### VIEWSTATES: even normal users should be able to create shared viewstates
+### MACROS: the enrichment macros are meant to be used from other apps
 
-[viewstates]
-access = read : [ * ], write : [ * ]
+[macros]
 export = system

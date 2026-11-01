@@ -1,0 +1,37 @@
+| `input_adb_lookup(lookupA.csv)`
+| `input_adb_lookup(lookupB.csv)`
+```### Map source lookup to source name ###```
+| eval source=case(source_lookup="lookupA.csv", "lookupA", source_lookup="lookupB.csv", "lookupB")
+```### Keep only the columns the merge uses ###```
+| fields _time, source, source_lookup, priority, risk, score, owner, os
+```### Create lookup specific fields for priority based coalesce ###```
+| eval {source}_os = os
+| search _key=*
+| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, latest(_time) as _time, max(priority) as priority, min(risk) as risk, sum(score) as score__sum, count(score) as score__count, latest(owner) as owner, latest(lookupB_os) as lookupB_os, latest(lookupA_os) as lookupA_os by _key
+```### Merge: only the keys go through adbmerge, the result is joined back by row id ###```
+| streamstats count as adb_rid
+| appendpipe [| fields adb_rid, _key, adb_auth | adbmerge max_keys=25 max_key_share=50 overflow=emit | eval adb_light=1]
+| eventstats values(asset) as asset, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows by adb_rid
+| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1
+```### Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb ###```
+| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]
+| where isnull(adb_overflow)
+| eval _key = md5(mvjoin(mvsort(asset), "::"))
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows, max(priority) as priority, min(risk) as risk, sum(score__sum) as score__sum, sum(score__count) as score__count, latest(owner) as owner, latest(lookupB_os) as lookupB_os, latest(lookupA_os) as lookupA_os by _key
+```### Calculate averages ###```
+| eval score = score__sum / score__count
+```### Define coalesce fields based on lookup priority ###```
+| eval os = coalesce('lookupB_os', 'lookupA_os')
+```### Run safety: how many assets did the last successful run produce? ###```
+| eventstats count as adb_assets_out
+| append [| makeresults | eval adb_is_marker=1 | table adb_is_marker]
+| append [| inputlookup assetdb_runs | where status="ok" | sort 0 -run_time | head 1 | eval adb_is_prev=1 | rename assets_out as adb_prev_out | table adb_is_prev adb_prev_out]
+| eventstats max(adb_prev_out) as adb_prev, max(adb_assets_out) as adb_assets_out
+| eval adb_guard = if(isnotnull(adb_prev) AND adb_assets_out < adb_prev * 0.5, 1, 0)
+```### Record this run in assetdb_runs (the last 200 runs are kept) ###```
+| appendpipe [| stats max(adb_assets_out) as assets_out, max(adb_prev) as assets_prev, max(adb_guard) as guard, max(adb_total) as rows_in, max(adb_null_keys) as null_keys, max(adb_large_keys) as overflow_assets, max(adb_enrich_unmatched) as enrich_unmatched, max(adb_enrich_ambiguous) as enrich_ambiguous, max(adb_junk_keys) as junk_keys, max(adb_junk_rows) as junk_rows | eval run_time=now(), min_ratio=0.5, status=case(isnull(assets_out) OR assets_out=0, "empty", guard=1, "blocked_low_count", true(), "ok"), _key=run_time . "_" . substr(md5(tostring(random())), 1, 8) | fields - guard | inputlookup append=true assetdb_runs | sort 0 -run_time | head 200 | outputlookup assetdb_runs | where 1=0]
+```### Only write the asset database when the run passed the safety check ###```
+| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0
+```### Output to KV store ###```
+| table _key, asset, source, source_lookup, last_seen, priority, risk, score, owner, os
+| outputlookup override_if_empty=false assetdb

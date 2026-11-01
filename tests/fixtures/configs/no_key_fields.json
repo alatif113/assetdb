@@ -1,0 +1,42 @@
+{
+  "name": "no_key_fields",
+  "description": "no key fields: no _key eval is generated",
+  "fieldArray": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "[{\"name\":\"a\",\"lookup\":\"a.csv\"}]"
+      }
+    },
+    {
+      "name": "ip",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "owner",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "single",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    }
+  ]
+}

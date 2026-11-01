@@ -1,0 +1,57 @@
+{
+  "name": "case_sensitivity",
+  "description": "mixed case sensitive and insensitive fields",
+  "fieldArray": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "[{\"name\":\"a\",\"lookup\":\"a.csv\"}]"
+      }
+    },
+    {
+      "name": "sensitive",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "insensitive",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "0",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "insensitive2",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "0",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "name": "ignore_values",
+  "description": "ignore values incl. quotes, html chars and empty list",
+  "fieldArray": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "[{\"name\":\"a\",\"lookup\":\"a.csv\"}]"
+      }
+    },
+    {
+      "name": "os",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[\"null\",\"none\",\"unknown\"]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "owner",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[\"say \\\"hi\\\"\",\"<b>&\",\"it's\"]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "empty",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    }
+  ]
+}

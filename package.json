@@ -2,25 +2,35 @@
 	"name": "assetdb",
 	"version": "1.0.0",
 	"description": "",
-	"main": "assetdb.js",
 	"scripts": {
-		"build": "babel appserver/static/js/src -d appserver/static/js; cd appserver/static/js; rm *.min.js > /dev/null; for f in *.js; do short=${f%.js}; terser $short.js --compress --mangle --output $short.min.js; rm $short.js; done;"
+		"build": "bash scripts/build-minjs.sh",
+		"test": "node --test tests/js/*.test.js",
+		"lint": "eslint ."
 	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/alatif113/assetdb.git"
 	},
 	"author": "Mohammed Latif",
-	"license": "ISC",
+	"license": "GPL-3.0-only",
 	"bugs": {
 		"url": "https://github.com/alatif113/assetdb/issues"
 	},
 	"homepage": "https://github.com/alatif113/assetdb#readme",
-	"dependencies": {},
 	"devDependencies": {
 		"@babel/cli": "^7.15.4",
 		"@babel/core": "^7.15.5",
 		"@babel/preset-env": "^7.15.6",
-		"terser": "^5.8.0"
-	}
+		"@eslint/js": "^9.39.5",
+		"eslint": "^9.39.5",
+		"globals": "^17.13.0",
+		"terser": "^5.8.0",
+		"underscore": "1.13.8"
+	},
+	"browserslist": [
+		"chrome >= 100",
+		"firefox >= 100",
+		"safari >= 15.4",
+		"edge >= 100"
+	]
 }

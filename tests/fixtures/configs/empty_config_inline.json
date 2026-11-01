@@ -1,0 +1,6 @@
+{
+  "name": "empty_config_inline",
+  "description": "empty fieldArray and empty conf: nothing configured",
+  "fieldArray": [],
+  "confEntries": []
+}

@@ -1,0 +1,57 @@
+{
+  "name": "multi_lookups_keys",
+  "description": "two lookups; mac and nt_host are keys, ip is not",
+  "fieldArray": [
+    {
+      "name": "general",
+      "content": {
+        "lookups": "[{\"name\":\"crowdstrike\",\"lookup\":\"crowdstrike.csv\"},{\"name\":\"nessus\",\"lookup\":\"nessus.csv\"}]"
+      }
+    },
+    {
+      "name": "mac",
+      "content": {
+        "key_field": "1",
+        "case_sensitive": "0",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "nt_host",
+      "content": {
+        "key_field": "1",
+        "case_sensitive": "0",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    },
+    {
+      "name": "ip",
+      "content": {
+        "key_field": "0",
+        "case_sensitive": "1",
+        "ignore_values": "[]",
+        "fillnull": "",
+        "validation": "",
+        "field_type": "multivalue",
+        "merge_method": "latest",
+        "merge_order": "",
+        "max_values": "5",
+        "eval_expression": ""
+      }
+    }
+  ]
+}
