@@ -44,7 +44,7 @@ apps, and run searches; put the value in `SPLUNK_TOKEN`. Download the server's c
 | Target | What it does |
 | --- | --- |
 | `make test` | pytest (adbmerge), `node --test` (golden SPL), min.js freshness, deploy mock test, shellcheck |
-| `make package` | `npm ci`, `npm run build`, writes `dist/assetdb-<version>.tar.gz` (single top-level `assetdb/`, deterministic) |
+| `make package` | `npm ci`, `npm run build`, writes `dist/assetdb-<version>.tar.gz` (single top-level `assetdb/`, deterministic). It is an **allowlist** (`INCLUDES` in `scripts/package.sh`): `default/`, `bin/`, `lib/`, `lookups/`, `metadata/default.meta`, `static/*.png`, `appserver/static/css` and `js/*.min.js`, `README.md`, `LICENSE`, `CHANGELOG.md`; nothing else can ship. The archive check fails on unexpected top-level entries, non-png files in `static/`, JS sources, hidden files, conflict copies and dev directories |
 | `make inspect` | AppInspect on the tarball -> `dist/appinspect/report.{txt,json}` |
 | `make deploy` | pre-flight (REST + ssh), backup to `dist/backups/`, rsync to the server (see below) |
 | `make reload` | decide nothing / reload / restart from what changed since the last deploy |
