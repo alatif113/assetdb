@@ -77,8 +77,7 @@ the rebuilt `*.min.js` are committed.
 check name, description and `file:line`. Failures/errors exit 1; warnings only with `--strict`.
 Intentional exceptions live in `.appinspect-waivers` and are listed below.
 
-Fixed in the app: missing `[id]` stanza in `app.conf`; `static/slides.gif` (README image) is no
-longer packaged.
+Fixed in the app: missing `[id]` stanza in `app.conf`.
 
 **No failures are waived and the SDK warning is gone.** `commands.conf` sets `python.required = 3.13`
 and the vendored `lib/splunklib` is splunk-sdk 3.0.1, which needs Python >= 3.13 (AppInspect's cloud
@@ -160,5 +159,7 @@ reliably refreshes the files. Browsers also cache them for a year: hard-refresh 
 `scripts/e2e.sh --flow` drives the Configure page with a headless browser (Playwright, `npm i --no-save playwright && npx playwright install chromium`). The page renders inside a shadow root; Playwright's CSS selectors pierce it. The flow adds a test field (validation, draft-and-save, discard dialog), edits, disables, duplicates and removes it, runs a merge preview (a real search job, checking its Open in Search link), adds and removes the CIM presets, edits source options and changes settings, and restores everything afterwards; a failed run may leave an `adbtest_*` field behind. `E2E_LOCAL_ASSETS=1 scripts/e2e.sh --flow` serves the repo's built js and css to the browser instead of the deployed ones, so the UI can be tested against a real Splunk without a deploy and restart.
 
 `scripts/e2e.sh --visual` (`tests/e2e/visual.mjs`) is the visual sweep. It opens every tab, the editors, the CIM dialog, the preview and the run history at 1440, 1000 and 700 px, with a made-up set of fields and sources injected into what the page reads (nothing is saved), and reports tooltips that are cut off, off screen or covering their trigger, text that spills or is cut without a way to read it, content past the right edge of the page and controls that overlap. Screenshots go to `dist/visual/` for a look. `E2E_LOCAL_ASSETS=1` tests the local build without a deploy.
+
+`tests/e2e/screenshots.mjs` regenerates the README screenshots in `docs/img/` (read only, same injected configuration idea; run it with `E2E_LOCAL_ASSETS=1`). Re-run it after a UI change and commit the images.
 
 `test_scale.py` merges 120,000 generated assets and checks a second run (a few minutes; SPL cannot generate more than 50,000 rows per `makeresults`, so the sources are appended from parts). It exists because a subsearch (`append [| inputlookup ...]`) silently stops at 50,000 results: nothing in the generated search may rely on one for asset-sized data.

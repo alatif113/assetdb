@@ -27,7 +27,7 @@ Tracked tree: 442 files / 6.9 MB to 127 files / 2.8 MB. Package: 260 entries / 6
 
 ## Kept, and why
 
-- `static/slides.gif` (628 KB): the README loads it from GitHub; you did not answer this one. It is excluded from the package.
+- ~~`static/slides.gif`~~: removed afterwards with the README rewrite; the merge example is now a table in the README and the screenshots are in `docs/img/`.
 - `lookups/assetdb_demo_assets.csv` (648 KB): the default demo source (AppInspect warns about its public-looking IPs; waiving not needed, it is a warning).
 - `[id]` stanza in `app.conf`: duplicate of the version, but the package check and AppInspect need it.
 - 13 ESLint `==` warnings: changing them risks behaviour for no gain. `searchText` in `assetdb.js` is used by the test sandbox.
@@ -66,7 +66,6 @@ assetdb/
 
 ## Still open
 
-- Regenerate the README screenshots / `slides.gif` (you said this is a future step), then decide whether to keep the gif.
 - Decide whether to shrink the demo CSV.
 - Run the integration tests, e2e flow and visual sweep after deploying 1.6.0 (`scripts/deploy.sh --dry-run`, then `--yes`).
 

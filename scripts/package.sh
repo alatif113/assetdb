@@ -38,7 +38,6 @@ EXCLUDES=(
   pytest.ini requirements-dev.txt coverage eslint.config.js pyproject.toml
   '* [0-9]*' # iCloud Drive conflict copies ("name 2.py", "name 12.js")
   appserver/static/js/src
-  static/slides.gif   # README illustration only; AppInspect allows only png in static/
 )
 
 build_assets() {
