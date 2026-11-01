@@ -14,6 +14,14 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ ignoreHTTPSErrors: insecure, viewport: { width: 1440, height: 900 } });
 const page = await ctx.newPage();
 await routeLocalAssets(page);
+
+// These scripts only look: refuse every request that would change the server (searches and the parser are allowed).
+await page.route(/\/(servicesNS|services|splunkd\/__raw)\//, (route) => {
+  const r = route.request();
+  if (r.method() === 'GET' || /\/search\/(jobs|v2\/parser)/.test(r.url())) return route.fallback();
+  if (!/RecentlyViewed/.test(r.url())) console.error('blocked write:', r.method(), r.url()); // Splunk Web's own usage tracking is blocked silently
+  return route.abort();
+});
 page.on('pageerror', (e) => issues.push(`page error: ${e}`));
 page.on('console', (m) => { if (m.type() === 'error' && !m.text().startsWith('Failed to load resource') && !/a_lookup_with_a_very_long_name/.test(m.text())) issues.push(`console: ${m.text()}`); });
 
@@ -21,7 +29,7 @@ page.on('console', (m) => { if (m.type() === 'error' && !m.text().startsWith('Fa
 // fields and sources (long names, a missing lookup, a disabled row, a field nobody supplies) so every table, flag and
 // editor has something to show, whatever the server holds.
 await page.route(/\/configs\/conf-assetdb(\?|$)/, async (route) => {
-  if (route.request().method() !== 'GET') return route.continue();
+  if (route.request().method() !== 'GET') return route.fallback();
   const res = await route.fetch(); const body = await res.json();
   const general = body.entry.find((e) => e.name === 'general');
   const lookups = JSON.parse(general.content.lookups || '[]');

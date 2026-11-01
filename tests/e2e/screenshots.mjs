@@ -12,8 +12,16 @@ const ctx = await browser.newContext({ ignoreHTTPSErrors: process.env.SPLUNK_INS
 const page = await ctx.newPage();
 await routeLocalAssets(page);
 
+// These scripts only look: refuse every request that would change the server (searches and the parser are allowed).
+await page.route(/\/(servicesNS|services|splunkd\/__raw)\//, (route) => {
+  const r = route.request();
+  if (r.method() === 'GET' || /\/search\/(jobs|v2\/parser)/.test(r.url())) return route.fallback();
+  if (!/RecentlyViewed/.test(r.url())) console.error('blocked write:', r.method(), r.url()); // Splunk Web's own usage tracking is blocked silently
+  return route.abort();
+});
+
 await page.route(/\/configs\/conf-assetdb(\?|$)/, async (route) => {
-  if (route.request().method() !== 'GET') return route.continue();
+  if (route.request().method() !== 'GET') return route.fallback();
   const res = await route.fetch(); const body = await res.json();
   body.entry = body.entry.filter((e) => e.name === 'general');
   const general = body.entry[0];
