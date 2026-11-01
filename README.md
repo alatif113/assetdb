@@ -15,7 +15,7 @@ AssetDB merges asset records from several lookups into one asset database, witho
 
 ## Requirements
 
-- Splunk Enterprise with **Python 3.13** for custom search commands (tested on 10.4.2). Splunk 10.0 runs commands on Python 3.9 and is not supported.
+- A Splunk Enterprise version that lets a search command choose **Python 3.13** (`python.required = 3.13` in `commands.conf`). Tested on 10.4.2, which ships both Python 3.9 and 3.13. Splunk 10.0 ignores that setting and always runs commands on its bundled Python 3.9, so it is not supported. Other versions have not been tested.
 - The KV store must be running.
 - An admin role to change the configuration. Everyone with read access to the app can search the asset database.
 

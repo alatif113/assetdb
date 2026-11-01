@@ -7,7 +7,7 @@ Changes since 1.5.7.
 ### Breaking changes
 
 **Requirements**
-- **`adbmerge` needs Python 3.13.** `commands.conf` now sets `python.required = 3.13` and the app ships splunk-sdk 3.0.1. Splunk 10.0 (Python 3.9) can no longer run the command. Upgrade Splunk first.
+- **`adbmerge` needs Python 3.13.** `commands.conf` now sets `python.required = 3.13` and the app ships splunk-sdk 3.0.1. Splunk 10.0, which always runs commands on its bundled Python 3.9, can no longer run the command. Use a Splunk version that can run commands on Python 3.13 (tested: 10.4.2).
 
 **Removed macros.** Searches that use them stop working:
 - `retain_adb_lookup(2)`, `ageout_adb_lookup(2)`, `join_mv_fields`, `split_mv_fields` and `host_from_dns(2)`. The merge never used them. Copy the definitions from 1.5.7 `macros.conf` into your own app if you rely on them.

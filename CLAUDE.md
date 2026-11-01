@@ -35,7 +35,7 @@ The pieces only make sense together:
 
 - The repo lives in iCloud Drive, which evicts and duplicates files: `node_modules` is a symlink to `node_modules.nosync` (iCloud skips `.nosync`), and stray `name 2.ext` copies are git-ignored and excluded from the package (the archive check fails if one gets in). If a build suddenly fails with a missing module, run `npm ci`.
 
-- `python.required = 3.13` and splunk-sdk 3.x mean `adbmerge` needs a Splunk whose custom commands run on Python 3.13 (not 10.0).
+- `python.required = 3.13` and splunk-sdk 3.x mean `adbmerge` needs a Splunk whose custom commands run on Python 3.13 (10.4.2 is tested; 10.0 always uses its bundled Python 3.9).
 - Field names `_key`, `asset`, `source`, `source_lookup`, `last_seen`, `scope`, `conflicts` are reserved (created by the merge).
 - Booleans in `assetdb.conf` are `0`/`1` strings; lists (`ignore_values`, `key_blocklist`) are JSON strings; the generator parses them with fallbacks.
 - Splunk Web caches app static files per build: after a deploy restart splunkd (`/_bump` is refused on Splunk Free) and hard-refresh.
