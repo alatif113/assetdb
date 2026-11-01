@@ -135,22 +135,29 @@ The disabled saved search `assetdb-run-alert` returns the latest run when it was
 
 ## How assets are merged
 
-AssetDB links records through their key values. Take four source rows, with `mac` and `nt_host` as key fields:
+AssetDB treats records that share a key value as the same asset. Say one laptop appears in three systems, and each knows something different. `mac` and `nt_host` are key fields; `ip` is a multivalue field and `owner` a single-value field:
 
-| Row | mac | nt_host | Source |
+| Source | mac | nt_host | ip | owner |
+| --- | --- | --- | --- | --- |
+| cmdb | aa:bb:cc:00:00:01 | LAPTOP-7 | | dana |
+| dhcp | aa:bb:cc:00:00:01 | | 10.1.1.20 | |
+| edr | | laptop-7 | 10.1.1.31 | |
+| cmdb | aa:bb:cc:00:00:02 | SRV-DB | | ops |
+
+1. The `cmdb` row and the `dhcp` row share the MAC address, so they are the same asset.
+2. The `edr` row shares the host name with the `cmdb` row (case is ignored), so it joins too. It has nothing in common with the `dhcp` row, but both match the `cmdb` row.
+3. The last row shares nothing with the others, so it is a separate asset.
+
+The result is two assets, each with one value per field, or all unique values for a multivalue field:
+
+| mac | nt_host | ip | owner |
 | --- | --- | --- | --- |
-| 1 | mac_A | host_A | lookup_A |
-| 2 | mac_A, mac_B | host_B | lookup_B |
-| 3 | mac_C | host_B, host_C | lookup_C |
-| 4 | mac_D | host_D | lookup_D |
+| aa:bb:cc:00:00:01 | laptop-7 | 10.1.1.20, 10.1.1.31 | dana |
+| aa:bb:cc:00:00:02 | srv-db | | ops |
 
-1. The lookups are read and concatenated.
-2. Each row gets the set of its key values.
-3. Rows 1 and 2 share `mac_A`, so they become one asset.
-4. Row 3 shares `host_B` with row 2, so it joins the same asset. Rows 1 and 3 share nothing, but both share a key with row 2.
-5. Row 4 shares no key with any other row, so it is its own asset.
+Linking is chained: a row joins an asset if it shares a key with any row already in it. That is why one bad key, such as a shared NAT address, can pull unrelated assets together, and why [key quality](#key-quality) matters. When sources disagree on a single-value field, the field's *Method* decides which value wins (the latest, by default).
 
-The merged asset then gets one value per field by its Method (or every unique value for multivalue fields). Every key of the asset is stored in the multivalue `asset` field of the collection, which is indexed, so a lookup by any key is a plain KV lookup.
+Every key value of an asset (`aa:bb:cc:00:00:01` and `laptop-7` above) is stored in the multivalue `asset` field of the collection, which is indexed, so looking up an asset by any key is a plain KV lookup.
 
 ### Scoped keys
 
