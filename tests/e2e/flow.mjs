@@ -190,7 +190,7 @@ try {
   await settled();
   const g = await generalConf();
   check(g.max_keys === '30' && g.min_ratio === '0.4', 'max keys and the safety ratio saved (percent is stored as a ratio)');
-  check((await savedSearch()).search.includes('adbmerge max_keys=30'), 'saved search regenerated with the new max keys');
+  check((await savedSearch()).search.includes('adb_merge(30,'), 'saved search regenerated with the new max keys');
 } catch (e) {
   errors.push(String(e));
 } finally {

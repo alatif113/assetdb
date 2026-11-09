@@ -35,6 +35,14 @@ access = read : [ * ], write : [ admin ]
 [savedsearches/assetdb-run-alert]
 access = read : [ * ], write : [ admin ]
 
+### VISUALIZATIONS: used by this app's own dashboard only, so they are not exported to other apps.
+
+[visualizations/adb_heatmap]
+access = read : [ * ], write : [ admin ]
+
+[visualizations/adb_asset_explorer]
+access = read : [ * ], write : [ admin ]
+
 
 ### TRANSFORMS
 

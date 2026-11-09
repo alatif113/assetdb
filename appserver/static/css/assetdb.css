@@ -1,5 +1,6 @@
 /* AssetDB Configure UI. Rendered inside a Shadow DOM, so these rules never touch the rest of Splunk Web and Splunk's styles never touch the page. */
-/* AssetDB design tokens. Light theme only: the page sits on Splunk's own background (#f2f4f5), panels are white. */
+/* AssetDB design tokens. Light is the default and sits on Splunk's own background (#f2f4f5) with white panels; the dark set below
+   is switched on by data-theme="dark" on the host (assetdb.js reads the user's Splunk theme) and sits on Splunk's dark page (#171d21). */
 :host {
   --bg: #f2f4f5;  --surface: #ffffff;  --surface-2: #f7f8fa;  --surface-3: #e9edf1;
   --line: #e1e6eb;  --line-strong: #c3cbd4;  --line-control: #8c95a3;
@@ -15,6 +16,23 @@
   --tok-cmd: #0b6e6e; --tok-macro: #b54708; --tok-str: #067647; --tok-num: #93370d; --tok-com: #475467;
   --shadow-1: 0 4px 16px rgba(16, 24, 40, .12);  --scrim: rgba(16, 24, 40, .5);
   color-scheme: light;
+}
+
+:host([data-theme="dark"]) {
+  --bg: #171d21;  --surface: #1e2427;  --surface-2: #252d31;  --surface-3: #2e373c;
+  --line: #313a40;  --line-strong: #4a555c;  --line-control: #7d8a95;
+  --text: #e6ebef;  --text-2: #b8c1c9;  --text-3: #a3aeb8;
+  --primary: #2fb5b5;  --primary-hover: #55cbcb;  --on-primary: #06201f;
+  --link: #55cbcb;  --focus: #6fd6d6;  --selected: #173a3c;
+  --success: #4cc38a;  --success-soft: #12301f;
+  --warn: #e8b04a;     --warn-soft: #33290f;   --warn-fill: #f0b24b;
+  --error: #f58a83;    --error-soft: #3a1b1a;  --error-fill: #ef6359;
+  --destructive: #d4382c;  --destructive-hover: #b92d22;
+  --tip-bg: #3b464e;  --tip-text: #ffffff;
+  --code-bg: #151b1e;
+  --tok-cmd: #55cbcb; --tok-macro: #f0b24b; --tok-str: #4cc38a; --tok-num: #f2a66b; --tok-com: #98a4ae;
+  --shadow-1: 0 6px 20px rgba(0, 0, 0, .5);  --scrim: rgba(0, 0, 0, .65);
+  color-scheme: dark;
 }
 
 /* Scales. System fonts only: nothing is bundled or fetched. */
@@ -179,6 +197,7 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .tbl tbody tr.flash { animation: rowflash 1200ms var(--ease-out); }
 @keyframes rowflash { from { background: var(--selected); } }
 .tbl .fname { font-family: var(--mono); font-size: 13.5px; font-weight: 500; }
+.tbl .fname.friendly { font-family: var(--font); font-size: var(--fs-md); font-weight: 600; }   /* a source name is a friendly name, not an identifier */
 .tbl td small { display: block; color: var(--text-2); font-size: 12.5px; }
 .tbl .num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tbl td.act { text-align: right; white-space: nowrap; width: 1%; padding-top: 8px; padding-bottom: 8px; }
@@ -187,6 +206,9 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .tbl td.grow { width: 36%; max-width: 0; }
 .tbl td.desc { width: 50%; max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tbl td.grow .nmw { max-width: 100%; }
+.srcc { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.srcname { min-width: 0; flex: 1; }
+.srcico { flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); }   /* the logo stands alone: no tile, no border */
 .tbl td.grow .fname, .tbl td.grow small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .keymark { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; }
 .keymark .ico { color: var(--primary); width: 15px; height: 15px; }
@@ -226,6 +248,8 @@ table.schema th, table.schema td { text-align: left; padding: 5px 10px; border-t
 table.schema th { color: var(--text-2); font-weight: 500; background: var(--surface-2); border-top: 0; }
 .schema-wrap { overflow: auto; border: 1px solid var(--line); border-radius: var(--r-control); }
 .mapline { display: grid; grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr) 30px; gap: 8px; align-items: center; }
+.mapline input.inp { text-overflow: ellipsis; }
+.mapline.rule { grid-template-columns: minmax(0, .85fr) minmax(0, 1.25fr) 16px minmax(0, .8fr) 30px; }
 
 /* ===== Modal, toasts ===== */
 .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 80; display: grid; place-items: center; animation: fade var(--dur-2) var(--ease-out); }

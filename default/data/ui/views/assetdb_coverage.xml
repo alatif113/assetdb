@@ -1,0 +1,62 @@
+<form version="1.1" theme="dark" script="js/adb_coverage.min.js" stylesheet="css/page.css">
+  <label>Coverage</label>
+  <description>How much of your estate each source covers. Click a cell to open a search of those assets.</description>
+  <search id="ds_cov">
+    <query><![CDATA[| inputlookup assetdb
+| fields source, "$cov_by$"
+| eval adb_g=if("$cov_by$"="No grouping", "All assets", '$cov_by$')
+| eval adb_g=mvdedup(mvmap(adb_g, if(len(trim(adb_g)) > 0, adb_g, null())))
+| eval adb_g=coalesce(adb_g, "(no value)"), source=mvappend(source, "adb_total")
+| mvexpand adb_g
+| mvexpand source
+| stats count as n by adb_g source
+| eventstats max(eval(if(source="adb_total", n, null()))) as adb_total by adb_g
+| eval pct=if(source="adb_total", adb_total, round(100 * n / adb_total, 2))
+| xyseries adb_g source pct
+| fillnull value=0
+| rename adb_g as Group
+| sort 0 Group
+| head 500]]></query>
+    <earliest>-1m</earliest>
+    <latest>now</latest>
+  </search>
+  <search id="ds_sources">
+    <query><![CDATA[| rest splunk_server=local /servicesNS/nobody/assetdb/configs/conf-assetdb/general
+| fields lookups
+| spath input=lookups path={} output=src
+| mvexpand src
+| spath input=src
+| table name lookup]]></query>
+    <earliest>-1m</earliest>
+    <latest>now</latest>
+  </search>
+  <fieldset submitButton="false">
+    <input type="dropdown" token="cov_by" searchWhenChanged="true">
+      <label>Group by</label>
+      <default>No grouping</default>
+      <fieldForLabel>label</fieldForLabel>
+      <fieldForValue>value</fieldForValue>
+      <search>
+        <query><![CDATA[| rest /servicesNS/nobody/assetdb/data/transforms/lookups splunk_server=local count=0
+| where title="assetdb"
+| eval f=split(fields_list, ",")
+| mvexpand f
+| where len(f) > 0 AND NOT in(f, "_key", "asset", "source", "source_lookup", "last_seen", "scope", "conflicts")
+| eval label=f, value=f, ord=1
+| append [| makeresults | eval label="No grouping", value="No grouping", ord=0]
+| sort 0 ord label
+| table label value]]></query>
+        <earliest>-1m</earliest>
+        <latest>now</latest>
+      </search>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <html>
+        <style>.adb-ph{position:absolute;inset:0;overflow:hidden;pointer-events:none}.adb-ph i{display:block;border-radius:6px;background:linear-gradient(90deg,rgba(127,127,127,.16) 25%,rgba(127,127,127,.28) 50%,rgba(127,127,127,.16) 75%);background-size:200% 100%;animation:adbph 1.3s linear infinite}@keyframes adbph{from{background-position:200% 0}to{background-position:-200% 0}}@media (prefers-reduced-motion:reduce){.adb-ph i{animation:none}}</style>
+        <div id="adb_coverage" style="position: relative; height: calc(100vh - 260px); min-height: 460px;"><div class="adb-ph" aria-hidden="true"><div style="display:grid;grid-template-columns:140px repeat(8,1fr);gap:6px;padding:24px"><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i><i style="height:30px"></i></div></div></div>
+      </html>
+    </panel>
+  </row>
+</form>

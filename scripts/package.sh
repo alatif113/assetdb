@@ -39,6 +39,8 @@ INCLUDES=(
   '/static/' '/static/*.png'                          # app icons and logo (AppInspect allows only png here)
   '/appserver/' '/appserver/static/' '/appserver/static/css/***'
   '/appserver/static/js/' '/appserver/static/js/*.min.js'   # built output; the sources in js/src stay out
+  '/appserver/static/js/classic/***'                  # the same visualizations built for the classic dashboards
+  '/appserver/static/visualizations/***'              # built custom visualizations (visualization.js + config.json); sources in viz/ stay out
   '/LICENSE' '/README.md' '/CHANGELOG.md'
 )
 # Never ship these, even inside an allowed path (checked before the allowlist).
@@ -54,6 +56,8 @@ build_assets() {
   (cd "$ROOT_DIR" && npm ci --no-audit --no-fund --silent) || die "$EX_FAIL" "npm ci failed"
   info "npm run build"
   (cd "$ROOT_DIR" && npm run build --silent >/dev/null) || die "$EX_FAIL" "npm run build failed"
+  info "npm run build:viz"
+  (cd "$ROOT_DIR" && npm run build:viz --silent >/dev/null) || die "$EX_FAIL" "npm run build:viz failed"
 }
 
 epoch() {
@@ -112,6 +116,17 @@ verify_archive() { # file
   bad=$(tar -tzf "$f" | grep -E "^$id/(static/[^/]+|appserver/static/js/[^/]+)$" | grep -vE "\.png$|\.min\.js$" || true)
   [[ -z "$bad" ]] || die "$EX_FAIL" "Only png files may be in static/ and only *.min.js in appserver/static/js: $bad"
   tar -tzf "$f" | grep -q "^$id/appserver/static/js/src" && die "$EX_FAIL" "JavaScript sources must not ship"
+  tar -tzf "$f" | grep -qE "^$id/(viz|node_modules)(/|$)" && die "$EX_FAIL" "Visualization sources must not ship (only the built files in appserver/static/visualizations)"
+  bad=$(tar -tzf "$f" | grep -E "^$id/appserver/static/visualizations/[^/]+/[^/]+$" | grep -vE "/(visualization\.js|config\.json)$" || true)
+  [[ -z "$bad" ]] || die "$EX_FAIL" "Only visualization.js and config.json may be in a visualization folder: $bad"
+  bad=$(tar -tzf "$f" | grep -E "^$id/appserver/static/js/classic/[^/]+$" | grep -vE "\.min\.js$" || true)
+  [[ -z "$bad" ]] || die "$EX_FAIL" "Only .min.js files may be in appserver/static/js/classic: $bad"
+  for viz in $(grep -E '^\[' "$ROOT_DIR/default/visualizations.conf" | tr -d '[]'); do
+    tar -tzf "$f" | grep -qx "$id/appserver/static/js/classic/$viz.min.js" || die "$EX_FAIL" "Visualization $viz has no classic build in the archive"
+  done
+  for viz in $(grep -E '^\[' "$ROOT_DIR/default/visualizations.conf" | tr -d '[]'); do
+    tar -tzf "$f" | grep -qx "$id/appserver/static/visualizations/$viz/visualization.js" || die "$EX_FAIL" "Visualization $viz is in visualizations.conf but its built visualization.js is not in the archive"
+  done
   local tmp; tmp=$(mktemp -d)
   tar -xzf "$f" -C "$tmp" "$id/default/app.conf"
   python3 - "$tmp/$id/default/app.conf" "$id" "$(app_version)" <<'PY' || die "$EX_FAIL" "app.conf invalid in archive"

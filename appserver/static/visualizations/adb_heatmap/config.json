@@ -1,0 +1,18 @@
+{
+  "showTitleAndDescription": true,
+  "includeInToolbar": true,
+  "includeInVizSwitcher": true,
+  "showDrilldown": true,
+  "canSetTokens": [],
+  "hasEventHandlers": true,
+  "config": {
+    "name": "AssetDB Heatmap",
+    "description": "A heatmap for a table whose first column labels the rows and whose other columns are numbers from 0 to 100.",
+    "category": "Custom",
+    "icon": null,
+    "dataContract": { "requiredDataSources": ["primary"], "optionalDataSources": [] },
+    "size": { "initialWidth": 900, "initialHeight": 420 },
+    "optionsSchema": { "allLabel": { "type": "string", "default": "All assets" } },
+    "editorConfig": []
+  }
+}

@@ -1,8 +1,9 @@
-<dashboard script="js/assetdb.min.js" stylesheet="css/page.css" version="1.1">
+<dashboard theme="dark" script="js/assetdb.min.js" stylesheet="css/page.css" version="1.1">
   <label>Configure</label>
   <row>
     <html>
-      <div id="ab_config"></div>
+      <style>.adb-ph i{display:block;border-radius:6px;background:linear-gradient(90deg,rgba(127,127,127,.16) 25%,rgba(127,127,127,.28) 50%,rgba(127,127,127,.16) 75%);background-size:200% 100%;animation:adbph 1.3s linear infinite}@keyframes adbph{from{background-position:200% 0}to{background-position:-200% 0}}@media (prefers-reduced-motion:reduce){.adb-ph i{animation:none}}</style>
+      <div id="ab_config"><div class="adb-ph" aria-hidden="true" style="padding:24px 50px"><div style="display:flex;gap:28px"><i style="width:90px;height:20px"></i><i style="width:80px;height:20px"></i><i style="width:80px;height:20px"></i><i style="width:80px;height:20px"></i></div><i style="height:44px;margin-top:26px"></i><i style="height:36px;width:50%;margin-top:34px"></i><i style="height:60px;margin-top:20px"></i><i style="height:60px;margin-top:10px"></i><i style="height:60px;margin-top:10px"></i></div></div>
     </html>
   </row>
 </dashboard>

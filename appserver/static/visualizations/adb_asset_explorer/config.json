@@ -1,0 +1,18 @@
+{
+  "showTitleAndDescription": true,
+  "includeInToolbar": true,
+  "includeInVizSwitcher": true,
+  "showDrilldown": true,
+  "canSetTokens": [],
+  "hasEventHandlers": true,
+  "config": {
+    "name": "AssetDB Asset Explorer",
+    "description": "Search assets, then see their fields and which source supplied each value.",
+    "category": "Custom",
+    "icon": null,
+    "dataContract": { "requiredDataSources": ["primary"], "optionalDataSources": ["provenance"] },
+    "size": { "initialWidth": 1200, "initialHeight": 900 },
+    "optionsSchema": {},
+    "editorConfig": []
+  }
+}

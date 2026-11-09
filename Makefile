@@ -2,7 +2,7 @@ SHELL := /bin/bash
 VENV  := .venv
 PY    := $(VENV)/bin/python
 
-.PHONY: help venv test test-sh lint-sh test-py test-js check-minjs lint lint-js lint-py package inspect deploy reload integration e2e all clean
+.PHONY: help venv test test-sh lint-sh test-py test-js check-minjs check-viz lint lint-js lint-py package inspect deploy reload integration e2e all clean
 
 help:
 	@echo "targets: test lint package inspect deploy reload integration e2e all clean"
@@ -14,7 +14,7 @@ $(PY): requirements-dev.txt
 
 venv: $(PY)
 
-test: test-py test-js check-minjs test-sh lint
+test: test-py test-js check-minjs check-viz test-sh lint
 
 test-py: $(PY)
 	$(PY) -m pytest
@@ -38,6 +38,9 @@ lint-py: $(PY)
 
 check-minjs:
 	scripts/check-minjs.sh
+
+check-viz:
+	scripts/check-viz.sh
 
 package:
 	scripts/package.sh

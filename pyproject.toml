@@ -1,6 +1,6 @@
 [tool.ruff]
 line-length = 140
-extend-exclude = ["lib", "node_modules", "dist"]
+extend-exclude = ["lib", "node_modules", "dist", "samples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B"]

@@ -1,3 +1,5 @@
 <nav color="#202252">
-  <view name="configure" default='true' />
+  <view name="configure" default='true' icon="cog" />
+  <view name="assetdb_explorer" icon="magnifier" />
+  <view name="assetdb_coverage" icon="layoutoverview" />
 </nav>

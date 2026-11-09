@@ -48,7 +48,7 @@ flags=()
 run_stage() {
   case "$1" in
     unit)        "$PY" -m pytest -q && npm test --silent && tests/shell/deploy-mock-test.sh && .venv/bin/shellcheck -x scripts/*.sh tests/shell/*.sh ;;
-    minjs)       scripts/check-minjs.sh ;;
+    minjs)       scripts/check-minjs.sh && scripts/check-viz.sh ;;
     package)     scripts/package.sh ;;
     inspect)     scripts/appinspect.sh ;;
     deploy)      scripts/deploy.sh ${flags[@]+"${flags[@]}"} ;;

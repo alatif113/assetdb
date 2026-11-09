@@ -1,0 +1,48 @@
+<dashboard version="1.1" theme="dark" script="js/adb_explorer.min.js" stylesheet="css/page.css">
+  <label>Explorer</label>
+  <description>Find an asset by any of its key values, then see which source supplied each of its fields.</description>
+  <search id="ds_assets">
+    <query><![CDATA[| inputlookup assetdb
+| eval adb_pat=lower(trim($adb_q|s$)), adb_pat=if(len(adb_pat)=0, ".*", replace(replace(adb_pat, "([.^$$|()\\[\\]{}+?\\\\])", "\\\\\\1"), "\\*", ".*"))
+| where if(adb_pat=".*", true(), mvcount(mvmap(asset, if(match(lower(asset), adb_pat), 1, null()))) > 0)
+| eval adb_seen=coalesce(tonumber(last_seen), 0)
+| sort 100 - adb_seen
+| eval adb_id=_key
+| `adb_icon`
+| fields - adb_pat adb_seen _mkv_child]]></query>
+    <earliest>-1m</earliest>
+    <latest>now</latest>
+  </search>
+  <search id="ds_total">
+    <query><![CDATA[| inputlookup assetdb
+| fields _key asset
+| eval adb_pat=lower(trim($adb_q|s$)), adb_pat=if(len(adb_pat)=0, ".*", replace(replace(adb_pat, "([.^$$|()\\[\\]{}+?\\\\])", "\\\\\\1"), "\\*", ".*"))
+| where if(adb_pat=".*", true(), mvcount(mvmap(asset, if(match(lower(asset), adb_pat), 1, null()))) > 0)
+| stats count as adb_total]]></query>
+    <earliest>-1m</earliest>
+    <latest>now</latest>
+  </search>
+  <search id="ds_prov">
+    <query><![CDATA[| `adb_provenance($adb_asset$)`]]></query>
+    <earliest>-1m</earliest>
+    <latest>now</latest>
+  </search>
+  <search id="ds_sources">
+    <query><![CDATA[| rest splunk_server=local /servicesNS/nobody/assetdb/configs/conf-assetdb/general
+| fields lookups
+| spath input=lookups path={} output=src
+| mvexpand src
+| spath input=src
+| table name lookup]]></query>
+    <earliest>-1m</earliest>
+    <latest>now</latest>
+  </search>
+  <row>
+    <panel>
+      <html>
+        <style>.adb-ph{position:absolute;inset:0;overflow:hidden;pointer-events:none}.adb-ph i{display:block;border-radius:6px;background:linear-gradient(90deg,rgba(127,127,127,.16) 25%,rgba(127,127,127,.28) 50%,rgba(127,127,127,.16) 75%);background-size:200% 100%;animation:adbph 1.3s linear infinite}@keyframes adbph{from{background-position:200% 0}to{background-position:-200% 0}}@media (prefers-reduced-motion:reduce){.adb-ph i{animation:none}}</style>
+        <div id="adb_explorer" style="position: relative; height: calc(100vh - 200px); min-height: 640px;"><div class="adb-ph" aria-hidden="true"><div style="display:grid;grid-template-columns:340px 1fr;height:100%;gap:0"><div style="padding:14px"><i style="height:34px"></i><i style="height:34px;margin-top:16px;width:90%"></i><i style="height:34px;margin-top:16px;width:78%"></i><i style="height:34px;margin-top:16px;width:84%"></i><i style="height:34px;margin-top:16px;width:70%"></i><i style="height:34px;margin-top:16px;width:88%"></i><i style="height:34px;margin-top:16px;width:74%"></i><i style="height:34px;margin-top:16px;width:80%"></i><i style="height:34px;margin-top:16px;width:66%"></i></div><div style="padding:24px"><i style="height:24px;width:260px"></i><i style="height:12px;width:200px;margin-top:12px"></i><i style="height:14px;margin-top:30px;width:60%"></i><i style="height:14px;margin-top:30px;width:46%"></i><i style="height:14px;margin-top:30px;width:70%"></i><i style="height:14px;margin-top:30px;width:52%"></i><i style="height:14px;margin-top:30px;width:64%"></i><i style="height:14px;margin-top:30px;width:40%"></i></div></div></div></div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

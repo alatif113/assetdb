@@ -1,0 +1,22 @@
+/* Theme tokens. The visualization runs in a sandboxed iframe, so Splunk's own variables are not available: the
+   values below are Splunk's enterprise theme colors (page, panel, text, border) plus our own accents.
+   The host tells us which theme is active; the script sets data-theme on the root element. */
+.adb { --text: #3c444d; --text-2: #5c6773; --muted: #818d99; --section: #ffffff; --border: #d6d6d6; --border-soft: #e7eaed;
+  --hover: #f2f4f5; --accent: #006eaa; --accent-soft: #e3f1f9; --focus: #006eaa; --track: #dfe3e7; --shadow: 0 6px 24px rgba(23,29,33,.16);
+  --fresh: #1f8a52; --aging: #b07a0a; --stale: #c7392f; --diff: #b86e00; --mark: #fff0a8;
+  --s1: #0072b2; --s2: #d55e00; --s3: #009e73; --s4: #cc79a7; --s5: #b39700; --s6: #56b4e9; --s7: #7a5195; --s8: #e69f00; --s9: #5b6b7a; --s10: #a0522d; }
+.adb[data-theme="dark"] { --text: #e1e6eb; --text-2: #b5bec7; --muted: #818d99; --section: #1e2427; --border: #404547; --border-soft: #2d3438;
+  --hover: #262e32; --accent: #5ab0e8; --accent-soft: #1d3342; --focus: #7cc4f4; --track: #39424a; --shadow: 0 8px 28px rgba(0,0,0,.55);
+  --fresh: #4cc38a; --aging: #e0a93b; --stale: #f0716a; --diff: #f0b24b; --mark: #5a4d12;
+  --s1: #4da3e0; --s2: #ff8a3d; --s3: #2fcf9c; --s4: #e59cc4; --s5: #e6cb3d; --s6: #7cc8f2; --s7: #a98bd6; --s8: #f5b83d; --s9: #9aa8b6; --s10: #d08a5e; }
+html, body { margin: 0; height: 100%; background: transparent; }
+.adb { box-sizing: border-box; height: 100%; color: var(--text); font: 13px/1.45 "Splunk Platform Sans","Proxima Nova",Roboto,Droid,"Helvetica Neue",Helvetica,Arial,sans-serif; }
+.adb *, .adb *::before, .adb *::after { box-sizing: border-box; }
+.adb .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.adb button { font: inherit; color: inherit; }
+.adb .msg { margin: auto; padding: 24px; color: var(--muted); text-align: center; }
+
+/* Skeletons: shown while the first data is on its way. */
+.adb .sk { display: block; border-radius: 6px; background: linear-gradient(90deg, var(--track) 25%, color-mix(in srgb, var(--track) 55%, var(--section)) 50%, var(--track) 75%); background-size: 200% 100%; animation: adb-shimmer 1.3s linear infinite; }
+@keyframes adb-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .adb .sk { animation: none; } }

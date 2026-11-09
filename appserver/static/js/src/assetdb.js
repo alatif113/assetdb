@@ -1,11 +1,14 @@
+// First, on its own and without waiting for the page: the theme check (see adb_theme.js)
+require(['../app/assetdb/js/adb_theme.min'], function (Theme) { Theme.follow(); });
 require([
 	'jquery',
 	'splunkjs/mvc',
 	'splunkjs/mvc/utils',
 	'../app/assetdb/js/format.min',
 	'../app/assetdb/js/generator.min',
+	'../app/assetdb/js/vendor_icons.min',
 	'splunkjs/mvc/simplexml/ready!',
-], function ($, mvc, MvcUtils, format, Generator) {
+], function ($, mvc, MvcUtils, format, Generator, VendorIcons) {
 	const host = document.getElementById('ab_config');
 	const SERVICE = mvc.createService();
 	const { safeParse, checkEvalExpression, isReservedFieldName, getLookupArray, FIELD_NAME_RE } = Generator;
@@ -13,6 +16,7 @@ require([
 	const VALIDATION_ENDPOINT = '/services/search/v2/parser';
 	const COLLECTION_ENDPOINT = '/servicesNS/nobody/assetdb/storage/collections/config/assetdb';
 	const ENRICH_MACRO_ENDPOINT = '/servicesNS/nobody/assetdb/data/macros/adb_enrich_outputs';
+	const PROVENANCE_MACRO_ENDPOINT = '/servicesNS/nobody/assetdb/data/macros/adb_provenance(1)';
 	const JOBS = '/servicesNS/nobody/assetdb/search/jobs';
 	const SAVED = 'conf-savedsearches/assetdb-lookupgen';
 	// KV store allows 10 accelerations per collection; one is taken by `asset`.
@@ -27,7 +31,8 @@ require([
 		['fqdn', 'Fully qualified domain name'],
 		['user', 'User name (strip DOMAIN\\ and @domain)'],
 		['email', 'Email address (lowercase)'],
-		['os', 'Operating system family'],
+		['os', 'Operating system (specific name: ubuntu, redhat, ...)'],
+		['os_family', 'Operating system family (Windows Server, Linux, Mac, ...)'],
 	];
 	const VALIDATION_TYPE_CHOICES = [
 		['none', 'None'], ['ip', 'IP address (v4 or v6)'], ['ipv4', 'IPv4 address'], ['ipv6', 'IPv6 address'], ['mac', 'MAC address'], ['email', 'Email address'],
@@ -60,7 +65,7 @@ require([
 		maxvals: 'The most values kept per asset.',
 		mvorder: 'Which values to keep when there are more than the maximum. Most recent needs a _time column in the source.',
 		lookup: 'The lookup file or definition to read. This app must be able to read it.',
-		sname: 'Used in the merge search. Letters, digits and underscores. Cannot be changed later.',
+		sname: 'A friendly name, shown in the Explorer and Coverage and used by field settings that name sources. Spaces are fine. Cannot be changed later.',
 		enabled: 'Turn off to leave this source out of the merge. Its settings are kept.',
 		role: 'Authoritative sources create assets. Enrich only sources (a vulnerability scanner, for example) add data to assets that already exist and never create or link them.',
 		scope: 'The site or tenant of every row in this source. The same key in two scopes stays two assets. Only affects keys set to Scoped.',
@@ -71,7 +76,6 @@ require([
 		max_keys: 'The most keys one asset may have. Larger groups are dropped, usually because of a shared key such as a NAT address. The hard limit is ' + Generator.HARD_MAX_KEYS + '.',
 		max_key_share: 'A key found in more rows than this is not used for matching. 0 turns this off. Catches shared keys that are not on the blocklist.',
 		min_pct: 'A run that produces fewer assets than this share of the last successful run is not saved and shows as Blocked in Run history. 0 turns this off.',
-		empty: 'An empty result would erase the asset database, so it is never saved. This cannot be changed.',
 		runs_to_keep: 'Older runs are removed on every run.',
 		default_cs: 'Used by fields that do not set their own.',
 		default_norm: 'Used by fields whose normalizer is Default.',
@@ -163,12 +167,32 @@ require([
 	}
 
 	/**
+	 * The Explorer reads adb_provenance, which is built from the sources and fields. If the installed definition is not the one the
+	 * current configuration produces (a fresh install still has the empty starting one), install it, so the Explorer works without a
+	 * save first. Silent: a user who cannot write macros simply keeps what is there.
+	 */
+	function ensureProvenanceMacro() {
+		let wanted;
+		try { wanted = Generator.buildProvenanceMacro(S.entries.map((e) => ({ name: e.name, content: e.content }))); } catch { return Promise.resolve(); }
+		return P(SERVICE.get(PROVENANCE_MACRO_ENDPOINT, { output_mode: 'json' }).promise())
+			.then((res) => {
+				const current = (((safeParse(res, {}).entry || [])[0] || {}).content || {}).definition;
+				if (current === wanted.definition) return null;
+				return P(SERVICE.post(PROVENANCE_MACRO_ENDPOINT, { definition: wanted.definition, args: wanted.args }).promise());
+			})
+			.catch(() => null);
+	}
+
+	/**
 	 * Bring the KV collection definition in line with the fields: an index on every key field (the collection allows 10,
-	 * `asset` takes one), a field type for single value fields, and the enrichment macro.
+	 * `asset` takes one), a field type for single value fields, the enrichment macro, and the macro the Explorer uses,
+	 * adb_provenance (from the sources and fields).
 	 */
 	function syncCollection() {
 		return getConf('conf-assetdb').then((data) => {
-			const fields = (safeParse(data, {}).entry || []).filter((e) => e.name !== 'general');
+			const entries = safeParse(data, {}).entry || [];
+			const fields = entries.filter((e) => e.name !== 'general');
+			const provenanceMacro = Generator.buildProvenanceMacro(entries.map((e) => ({ name: e.name, content: e.content })));
 			const desired = {};
 			fields.filter((f) => parseInt(f.content.key_field)).slice(0, MAX_KEY_ACCELERATIONS).forEach((f) => {
 				desired[`accelerated_fields.${f.name}`] = JSON.stringify({ [f.name]: 1 });
@@ -177,7 +201,11 @@ require([
 				if (f.content.field_type === 'single' && f.content.value_type) desired[`field.${f.name}`] = f.content.value_type;
 			});
 			const outputs = ['_key AS asset_id', 'source AS asset_source', 'source_lookup AS asset_source_lookup', 'last_seen AS asset_last_seen'].concat(fields.map((f) => `${f.name} AS asset_${f.name}`));
-			return Promise.all([P(SERVICE.post(ENRICH_MACRO_ENDPOINT, { definition: outputs.join(', ') }).promise()), P(SERVICE.get(COLLECTION_ENDPOINT, { output_mode: 'json' }).promise())]).then(([, current]) => {
+			return Promise.all([
+				P(SERVICE.post(ENRICH_MACRO_ENDPOINT, { definition: outputs.join(', ') }).promise()),
+				P(SERVICE.post(PROVENANCE_MACRO_ENDPOINT, { definition: provenanceMacro.definition, args: provenanceMacro.args }).promise()),
+				P(SERVICE.get(COLLECTION_ENDPOINT, { output_mode: 'json' }).promise()),
+			]).then(([, , current]) => {
 				const content = ((safeParse(current, {}).entry || [])[0] || {}).content || {};
 				const protectedNames = ['asset', 'source', 'source_lookup', 'last_seen', 'scope', 'conflicts'];
 				const changes = {};
@@ -319,7 +347,7 @@ require([
 	/* ---------- State ---------- */
 	const S = { loaded: false, general: {}, entries: [], fields: [], sources: [], settings: null, sched: { cron: '', enabled: true, next: '' }, stats: {}, lookups: null, runs: null, overflow: null, changes: null };
 	const store = { get(k) { try { return localStorage.getItem('assetdb.' + k) === '1'; } catch { return false; } }, set(k, v) { try { localStorage.setItem('assetdb.' + k, v ? '1' : '0'); } catch { /* storage unavailable: the choice is just not remembered */ } } };
-	const ui = { stageSel: -1, attnOnly: false, chipsOpen: new Set(), cleanOpen: store.get('cleanOpen'), runsLoaded: false, runTimer: null, tab: 'fields', filter: '', drawer: null, save: 'idle', banner: null, running: false, searchStale: false, expanded: new Set(), retry: null, preview: { state: 'idle', sid: '', summary: null, counts: null, current: null, error: '' }, sdraft: null, advOpen: store.get('advOpen') };
+	const ui = { stageSel: -1, attnOnly: false, chipsOpen: new Set(), cleanOpen: store.get('cleanOpen'), runsLoaded: false, runTimer: null, tab: 'sources', filter: '', drawer: null, save: 'idle', banner: null, running: false, searchStale: false, expanded: new Set(), retry: null, preview: { state: 'idle', sid: '', summary: null, counts: null, current: null, error: '' }, sdraft: null, advOpen: store.get('advOpen') };
 
 	async function loadConf() {
 		const [data, sched, live] = await Promise.all([getConf('conf-assetdb'), getConf(SAVED).catch(() => null), P(SERVICE.get('/servicesNS/nobody/assetdb/saved/searches/assetdb-lookupgen', { output_mode: 'json' }).promise()).catch(() => null)]);
@@ -341,7 +369,7 @@ require([
 		S.stats[lookup] = { pending: true };
 		const safe = /^[A-Za-z0-9_.-]+$/.test(lookup);
 		if (!safe) { S.stats[lookup] = { error: 'The lookup name is not valid.' }; return Promise.resolve(S.stats[lookup]); }
-		return Promise.all([oneshot(`| inputlookup ${lookup} | stats count`), oneshot(`| inputlookup ${lookup} | head 200`)]).then(([counted, sample]) => {
+		return Promise.all([oneshot(`| inputlookup ${lookup} | stats count`), oneshot(`| inputlookup max=200 ${lookup}`)]).then(([counted, sample]) => {
 			const columns = [];
 			sample.forEach((row) => Object.keys(row).forEach((k) => { if (!k.startsWith('_') && !columns.includes(k)) columns.push(k); }));
 			S.stats[lookup] = { count: parseInt((counted[0] || {}).count || 0), columns, sample: sample.slice(0, 3) };
@@ -354,9 +382,9 @@ require([
 
 	async function loadRuns() {
 		const [runs, overflowCount, overflow] = await Promise.all([
-			oneshot('| inputlookup assetdb_runs | sort 0 -run_time | head 10', 10).catch(() => null),
+			oneshot('| inputlookup assetdb_runs | sort 10 -run_time', 10).catch(() => null),
 			oneshot('| inputlookup assetdb_overflow | stats count', 1).catch(() => null),
-			oneshot('| inputlookup assetdb_overflow | head 5', 5).catch(() => null),
+			oneshot('| inputlookup max=5 assetdb_overflow', 5).catch(() => null),
 		]);
 		S.runs = runs; S.overflow = overflow; S.overflowCount = overflowCount ? parseInt((overflowCount[0] || {}).count || 0) : null;
 		ui.runsLoaded = true;
@@ -389,6 +417,20 @@ require([
 		return out;
 	}
 	const attention = () => S.sources.filter((x) => problems('source', x).length).length + S.fields.filter((x) => problems('field', x).length).length;
+
+	/* ---------- Theme: follow the user's Splunk theme (see supported_themes in app.conf) ---------- */
+	// Splunk Web publishes the theme it is showing as window.__splunk_page_theme__ ('dark' or 'enterprise') and in $C.SPLUNK_UI_THEME;
+	// if neither is there (an older Splunk) the page's own background decides.
+	function isDarkTheme() {
+		const t = window.__splunk_page_theme__ || (window.$C && window.$C.SPLUNK_UI_THEME);
+		if (t) return /dark/i.test(String(t));
+		const m = /\d+/g, c = (getComputedStyle(document.body).backgroundColor.match(m) || []).map(Number);
+		return c.length >= 3 && (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) < 110;
+	}
+	host.setAttribute('data-theme', isDarkTheme() ? 'dark' : 'light');
+	/** The logo of a source's vendor, picked from keywords in its name or its lookup name (assets/vendors.json); a neutral icon when none matches. */
+	const sourceVendor = (name, lookup) => VendorIcons.vendorFor(`${name || ''} ${lookup || ''}`);
+	const sourceIcon = (name, lookup, px) => VendorIcons.vendorIcon(sourceVendor(name, lookup), isDarkTheme() ? 'dark' : 'light', px);
 
 	/* ---------- Shadow DOM shell ---------- */
 	const ROOT = host.attachShadow({ mode: 'open' });
@@ -493,7 +535,7 @@ require([
 			ui.searchStale = true;
 			ui.banner = { kind: 'bad', title: `Saved “${label}”, but the merge search was not updated.`, text: `${describeError(err)}. Scheduled runs use the previous search until you regenerate it.`, action: 'Regenerate search', act: 'regen' };
 		}
-		if (syncError && !ui.banner) ui.banner = { kind: 'warn', title: `Saved “${label}”, but the field types were not synced.`, text: `${describeError(syncError)}. Searches still work.`, action: 'Retry sync', act: 'sync' };
+		if (syncError && !ui.banner) ui.banner = { kind: 'warn', title: `Saved “${label}”, but the field types and macros were not synced.`, text: `${describeError(syncError)}. Searches still work.`, action: 'Retry sync', act: 'sync' };
 		await loadConf().catch(() => {});
 		setSave(ui.searchStale ? 'failed' : 'saved'); live(`${label} saved`);
 		inspectAll(); return true;
@@ -571,7 +613,7 @@ require([
 		return `<div class="panel">${attnBar()}<table class="tbl"><caption class="sr-only">Source lookups</caption>
 			<thead><tr><th scope="col">Source</th><th scope="col">Role</th><th scope="col" class="hide-s hide-d">Scope</th><th scope="col" class="hide-s hide-d">Max age</th><th scope="col" class="num">Rows</th><th scope="col">Enabled</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
 			<tbody>${list.map((s) => { const ed = !!ui.drawer && ui.drawer.kind === 'source' && ui.drawer.id === s.name; const st = S.stats[s.lookup] || {}; const c = S.sourceConf.find((q) => q.name === s.name) || {}; return `<tr data-open data-id="${esc(s.name)}" data-active="${ed}" class="${s.enabled ? '' : 'off'}">
-				<td class="grow"><span class="nmw"><span class="fname" title="${esc(s.name)}">${esc(s.name)}</span>${flag(problems('source', s))}</span><small title="${esc(s.lookup)}">${esc(s.lookup)}</small></td>
+				<td class="grow"><div class="srcc"><span class="srcico">${sourceIcon(s.name, s.lookup, 24)}</span><div class="srcname"><span class="nmw"><span class="fname friendly" title="${esc(s.name)}">${esc(s.name)}</span>${flag(problems('source', s))}</span><small title="${esc(s.lookup)}">${esc(s.lookup)}</small></div></div></td>
 				<td>${s.role === 'enrich' ? 'Enrich only' : 'Authoritative'}</td>
 				<td class="hide-s hide-d">${s.scope ? esc(s.scope) : '—'}</td><td class="hide-s hide-d">${c.max_age ? esc(c.max_age) : '—'}</td>
 				<td class="num">${st.pending || st.count === undefined ? (st.error ? '—' : '…') : fmt(st.count)}</td>${enabledSwitch('source', s.name, s.name, s.enabled, ed)}${rowActions('source', s.name, s.name)}</tr>`; }).join('')}</tbody></table>
@@ -694,9 +736,16 @@ require([
 		const sel = (k, label, list) => `<div class="srow2"><div class="lrow"><label for="st-${k}">${label}</label>${tip(TIPS[k], label)}</div><div><select class="inp" style="max-width:320px" id="st-${k}" data-s="${k}" data-text data-fid="st-${k}">${opts(list, v[k])}</select></div></div>`;
 		const sw = (k, label) => `<div class="srow2 center"><div class="lrow"><span class="l" id="sw-${k}-l">${label}</span>${tip(TIPS[k] || TIPS.scheduled, label)}</div><div><button class="switch" type="button" role="switch" aria-checked="${v[k]}" aria-labelledby="sw-${k}-l" data-act="sbool" data-k="${k}" data-fid="st-${k}"></button></div></div>`;
 		const chips = (id, k, label, tipKey) => `<div class="srow2"><div class="lrow"><label id="${id}-l">${label}</label>${tip(TIPS[tipKey], label)}</div>${chipsHtml(id, v[k], id + '-l')}</div>`;
+		const macroUrl = makeUrl('/manager/assetdb/data/macros/adb_icon') + '?action=edit&ns=assetdb';
+		const iconHelp = `<div class="srow2"><div class="lrow"><span class="l">Icon macro</span></div><div class="static" style="display:grid;gap:10px;max-width:680px">
+			<span>Every asset has an icon. By default it is the generic <b>Other</b> icon. To choose icons by device type, edit the macro <code>adb_icon</code>: an eval statement that sets the field <code>adb_icon</code> from any of the asset fields.</span>
+			<span>It must set one of <b>${Generator.ICON_CHOICES.join(', ')}</b>. Anything else gives the default icon.</span>
+			<span>Example: <code>eval adb_icon=case(match(mvjoin(os, " "), "(?i)windows server|linux"), "server", match(mvjoin(os, " "), "(?i)ios|android"), "mobile", true(), "other")</code></span>
+			<span><a class="btn" href="${esc(macroUrl)}" target="_blank" rel="noopener" data-fid="icon-macro">Edit the adb_icon macro</a></span></div></div>`;
 		const group = (title, desc, rows) => `<section class="sgroup" aria-labelledby="g-${title.replace(/\W/g, '')}"><header><h2 id="g-${title.replace(/\W/g, '')}">${title}</h2><p>${desc}</p></header>${rows}</section>`;
 		return `${group('Limits', 'Stop shared keys from merging unrelated assets.', num('max_keys', 'Max keys per asset', 1, Generator.HARD_MAX_KEYS) + num('max_key_share', 'Max rows per key', 0, 1000000))}
-			${group('Run safety', 'Block runs that look wrong.', num('min_pct', 'Minimum size vs last run', 0, 100, '%') + `<div class="srow2 center"><div class="lrow"><span class="l">Save empty results</span>${tip(TIPS.empty, 'Save empty results')}</div><div class="static">Never</div></div>`)}
+			${group('Run safety', 'Block runs that look wrong. A run that finds no assets is never saved, because it would erase the asset database.', num('min_pct', 'Minimum size vs last run', 0, 100, '%'))}
+			${group('Explorer icons', 'The icon beside each asset in the Explorer is set by a macro, not by a setting here.', iconHelp)}
 			${group('Schedule', 'When the merge runs automatically.', sw('scheduled', 'Run on a schedule') + txt('cron', 'Cron schedule', { mono: true, w: 240 }))}
 			${group('Run history', 'How many past runs are kept.', num('runs_to_keep', 'Runs to keep', 1, 5000))}
 			${group('Matching defaults', 'Used by fields that do not set their own.', sw('default_cs', 'Default case sensitive') + sel('default_norm', 'Default normalizer', NORMALIZER_CHOICES) + txt('scope_field', 'Scope column', { mono: true, w: 240 }))}
@@ -839,10 +888,10 @@ require([
 		const readFail = s.lookup && st.error;
 		const body = `
 			${create ? `<fieldset class="sec"><legend>Lookup</legend><div>${labelRow('pick', 'Lookup', 'lookup')}<div class="combo"><input class="inp" id="pick" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="pick-list" aria-describedby="pick-e" placeholder="${S.lookups ? 'Search by name or app' : 'Loading lookups…'}" value="${esc(s.lookup)}" data-fid="pick" autocomplete="off"><div class="listbox" id="pick-list" role="listbox" hidden></div></div><div class="err" id="pick-e" role="alert" ${readFail ? '' : 'hidden'}>${readFail ? `${ico('alert')}<span>${esc(st.error)}</span>` : ''}</div></div>
-				${s.lookup && st.count !== undefined ? `<details class="adv" open><summary>${st.count.toLocaleString()} rows, ${cols.length} columns found</summary><div class="adv-in"><div class="schema-wrap"><table class="schema"><thead><tr>${cols.map((c) => `<th scope="col">${esc(c)}</th>`).join('')}</tr></thead><tbody>${(st.sample || []).map((r) => `<tr>${cols.map((c) => `<td>${esc(Array.isArray(r[c]) ? r[c].join(', ') : r[c] === undefined ? '' : r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div></details>` : s.lookup && st.pending ? '<p class="hint">Reading the lookup…</p>' : ''}</fieldset>` : ''}
+				${s.lookup && st.count !== undefined ? `<p class="hint">${st.count.toLocaleString()} rows, ${cols.length} columns found.</p>` : s.lookup && st.pending ? '<p class="hint">Reading the lookup…</p>' : ''}</fieldset>` : ''}
 			${s.lookup && !readFail || !create ? `
 			<fieldset class="sec"><legend>Source</legend>
-				${create ? textField('sd-name', 'name', 'Name', 'sname', s.name, { mono: true, err: true }) : ''}
+				${create ? textField('sd-name', 'name', 'Name', 'sname', s.name, { err: true }) : ''}
 				${!create && readFail ? `<div class="err" role="alert">${ico('alert')}<span>Cannot read the lookup: ${esc(st.error)}</span></div>` : ''}
 				${switchRow('enabled', 'Enabled', 'enabled', s.enabled)}
 				${segField('role', 'Role', 'role', [['authoritative', 'Authoritative'], ['enrich', 'Enrich only']], s.role)}
@@ -859,7 +908,7 @@ require([
 				<div><button class="btn sm" type="button" data-act="mapAdd">${ico('plus')}Add mapping</button></div>
 			</fieldset>` : ''}`;
 		void lookups;
-		return { title: create ? 'Add source' : `Edit source <span class="mono">${esc(dr.origName)}</span>`, body, footer: footerHtml('source') };
+		return { title: create ? 'Add source' : `Edit source <b>${esc(dr.origName)}</b>`, body, footer: footerHtml('source') };
 	}
 
 	function runsModel() {
@@ -892,7 +941,6 @@ require([
 	}
 
 	/* ---------- Save, toggle, remove, duplicate ---------- */
-	const SOURCE_NAME_RE = /^[a-zA-Z0-9_]+$/;
 	function fieldNameError(n) {
 		if (!n) return 'Enter a name.';
 		if (!FIELD_NAME_RE.test(n)) return 'Field name must start with a letter or underscore and can only use alphanumeric characters and underscores';
@@ -920,7 +968,8 @@ require([
 		['sd-name', 'sd-filter', 'sd-scope', 'map'].forEach((id) => showErr(`#${id}`, `#${id}-e`, ''));
 		if (create) {
 			if (!x.name.trim()) fail('sd-name', 'A name is required');
-			else if (!SOURCE_NAME_RE.test(x.name.trim())) fail('sd-name', 'The name can only contain alphanumeric characters or underscores');
+			else if (!Generator.isValidSourceName(x.name.trim())) fail('sd-name', 'Use up to 64 characters, without quotes, backslashes, commas or backticks');
+			else if (S.sources.some((s) => s.name.toLowerCase() === x.name.trim().toLowerCase())) fail('sd-name', `A source named ${x.name.trim()} already exists`);
 			else if (S.sources.some((s) => s.name === x.name.trim())) fail('sd-name', `A source named ${x.name.trim()} already exists`);
 			else if (S.sources.some((s) => s.lookup === x.lookup)) fail('sd-name', `A source with lookup ${x.lookup} already exists`);
 			if (!x.lookup) { showErr('#pick', '#pick-e', 'Pick a lookup'); if (!bad) bad = $q('#pick'); }
@@ -1199,7 +1248,7 @@ require([
 		const watch = () => { const w = host.getBoundingClientRect().width; host.toggleAttribute('data-narrow', w < 1100); host.toggleAttribute('data-compact', w < 760); };
 		if (window.ResizeObserver) new window.ResizeObserver(watch).observe(host);
 		watch(); renderHeader(); renderMain();
-		loadConf().then(() => { renderHeader(); renderMain(); inspectAll(); refreshLines(); loadRuns().then(() => { renderHeader(); }); })
+		loadConf().then(() => { renderHeader(); renderMain(); ensureProvenanceMacro(); inspectAll(); refreshLines(); loadRuns().then(() => { renderHeader(); }); })
 			.catch((err) => { $q('#main').innerHTML = `<div class="d-in"><div class="banner bad" role="alert">${ico('alert')}<div class="grow"><b>The configuration could not be read.</b><div class="muted">${esc(describeError(err))}</div></div></div></div>`; });
 	}
 
