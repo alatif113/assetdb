@@ -6,7 +6,8 @@ AssetDB combines asset records from several lookups into one list of assets. Rec
 
 ## Requirements
 
-- Splunk Enterprise 10.2 or later.
+- Splunk Enterprise 10.2 or later. The icons in the app navigation need 10.4 or later (on 10.2 the navigation shows letters instead).
+- The app follows your Splunk theme (light or dark): see [Themes](#themes).
 - The KV store must be running.
 - To change the configuration you need the `admin` role. Anyone who can read the app can search the asset list.
 
@@ -24,7 +25,7 @@ Upgrading from 1.5.7 or earlier? Read the [breaking changes](#breaking-changes-i
 2. **Add fields.** On the **Fields** tab, click *Add CIM preset* to add the common asset fields (`mac`, `ip`, `nt_host`, `dns`, `owner` and more), or click *Add field*. Mark the fields that identify an asset as **key fields**.
 3. **Preview.** On the **Pipeline** tab, click *Run preview*. It shows how many assets a run would add, remove or change, and saves nothing.
 4. **Run.** Click *Run now*, or wait for the schedule (every day at midnight by default).
-5. **Use the result.** Search `| inputlookup assetdb`, or add asset details to events with `` `adb_enrich(src_ip)` ``. See [Using the asset list](#using-the-asset-list).
+5. **Use the result.** Open **Explorer** to search the assets and see where each value came from, search `| inputlookup assetdb`, or add asset details to events with `` `adb_enrich(src_ip)` ``. See [Explorer and Coverage](#explorer-and-coverage) and [Using the asset list](#using-the-asset-list).
 
 ## How assets are merged
 
@@ -76,6 +77,7 @@ A source is a lookup that provides asset records. *Remove* takes a source out of
 
 | Option | What it does |
 | --- | --- |
+| Name | A friendly name, such as `Active Directory (prod)`. Spaces and punctuation are fine; up to 64 characters, without quotes, backslashes, commas or backticks. It is what the Explorer and Coverage show. It cannot be changed later. |
 | Enabled | A disabled source is left out of the merge but keeps its settings. |
 | Role | *Authoritative* sources create assets. *Enrich only* sources (a vulnerability scanner, for example) only add data to assets that already exist. A record is added only if it matches exactly one asset; otherwise it is dropped and counted. |
 | Max row age | Ignore rows older than this. Rows without a time are kept. |
@@ -105,7 +107,7 @@ Every asset also gets `source`, `source_lookup`, `last_seen` (the latest `_time`
 | Method | For single-value fields, which value wins when sources disagree: *Latest* or *Earliest* (by the row's `_time`), *Min*, *Max*, *Average* or *Sum* (for numbers; set Value type to Number), or *Coalesce* (the first value that is not empty, in the *Source order* you choose). |
 | Case sensitive | When off, values match regardless of case and are stored in lowercase. |
 | Keep original case | For case-insensitive key fields: store the value as written and ignore case only when matching. Not available with the host name, FQDN, user name, email and operating system normalizers, because they lowercase the value. |
-| Normalizer | Puts values in a standard form before matching: trim spaces, MAC (`aa:bb:cc:dd:ee:ff`), IP (no leading zeros), short host name, fully qualified domain name, user name (removes `DOMAIN\` and `@domain`), email, or operating system family. *Default* uses the choice in Settings. |
+| Normalizer | Puts values in a standard form before matching: trim spaces, MAC (`aa:bb:cc:dd:ee:ff`), IP (no leading zeros), short host name, fully qualified domain name, user name (removes `DOMAIN\` and `@domain`), email, operating system (the specific name, such as `ubuntu` or `windows_server`), or operating system family (`Windows Server`, `Windows Desktop`, `Linux`, `Mac`, `iOS`, `iPadOS`, `Android`, `Unix`, `Hypervisor`, `Network device`; anything else becomes `Other`). *Default* uses the choice in Settings. |
 | Validate as | Drops values that are not of the chosen type (IP, IPv4, IPv6, MAC, email, host name, FQDN, CIDR, whole number, number). The asset stays; only the value goes. |
 | Ignore values | Values to skip: an exact value, `re:<regular expression>` or `cidr:<network>`. For example `unknown`, `re:^169\.254\.` or `cidr:127.0.0.0/8`. |
 | Use the global ignore list | Also skip the values on the global list in Settings. On by default. |
@@ -155,6 +157,36 @@ Each run is recorded with its time, status (`ok`, `blocked_low_count` or `empty`
 
 To be told when a run is blocked, enable the saved search `assetdb-run-alert` and add an alert action to it.
 
+## Explorer and Coverage
+
+The app has two dashboards for looking at the result. They are in the app menu next to Configure.
+
+**Explorer.** Type any key value, for example a host name or `10.4.*`, to find assets. `*` matches anything. The list shows the 100 most recently seen assets and says how many there are in all, so searching is how you reach the rest. Select an asset to see its keys and its fields. Click a key to copy it.
+
+- Next to each field you see which sources supply the value that was kept. Sources are compared with each other: the most recently seen source is the one used, and a source that holds different values from it is shown in amber with `≠` (case, spacing and order are ignored, so copies of each other never differ, and neither does a single source). Click a field to compare the value of every source, with its last-seen date.
+- Fields that no source filled in are folded away under *Show N fields with no value*.
+- *N fields differ* lists the fields where sources disagreed. Several records of the same source for one asset are not counted as sources disagreeing.
+
+**Coverage.** A heatmap of how much of your estate each source covers. Pick a field in *Group by* (or leave it on *No grouping*), and each cell shows the share of the assets in that group that a source contributed to. Click a cell to open a search in a new window that lists the assets of that group and whether that source covers each one. Use the legend handles to fade cells outside a range, and click a column header to sort.
+
+The names you give fields and sources are used as they are. Nothing else needs to be set up, except the optional icons below.
+
+### Icons
+
+Every asset in the Explorer has an icon, such as a server or a phone. The asset data does not say what kind of device an asset is, so by default every asset gets the generic **Other** icon, and you decide the rest with one macro: `adb_icon`. It is an eval statement that sets the field `adb_icon` from any of the asset's fields. The value must be one of **server, desktop, laptop, mobile, tablet, network, printer, iot, virtual, storage, cloud** or **other**; anything else gives the default icon. It ships as `eval adb_icon="other"`.
+
+The **Settings** tab of the Configure page explains this and has an *Edit the adb_icon macro* link. You can also open **Settings > Advanced search > Search macros** in Splunk, find `adb_icon` in the AssetDB app and edit its definition, for example:
+
+```
+eval adb_icon=case(match(mvjoin(category, " "), "(?i)printer"), "printer", match(mvjoin(os, " "), "(?i)windows server|linux"), "server", match(mvjoin(os, " "), "(?i)ios|android"), "mobile", true(), "other")
+```
+
+(`mvjoin` makes a multivalue field safe to match on.) A change shows the next time the Explorer runs its search. Another macro, `adb_provenance(<_key>)`, reads the sources for one asset on demand for the Explorer; the Configure page keeps it up to date.
+
+## Themes
+
+The Configure page and both dashboards are **dark by default**. If you chose the light theme in your Splunk user preferences, they switch to light: the app reads your preference and, when it is *light*, reloads the page once with `?theme=light` in the address (Splunk does not apply your theme to classic dashboards by itself). A page opened with `?theme=light` or `?theme=dark` in its address is left as it is, so you can use that to see either theme. A light-theme user sees the dark page for about half a second first: Splunk draws the page before any app code can run, and an app cannot prevent that.
+
 ## Using the asset list
 
 Search all assets with `| inputlookup assetdb`. In a subsearch, use `| inputlookup append=true assetdb` instead of `append [| inputlookup assetdb]`, because subsearches stop at 50,000 results.
@@ -174,23 +206,54 @@ index=vpn | `adb_enrich_scoped(src_ip, site)`
 | `adb_enrich_scoped(key, scope)` | For keys marked *Scoped*. Matches on the scope and the value. |
 | `adb_enrich_with(key, lookup)` | Like `adb_enrich`, for a lookup other than `assetdb`. |
 
-Other macros: `input_adb_lookup(lookup)` reads a source lookup and `output_adb_lookup(lookup)` writes one. `normalize_trim`, `normalize_mac`, `normalize_ip`, `normalize_hostname`, `normalize_fqdn`, `normalize_user`, `normalize_email` and `normalize_os` apply the normalizers and work on fields with several values.
+Other macros: `input_adb_lookup(lookup)` reads a source lookup (and sets `source_lookup` to its name, whatever a `source_lookup` column in the file says) and `output_adb_lookup(lookup)` writes one. `normalize_trim`, `normalize_mac`, `normalize_ip`, `normalize_hostname`, `normalize_fqdn`, `normalize_user`, `normalize_email`, `normalize_os` and `normalize_os_family` apply the normalizers and work on fields with several values.
 
 ## Source templates
 
-The hardest part of setup is building the source lookups. The app includes seven saved searches, all disabled, that build a source lookup using the field names of the CIM preset. To use one, enable it, run it once (it creates the lookup file), and add that lookup on the Sources tab. Adapt the search to your data.
+The hardest part of setup is building the source lookups. The app includes saved searches, all disabled, that build a source lookup from the data a vendor's Splunk add-on indexes, using the field names of the CIM preset. To use one, install the add-on and collect its asset or device data, enable the saved search, run it once (it creates the lookup file), and add that lookup on the Sources tab. Each search names the sourcetype it reads, and uses the add-on's own macro or eventtype where it has one (set that macro to your index first). Adapt the search if your data differs: run `| fieldsummary` on the sourcetype to see the field names you have. Every search that groups by a vendor's own record ID also writes that ID as a field (for example `tenable_id`) that you can add on the Fields tab. None of them uses an external (NAT) address as a key.
 
 | Saved search | What it builds | Needs | Add as |
 | --- | --- | --- | --- |
 | `assetdb-src-splunk-hosts` | Every host that sends data to Splunk | Nothing | Authoritative (host name only) |
 | `assetdb-src-dhcp-cim` | IP, MAC and host name from DHCP events (CIM Network Sessions) | CIM add-on and a DHCP add-on | Authoritative, with a short max age |
 | `assetdb-src-vulnerabilities-cim` | Vulnerability counts and highest CVSS score per host (CIM Vulnerabilities) | CIM add-on and a scanner add-on | Enrich only |
-| `assetdb-src-ad-computers` | Enabled Active Directory computer accounts | SA-LDAPSearch | Authoritative |
-| `assetdb-src-crowdstrike-devices` | Hosts from CrowdStrike Falcon (internal IP only; the Falcon device ID is the key) | CrowdStrike Falcon Devices Technical Add-on | Authoritative |
+| `assetdb-src-ad-computers` | Enabled Active Directory computer accounts (last logon as the time, the manager as the owner; no IP or MAC) | [Splunk Supporting Add-on for Active Directory](https://splunkbase.splunk.com/app/1151) | Authoritative |
 | `assetdb-src-defender-machines` | Devices from Microsoft Defender for Endpoint | Splunk Add-on for Microsoft Security | Authoritative |
-| `assetdb-src-tenable-assets` | Assets from Tenable Vulnerability Management | Tenable Add-On for Splunk | Authoritative, or Enrich only if another source owns the inventory |
+| `assetdb-src-tenable-assets` | Assets from Tenable Vulnerability Management (terminated assets left out) | [Tenable Add-On for Splunk](https://splunkbase.splunk.com/app/4060/) | Authoritative, or Enrich only if another source owns the inventory |
+| `assetdb-src-crowdstrike-devices` | Hosts from CrowdStrike Falcon (internal IP only; the Falcon device ID is the key) | [CrowdStrike Falcon Devices Add-on](https://splunkbase.splunk.com/app/5570) | Authoritative |
+| `assetdb-src-servicenow-cmdb` | Servers and virtual machines of the CMDB (retired CIs left out) | [Splunk Add-on for ServiceNow](https://splunkbase.splunk.com/app/1928/) | Authoritative |
+| `assetdb-src-qualys-vmdr-hosts` | Hosts Qualys VMDR scanned (adapt: the add-on does not list its columns) | [Qualys Universal TA](https://splunkbase.splunk.com/app/9110) | Enrich only |
+| `assetdb-src-rapid7-insightvm` | Assets from InsightVM | [Rapid7 InsightVM Technology Add-On](https://splunkbase.splunk.com/app/5097/) | Authoritative, or Enrich only |
+| `assetdb-src-armis-devices` | Devices Armis discovered (IoT, OT, unmanaged) | [Armis Add-On for Splunk](https://splunkbase.splunk.com/app/4872) | Authoritative |
+| `assetdb-src-axonius-devices` | Devices of an Axonius saved query (adapt: the columns are the query's) | [Axonius Add-On for Splunk](https://splunkbase.splunk.com/app/5740) | Authoritative, on its own |
+| `assetdb-src-lansweeper-assets` | Assets from Lansweeper, cloud or on premises | [Lansweeper Add-on for Splunk](https://splunkbase.splunk.com/app/5418/) | Authoritative |
+| `assetdb-src-jamf-computers` | Mac computers from Jamf Pro (the section events of a computer joined on its ID) | [Jamf Pro Add-on](https://splunkbase.splunk.com/app/4729/) | Authoritative |
+| `assetdb-src-aws-ec2-instances` | EC2 instances (terminated ones left out) | [Splunk Add-on for AWS](https://splunkbase.splunk.com/app/1876/) | Authoritative, with a short max age |
+| `assetdb-src-sentinelone-agents` | Endpoints with a SentinelOne agent | [SentinelOne App for Splunk](https://splunkbase.splunk.com/app/5433) | Authoritative |
+| `assetdb-src-tanium-inventory` | Endpoints from the Tanium asset question | [TA-Tanium](https://splunkbase.splunk.com/app/4439) | Authoritative |
+| `assetdb-src-tanium-discover` | Interfaces Tanium Discover found, managed or not | [TA-Tanium](https://splunkbase.splunk.com/app/4439) | Authoritative, with a short max age |
+| `assetdb-src-carbon-black-cloud-devices` | Endpoints of Carbon Black Cloud (deregistered ones left out) | [VMware Carbon Black Cloud App](https://splunkbase.splunk.com/app/5332) | Authoritative |
+| `assetdb-src-azure-virtual-machines` | Azure VMs, with the address and MAC joined from their network interfaces | [Splunk Add-on for Microsoft Cloud Services](https://splunkbase.splunk.com/app/3110) | Authoritative, with a short max age |
+| `assetdb-src-entra-devices` | Devices registered in Microsoft Entra ID (host name only) | [Splunk Add-on for Microsoft Azure](https://classic.splunkbase.splunk.com/app/3757) | Authoritative, or Enrich only |
+| `assetdb-src-gcp-compute-instances` | Compute Engine instances from the asset inventory export | [Splunk Add-on for Google Cloud Platform](https://splunkbase.splunk.com/app/3088/) | Authoritative, with a short max age |
+| `assetdb-src-cortex-xdr-endpoints` | Endpoints of Cortex XDR (adapt: the add-on does not list its columns) | [Cortex XDR Endpoint Retriever](https://splunkbase.splunk.com/app/6396) | Authoritative |
+| `assetdb-src-forescout-hosts` | Hosts Forescout reports (adapt: the properties are those your policy exports) | [Forescout Technology Add-on](https://splunkbase.splunk.com/app/3382) | Authoritative, with a short max age |
+| `assetdb-src-meraki-devices` | Meraki access points, switches, appliances and cameras | [Cisco Meraki Add-on for Splunk](https://splunkbase.splunk.com/app/5580) | Authoritative |
+| `assetdb-src-wiz-virtual-machines` | Virtual machines Wiz discovered (adapt: the fields are the cloud provider's) | [Wiz Discovered Virtual Machines TA](https://splunkbase.splunk.com/app/7448) | Enrich only, or Authoritative |
+| `assetdb-src-runzero-assets` | Assets from runZero (private and IPv6 addresses only) | [runZero Asset Inventory](https://splunkbase.splunk.com/app/6549) | Authoritative |
+| `assetdb-src-nozomi-assets` | OT assets from Nozomi Networks (adapt: the name field is the API's) | [Nozomi Networks Universal Add-on](https://splunkbase.splunk.com/app/6905) | Authoritative |
+| `assetdb-src-claroty-xdome-devices` | OT, IoT and medical devices from Claroty xDome (adapt: the device id and name are the API's) | [Claroty xDome Add-on](https://splunkbase.splunk.com/app/6488) | Authoritative |
+| `assetdb-src-bigfix-clients` | Computers BigFix manages (the add-on's error text in the IP property is dropped) | [HCL BigFix Add-on for Splunk](https://splunkbase.splunk.com/app/4973) | Authoritative |
+| `assetdb-src-manageengine-endpoint-central` | Computers with vulnerabilities (the add-on collects no inventory: a weak fit) | [ManageEngine Endpoint Central add-on](https://splunkbase.splunk.com/app/7458) | Enrich only |
+| `assetdb-src-trellix-epo-systems` | Systems Trellix ePO manages (adapt: the system properties are the add-on's mapping) | [Trellix ePO All in one](https://splunkbase.splunk.com/app/8351) | Authoritative |
+| `assetdb-src-device42-devices` | Devices from the Device42 devices API (adapt, untested: the add-on prints one URL's answer as it is) | [Erasmith Add-on for Device42](https://splunkbase.splunk.com/app/7889) | Authoritative |
+| `assetdb-src-workspace-one-devices` | Devices with a reported location, by serial number (a weak fit: no IP or MAC) | [Workspace ONE UEM Device Location add-on](https://splunkbase.splunk.com/app/10147) | Enrich only |
+| `assetdb-src-cisco-secure-endpoint-computers` | Computers of Cisco Secure Endpoint (inactive ones left out; adapt: the fields are the API's) | [Secure Endpoint (AMP) Events and Audit Logs Add-on](https://splunkbase.splunk.com/app/10276) | Authoritative |
+| `assetdb-src-symantec-endpoint-protection` | Computers in the Symantec Endpoint Protection client logs (a weak fit: no inventory) | [Splunk Add-on for Symantec Endpoint Protection](https://splunkbase.splunk.com/app/2772) | Enrich only |
 
-The first template needs no add-on. The others are starting points: check the field names against your data before you rely on them.
+**Vendor logos.** Next to each source (the Configure page, the Explorer and the Coverage page) the app shows the logo of the vendor, picked from words in the source's name or in its lookup name (for example `CrowdStrike`, or a lookup called `assetdb_src_tenable.csv`). A source with no vendor in its name gets a neutral icon. There is nothing to set. The logos and where they come from are in [assets/README.md](assets/README.md).
+
+The first template needs no add-on. A template that says "adapt before use" in its description reads names that the add-on does not list itself (they come from the vendor's API), so check them against your data first.
 
 ## Good to know
 
@@ -230,6 +293,8 @@ Read these before upgrading from 1.5.7 or earlier.
 - Scoped keys, so the same address in two sites does not merge.
 - Safety checks: key blocklist, *Max rows per key*, and blocking of runs that look wrong.
 - A CIM preset for the standard asset fields, and macros to add asset details to events (`adb_enrich` and related).
+- Two dashboards, **Explorer** (find an asset and see where each value came from) and **Coverage** (a heatmap of what each source covers). Both follow your Splunk theme. Icons are set under Settings.
+- An *Operating system family* normalizer (Windows Server, Windows Desktop, Linux, Mac, iOS and more).
 - Seven disabled saved searches that build source lookups.
 - A new app icon and logo, and help text in tooltips.
 - A faster merge (about 45% on a large test input).
