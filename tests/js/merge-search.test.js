@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { load } = require('./load-generator');
+const { expandMacros } = require('./macros');
 
 const FIXTURES = path.join(__dirname, '..', 'fixtures');
 const CONFIGS = path.join(FIXTURES, 'configs');
@@ -45,7 +46,8 @@ test('generated search always ends by writing the assetdb KV store', () => {
 	const { makeMergeSearch } = load();
 	const spl = makeMergeSearch(JSON.parse(fs.readFileSync(path.join(CONFIGS, 'single_lookup_basic.json'), 'utf8')).fieldArray);
 	assert.match(spl, /\| outputlookup override_if_empty=false assetdb$/);
-	assert.match(spl, /\| adbmerge max_keys=25/);
+	assert.match(expandMacros(spl), /\| adbmerge max_keys=25/);
+	assert.match(spl, /\| `adb_merge\(25, 50\)`/);
 });
 
 test('every fixture has a golden file and vice versa', () => {
@@ -86,7 +88,8 @@ test('non-JSON conf response does not throw', () => {
 function single(name, extra) {
 	return mvField(name, Object.assign({ field_type: 'single' }, extra));
 }
-const gen = (fields, lookups) => load().makeMergeSearch([lookups || general].concat(fields));
+// Macros expanded: these tests are about what the search does; the golden files and the macro tests show the unexpanded form.
+const gen = (fields, lookups) => expandMacros(load().makeMergeSearch([lookups || general].concat(fields)));
 
 test('field names that are not plain identifiers are rejected', () => {
 	for (const bad of ['src.ip', 'dest-host', '9lives', 'naïve', 'a b', 'a"b', "a'b", 'a]']) {
@@ -95,12 +98,12 @@ test('field names that are not plain identifiers are rejected', () => {
 	assert.doesNotThrow(() => gen([single('_ok1'), single('Ab_9')]));
 });
 
-test('fillnull and validation are SPL-quoted; input names are restricted', () => {
+test('fillnull and validation are SPL-quoted; source names cannot break out of their quotes', () => {
 	const spl = gen([single('f', { fillnull: 'a"b\\c', validation: '^\\d+"$' })]);
 	assert.ok(spl.includes('"a\\"b\\\\c"'), spl);
 	assert.ok(spl.includes('match(f, "^\\\\d+\\"$")'), spl);
 	assert.ok(spl.includes('source_lookup="a.csv", "a"'), spl);
-	assert.throws(() => gen([single('f')], { name: 'general', content: { lookups: '[{"name":"n\\"x","lookup":"a.csv"}]' } }), /input name/i);
+	assert.throws(() => gen([single('f')], { name: 'general', content: { lookups: '[{"name":"n\\"x","lookup":"a.csv"}]' } }), /source name/i);
 });
 
 test('lookup files must look like lookup names', () => {
@@ -118,7 +121,7 @@ test('eval_expression cannot start a new command but may use brackets inside str
 });
 
 test('merge_order entries and merge_method are restricted', () => {
-	assert.throws(() => gen([single('f', { merge_method: 'coalesce', merge_order: 'a,b) | delete' })]), /merge order/i);
+	assert.throws(() => gen([single('f', { merge_method: 'coalesce', merge_order: 'a,b" | delete' })]), /merge order/i);
 	assert.throws(() => gen([single('f', { merge_method: 'median(x) as y, evil' })]), /merge method/i);
 });
 
@@ -161,9 +164,9 @@ test('latest keeps _time through the first stats so the second stats can order b
 
 test('max_keys comes from the general stanza, default 25, invalid values fall back', () => {
 	const withKeys = (v) => gen([single('f')], { name: 'general', content: { lookups: general.content.lookups, max_keys: v } });
-	assert.match(withKeys('40'), /\| adbmerge max_keys=40 max_key_share=50 overflow=emit /);
-	assert.match(withKeys('500'), /\| adbmerge max_keys=100 max_key_share=50 overflow=emit /, 'hard cap');
-	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit /, String(bad));
+	assert.match(withKeys('40'), /\| adbmerge max_keys=40 max_key_share=50 overflow=emit/);
+	assert.match(withKeys('500'), /\| adbmerge max_keys=100 max_key_share=50 overflow=emit/, 'hard cap');
+	for (const bad of ['', '0', '-3', 'abc', undefined]) assert.match(withKeys(bad), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit/, String(bad));
 });
 
 test('last_seen is the max source _time, carried through both stats and written to the output', () => {
@@ -190,7 +193,7 @@ test('multivalue fields keep the most recent values by default (time tagged valu
 	assert.ok(!/list\(ip\)/.test(recent) && /values\(ip\) as ip/.test(recent), 'values() has no 100 entry cap: ' + recent);
 	assert.ok(recent.includes('| eval ip = mvmap(ip, printf("%015.3f", coalesce(_time, 0)) . "|" . ip)'), recent);
 	assert.ok(recent.indexOf('| search _key=*') < recent.indexOf('printf("%015.3f", coalesce(_time, 0)) . "|" . ip'), 'tagged after the match keys');
-	const decode = '| eval ip = mvdedup(mvmap(mvreverse(mvsort(ip)), replace(ip, "^[^|]*\\|", "")))';
+	const decode = '| eval ip = mvdedup(mvmap(mvreverse(mvsort(ip)), replace(ip, "^[^|]*[|]", "")))';
 	assert.ok(recent.includes(decode), recent);
 	assert.ok(recent.indexOf(decode) < recent.indexOf('mvindex(ip,0,2)'), 'newest first and de-duplicated before trimming');
 
@@ -202,9 +205,10 @@ test('multivalue fields keep the most recent values by default (time tagged valu
 // --- normalizers, typed validation, case handling, value type ----------------------------
 
 test('normalizer presets call their macro after the split and before case/validation; unknown presets are rejected', () => {
-	const spl = gen([single('mac', { key_field: '1', normalizer: 'mac' }), single('os', { normalizer: 'os' }), single('plain')]);
+	const spl = gen([single('mac', { key_field: '1', normalizer: 'mac' }), single('os', { normalizer: 'os' }), single('family', { normalizer: 'os_family' }), single('plain')]);
 	assert.ok(spl.includes('| `normalize_mac(mac)`'), spl);
 	assert.ok(spl.includes('| `normalize_os(os)`'), spl);
+	assert.ok(spl.includes('| `normalize_os_family(family)`'), spl);
 	assert.ok(!spl.includes('normalize_trim'), spl);
 	assert.ok(spl.indexOf('normalize_mac') > spl.indexOf('split('), 'after the split');
 	assert.throws(() => gen([single('f', { normalizer: 'rot13' })]), /normalizer/i);
@@ -329,7 +333,9 @@ test('column mapping renames source columns into fields for that source only', (
 		{ name: 'a', lookup: 'a.csv', columns: { mac: 'MAC Address', owner: 'Owner Name' } },
 		{ name: 'b', lookup: 'b.csv', columns: { mac: 'hw_addr' } },
 	]);
-	assert.ok(spl.includes(`| eval mac = case(source_lookup="a.csv", 'MAC Address', source_lookup="b.csv", 'hw_addr', true(), mac), owner = case(source_lookup="a.csv", 'Owner Name', true(), owner)`), spl);
+	assert.ok(spl.includes(`| eval mac = if(source_lookup="a.csv", 'MAC Address', mac), owner = if(source_lookup="a.csv", 'Owner Name', owner), mac = if(source_lookup="b.csv", 'hw_addr', mac)`), spl);
+	const raw = load().makeMergeSearch([{ name: 'general', content: { lookups: JSON.stringify([{ name: 'a', lookup: 'a.csv', columns: { mac: 'MAC Address', ip: 'ip' } }]) } }, single('mac', { key_field: '1' }), single('ip')]);
+	assert.ok(raw.includes('| eval `adb_map_column(mac, a.csv, "MAC Address")`') && !raw.includes('adb_map_column(ip'), 'the unexpanded search calls the macro, and a column already named like the field needs no mapping');
 	assert.ok(spl.indexOf('Map source columns') < spl.indexOf('Build match keys'), 'mapped before the keys are built');
 	assert.throws(() => withSources([{ name: 'a', lookup: 'a.csv', columns: { 'bad field': 'x' } }]), /field name/i);
 	assert.throws(() => withSources([{ name: 'a', lookup: 'a.csv', columns: { mac: "x' OR 1=1 OR 'y" } }]), /column/i);
@@ -380,10 +386,10 @@ test('an explicit key_blocklist replaces the defaults, and an empty one disables
 
 test('max_key_share is passed to adbmerge unless it is 0', () => {
 	const withShare = (v) => gen([single('mac', { key_field: '1' })], { name: 'general', content: { lookups: general.content.lookups, max_key_share: v } });
-	assert.match(withShare(undefined), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit /);
-	assert.match(withShare('200'), /\| adbmerge max_keys=25 max_key_share=200 overflow=emit /);
-	assert.match(withShare('0'), /\| adbmerge max_keys=25 overflow=emit /);
-	assert.match(withShare('abc'), /max_key_share=50 overflow=emit /);
+	assert.match(withShare(undefined), /\| adbmerge max_keys=25 max_key_share=50 overflow=emit/);
+	assert.match(withShare('200'), /\| adbmerge max_keys=25 max_key_share=200 overflow=emit/);
+	assert.match(withShare('0'), /\| adbmerge max_keys=25 max_key_share=0 overflow=emit/);
+	assert.match(withShare('abc'), /max_key_share=50 overflow=emit/);
 });
 
 // --- scope (site / tenant) ---------------------------------------------------------------
@@ -416,8 +422,8 @@ test('nothing changes without any scope configured', () => {
 test('the search records each run and refuses to overwrite assetdb when the count collapses', () => {
 	const spl = gen([single('mac', { key_field: '1' })], { name: 'general', content: { lookups: general.content.lookups, min_ratio: '0.7', runs_to_keep: '50' } });
 	assert.ok(spl.includes('| eval adb_guard = if(isnotnull(adb_prev) AND adb_assets_out < adb_prev * 0.7, 1, 0)'), spl);
-	assert.ok(spl.includes('inputlookup assetdb_runs | where status="ok" | sort 0 -run_time | head 1'), spl);
-	assert.ok(spl.includes('| sort 0 -run_time | head 50 | outputlookup assetdb_runs | where 1=0]'), spl);
+	assert.ok(spl.includes('inputlookup assetdb_runs where status="ok" | sort 1 -run_time'), spl);
+	assert.ok(spl.includes('| sort 50 -run_time | outputlookup assetdb_runs | where 1=0]'), spl);
 	assert.ok(spl.includes('status=case(isnull(assets_out) OR assets_out=0, "empty", guard=1, "blocked_low_count", true(), "ok")'), spl);
 	assert.ok(spl.indexOf('| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0') < spl.indexOf('| table _key, asset'), 'helper rows and refused runs are dropped before the table');
 	assert.ok(spl.indexOf('assetdb_runs | sort') < spl.indexOf('adb_guard=0'), 'the run is recorded even when the write is refused');
@@ -430,17 +436,18 @@ test('min_ratio and runs_to_keep fall back to defaults and are clamped', () => {
 	assert.ok(cfg({}).includes('adb_prev * 0.5'), 'default ratio 0.5');
 	assert.ok(cfg({ min_ratio: '0' }).includes('adb_prev * 0,'), 'ratio 0 never blocks');
 	for (const bad of ['2', '-1', 'abc']) assert.ok(cfg({ min_ratio: bad }).includes('adb_prev * 0.5'), bad);
-	assert.ok(cfg({}).includes('head 200 | outputlookup assetdb_runs'), 'default 200 runs');
-	assert.ok(cfg({ runs_to_keep: '999999' }).includes('head 5000 | outputlookup assetdb_runs'), 'capped');
+	assert.ok(cfg({}).includes('sort 200 -run_time | outputlookup assetdb_runs'), 'default 200 runs');
+	assert.ok(cfg({ runs_to_keep: '999999' }).includes('sort 5000 -run_time | outputlookup assetdb_runs'), 'capped');
 });
 
 // --- overflow review and conflict flags --------------------------------------------------
 
 test('overflow clusters are emitted by adbmerge, saved for review and kept out of assetdb', () => {
 	const spl = gen([single('mac', { key_field: '1' })]);
-	assert.ok(/\| appendpipe \[\| fields adb_rid, _key, adb_auth \| adbmerge max_keys=25 max_key_share=50 overflow=emit \| eval adb_light=1\]/.test(spl), 'only the keys go through adbmerge: ' + spl);
-	assert.ok(spl.includes('| eventstats values(asset) as asset, max(adb_total) as adb_total') && spl.includes('by adb_rid'), 'joined back by row id');
-	const after = spl.split('| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1')[1];
+	assert.ok(/\| appendpipe \[\| fields adb_rid, _key, adb_auth \| adbmerge max_keys=25 max_key_share=50 overflow=emit\]/.test(spl), 'only the keys go through adbmerge: ' + spl);
+	assert.ok(spl.includes('| stats values(*) as *, first(_time) as _time by adb_rid') && !spl.includes('eventstats values(asset)'), 'joined back by row id with stats (eventstats silently truncates past its memory limit)');
+	assert.ok(spl.includes('eval adb_rid=coalesce(adb_rid, "o" . adb_n)'), 'overflow clusters have no row id of their own, so they get one');
+	const after = spl.split('| stats values(*) as *, first(_time) as _time by adb_rid | where isnotnull(asset)')[1];
 	assert.ok(after.includes('| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now()'), after);
 	assert.ok(after.includes('| outputlookup assetdb_overflow | where 1=0]'), 'zero overflow rows clear the old list');
 	assert.ok(after.indexOf('| where isnull(adb_overflow)') < after.indexOf('| eval _key = md5(mvjoin(mvsort(asset)'), 'overflow rows never reach the md5 step');
@@ -477,7 +484,7 @@ test('CIM preset fields are valid for the generator, use CIM names and keep with
 test('preview searches stop at adbmerge, never write, and summarise the result', () => {
 	const { buildPreviewSearches } = require('./load-generator').loadGenerator();
 	const lines = JSON.parse(JSON.stringify(load().makeMergeSearchLines([general, single('mac', { key_field: '1' }), single('owner')])));
-	const p = buildPreviewSearches(lines);
+	const p = Object.fromEntries(Object.entries(buildPreviewSearches(lines)).map(([k, v]) => [k, expandMacros(v)]));
 	for (const key of ['summary', 'clusters', 'sources']) {
 		assert.ok(p[key].includes('| adbmerge max_keys=25'), key);
 		assert.ok(!/outputlookup|collect/.test(p[key]) && !/appendpipe \[(?!\| fields adb_rid)/.test(p[key]), `${key} must not write: ${p[key]}`);
@@ -513,7 +520,7 @@ test('buildPreviewDiff: reads only (no write lines), compares with assetdb, and 
 	const { loadGenerator } = require('./load-generator');
 	const generator = loadGenerator();
 	const lines = JSON.parse(JSON.stringify(load().makeMergeSearchLines([general, single('mac', { key_field: '1' }), single('owner')])));
-	const diff = generator.buildPreviewDiff(lines);
+	const diff = expandMacros(generator.buildPreviewDiff(lines));
 	assert.ok(!/outputlookup|\| collect\b/.test(diff.replace('inputlookup append=true assetdb', '')), 'no write command is left');
 	assert.ok(diff.includes('| inputlookup append=true assetdb'), 'compares with the current assetdb');
 	assert.ok(!diff.includes('adb_guard=0'), 'the safety check does not hide the difference');
@@ -521,4 +528,25 @@ test('buildPreviewDiff: reads only (no write lines), compares with assetdb, and 
 	assert.ok(diff.endsWith('| table change asset changed_fields'));
 	assert.ok(diff.includes('adbh_mac') && diff.includes('adbh_owner'), 'every output field is compared');
 	assert.throws(() => generator.buildPreviewDiff([{ kind: 'command', text: '| makeresults' }]), /no asset table/);
+});
+
+// --- friendly source names -----------------------------------------------------------------------
+
+
+test('a source name may be a friendly name with spaces and punctuation', () => {
+	const spl = withSources([{ name: 'Active Directory (prod)', lookup: 'ad.csv' }, { name: "CMDB - Asia/Pacific", lookup: 'cmdb.csv' }], [single('mac', { key_field: '1' }), single('owner')]);
+	assert.ok(spl.includes('source_lookup="ad.csv", "Active Directory (prod)"') && spl.includes('"CMDB - Asia/Pacific"'), spl);
+	for (const bad of ['a"b', 'a\\b', 'a,b', 'a`b', ' lead', 'trail ', '', 'x'.repeat(65)]) {
+		assert.throws(() => withSources([{ name: bad, lookup: 'a.csv' }], [single('f')]), /source name/i, JSON.stringify(bad));
+	}
+});
+
+test('the priority merge uses a safe form of friendly names for its field names, and plain names are left as they are', () => {
+	const plain = withSources([{ name: 'a', lookup: 'a.csv' }, { name: 'b_2', lookup: 'b.csv' }], [single('owner', { merge_method: 'coalesce', merge_order: 'b_2,a' })]);
+	assert.ok(plain.includes('{source}_owner = owner') && plain.includes("coalesce('b_2_owner', 'a_owner')") && !plain.includes('adb_slug'), plain);
+	const friendly = withSources([{ name: 'Active Directory', lookup: 'ad.csv' }, { name: 'CMDB', lookup: 'cmdb.csv' }], [single('owner', { merge_method: 'coalesce', merge_order: 'CMDB, Active Directory' })]);
+	assert.ok(friendly.includes('| eval adb_slug=case(source_lookup="ad.csv", "Active_Directory", source_lookup="cmdb.csv", "CMDB")'), friendly);
+	assert.ok(friendly.includes('{adb_slug}_owner = owner') && friendly.includes("coalesce('CMDB_owner', 'Active_Directory_owner')") && friendly.includes('latest(Active_Directory_owner) as Active_Directory_owner'), friendly);
+	assert.match(friendly, /\| fields _time, source, source_lookup, adb_slug,/);
+	assert.throws(() => withSources([{ name: 'A B', lookup: 'a.csv' }, { name: 'A  B', lookup: 'b.csv' }], [single('owner', { merge_method: 'coalesce', merge_order: 'A B' })]), /too alike/);
 });

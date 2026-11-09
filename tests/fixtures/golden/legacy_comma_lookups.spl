@@ -8,32 +8,25 @@
 | foreach ip [eval <<FIELD>>=split(<<FIELD>>, "|")]
 | search _key=*
 ```### Tag multivalue values with their time (so the most recent ones can be kept) ###```
-| eval ip = mvmap(ip, printf("%015.3f", coalesce(_time, 0)) . "|" . ip)
+| eval `adb_tag_time(ip)`
 | stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, values(ip) as ip by _key
 ```### Merge: only the keys go through adbmerge, the result is joined back by row id ###```
-| streamstats count as adb_rid
-| appendpipe [| fields adb_rid, _key, adb_auth | adbmerge max_keys=25 max_key_share=50 overflow=emit | eval adb_light=1]
-| eventstats values(asset) as asset, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows by adb_rid
-| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1
+| `adb_merge(25, 50)`
 ```### Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb ###```
-| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]
+| `adb_save_overflow`
 | where isnull(adb_overflow)
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
-| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows, values(ip) as ip by _key
+| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, `adb_counters`, values(ip) as ip by _key
 ```### Newest values first: sort, de-duplicate and strip the time prefix ###```
-| eval ip = mvdedup(mvmap(mvreverse(mvsort(ip)), replace(ip, "^[^|]*\|", "")))
+| eval `adb_newest_first(ip)`
 ```### Trim multivalue fields ###```
 | eval ip = mvindex(ip,0,4)
 ```### Run safety: how many assets did the last successful run produce? ###```
-| eventstats count as adb_assets_out
-| append [| makeresults | eval adb_is_marker=1 | table adb_is_marker]
-| append [| inputlookup assetdb_runs | where status="ok" | sort 0 -run_time | head 1 | eval adb_is_prev=1 | rename assets_out as adb_prev_out | table adb_is_prev adb_prev_out]
-| eventstats max(adb_prev_out) as adb_prev, max(adb_assets_out) as adb_assets_out
-| eval adb_guard = if(isnotnull(adb_prev) AND adb_assets_out < adb_prev * 0.5, 1, 0)
+| `adb_run_guard(0.5)`
 ```### Record this run in assetdb_runs (the last 200 runs are kept) ###```
-| appendpipe [| stats max(adb_assets_out) as assets_out, max(adb_prev) as assets_prev, max(adb_guard) as guard, max(adb_total) as rows_in, max(adb_null_keys) as null_keys, max(adb_large_keys) as overflow_assets, max(adb_enrich_unmatched) as enrich_unmatched, max(adb_enrich_ambiguous) as enrich_ambiguous, max(adb_junk_keys) as junk_keys, max(adb_junk_rows) as junk_rows | eval run_time=now(), min_ratio=0.5, status=case(isnull(assets_out) OR assets_out=0, "empty", guard=1, "blocked_low_count", true(), "ok"), _key=run_time . "_" . substr(md5(tostring(random())), 1, 8) | fields - guard | inputlookup append=true assetdb_runs | sort 0 -run_time | head 200 | outputlookup assetdb_runs | where 1=0]
+| `adb_record_run(0.5, 200)`
 ```### Only write the asset database when the run passed the safety check ###```
-| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0
+| `adb_write_gate`
 ```### Output to KV store ###```
 | table _key, asset, source, source_lookup, last_seen, ip
 | outputlookup override_if_empty=false assetdb

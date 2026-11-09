@@ -1,11 +1,8 @@
 | search _key=*
 ```### Merge: only the keys go through adbmerge, the result is joined back by row id ###```
-| streamstats count as adb_rid
-| appendpipe [| fields adb_rid, _key, adb_auth | adbmerge max_keys=25 max_key_share=50 overflow=emit | eval adb_light=1]
-| eventstats values(asset) as asset, max(adb_total) as adb_total, max(adb_null_keys) as adb_null_keys, max(adb_large_keys) as adb_large_keys, max(adb_enrich_unmatched) as adb_enrich_unmatched, max(adb_enrich_ambiguous) as adb_enrich_ambiguous, max(adb_junk_keys) as adb_junk_keys, max(adb_junk_rows) as adb_junk_rows by adb_rid
-| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1
+| `adb_merge(25, 50)`
 ```### Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb ###```
-| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]
+| `adb_save_overflow`
 | where isnull(adb_overflow)
 | eval _key = md5(mvjoin(mvsort(asset), "::"))
 | outputlookup override_if_empty=false assetdb

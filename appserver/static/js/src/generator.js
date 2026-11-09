@@ -14,7 +14,16 @@ define([], function () {
 	}
 
 	const FIELD_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-	const SOURCE_NAME_RE = /^[A-Za-z0-9_.-]+$/;
+	// A source name is a friendly name (spaces and most punctuation are fine). It ends up inside quotes in the search, in the comma
+	// separated lists of the field settings (allowed sources, merge order) and nowhere as a field name, except in the priority merge,
+	// which uses sourceSlug() for that.
+	const SOURCE_NAME_MAX = 64;
+	function isValidSourceName(name) {
+		const t = String(name);
+		return t.length > 0 && t.length <= SOURCE_NAME_MAX && t.trim() === t && !/["\\,`]/.test(t) && !Array.from(t).some((c) => c.charCodeAt(0) < 32);
+	}
+	/** The name as part of a field name: every run of characters that is not a letter, digit or underscore becomes an underscore. */
+	function sourceSlug(name) { return String(name).replace(/[^A-Za-z0-9_]+/g, '_'); }
 	const LOOKUP_FILE_RE = /^[A-Za-z0-9_.-]+$/;
 	const SOURCE_ROLES = ['authoritative', 'enrich'];
 	const SCOPE_RE = /^[A-Za-z0-9_.-]+$/;
@@ -22,7 +31,6 @@ define([], function () {
 	const MAX_AGE_RE = /^[1-9]\d*(s|m|h|d|w|mon|q|y)$/;
 	// A lookup column name as written in SPL between single quotes.
 	const COLUMN_RE = /^[^'"\\|`[\]\r\n]+$/;
-	const MERGE_ORDER_RE = /^[A-Za-z0-9_]+$/;
 	const MERGE_METHODS = ['latest', 'earliest', 'min', 'max', 'avg', 'sum', 'coalesce'];
 	const DEFAULT_MAX_KEYS = 25;
 	const DEFAULT_MAX_KEY_SHARE = 50;
@@ -50,6 +58,7 @@ define([], function () {
 		user: 'normalize_user',
 		email: 'normalize_email',
 		os: 'normalize_os',
+		os_family: 'normalize_os_family',
 	};
 	const LOWERCASING_NORMALIZERS = ['hostname', 'fqdn', 'user', 'email', 'os'];
 	// Typed validation: values that do not match are dropped (anchored regexes, evaluated with SPL match()).
@@ -246,7 +255,7 @@ define([], function () {
 	 * @return {Object}		{ summary, clusters, sources, current } SPL strings
 	 */
 	function buildPreviewSearches(lines) {
-		const at = lines.findIndex((line) => line.kind === 'command' && line.text.startsWith('| where (isnull(adb_light)'));
+		const at = lines.findIndex((line) => line.kind === 'command' && line.text.startsWith('| `adb_merge('));
 		if (at < 0) throw new Error('The merge search has no adbmerge step to preview');
 		const base = lines.slice(0, at + 1).filter((line) => line.kind === 'command').map((line) => line.text).join('\n');
 		return {
@@ -272,9 +281,10 @@ define([], function () {
 		const fixed = ['_key', 'asset', 'source', 'source_lookup', 'last_seen', 'scope', 'conflicts'];
 		const table = outputLine.text.replace(/^\| table /, '').split(', ').map((n) => n.trim()).filter((n) => !fixed.includes(n));
 		if (!table.length) throw new Error('The merge search has no fields to compare');
-		const guard = '| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0';
-		const writes = /\boutputlookup\b|\|\s*collect\b/;
-		const base = lines.filter((line) => line.kind === 'command' && !writes.test(line.text)).map((line) => (line.text === guard ? guard.replace(' AND adb_guard=0', '') : line.text)).join('\n');
+		const guard = '| `adb_write_gate`';
+		// the writes of the real search: outputlookup, collect and the macros that contain them (default/macros.conf)
+		const writes = /\boutputlookup\b|\|\s*collect\b|`adb_save_overflow`|`adb_record_run\(/;
+		const base = lines.filter((line) => line.kind === 'command' && !writes.test(line.text)).map((line) => (line.text === guard ? '| where isnull(adb_is_marker) AND isnull(adb_is_prev)' : line.text)).join('\n');
 		const hashes = table.map((n) => `adbh_${n}=md5(coalesce(mvjoin(mvsort(${n}), "|"), ""))`).join(', ');
 		const hashNames = table.map((n) => `adbh_${n}`);
 		const changedFields = mvappendOf(table.map((n) => `if(mvcount(adbh_${n}) > 1, "${n}", null())`));
@@ -344,12 +354,13 @@ define([], function () {
 		let keyFields = [];
 		let blocklistClauses = [];
 		const keyBlocklist = getKeyBlocklist(general);
+		const usesDefaultBlocklist = keyBlocklist.length > 0 && JSON.stringify(keyBlocklist) === JSON.stringify(DEFAULT_KEY_BLOCKLIST);
 		// Sources: only enabled ones take part. Per source options are applied to that source's rows only (source_lookup test).
 		const lookupsArray = getLookupArray(fieldArray).filter(sourceEnabled);
 		const rowFilters = [];
 		const ageFilters = [];
 		const timeMaps = [];
-		const columnMaps = {};
+		const columnMaps = [];
 		const enrichLookups = [];
 		const staticScopes = [];
 		const scopeColumn = general.scope_field ? String(general.scope_field).trim() : '';
@@ -358,7 +369,7 @@ define([], function () {
 		for (const src of lookupsArray) {
 			const {lookup, name} = src;
 			if (!LOOKUP_FILE_RE.test(lookup)) throw new Error(`Invalid lookup "${lookup}"`);
-			if (!SOURCE_NAME_RE.test(name)) throw new Error(`Invalid lookup input name "${name}"`);
+			if (!isValidSourceName(name)) throw new Error(`Invalid source name "${name}"`);
 			const isThis = `source_lookup=${splQuote(lookup)}`;
 			const notThis = `source_lookup!=${splQuote(lookup)}`;
 
@@ -387,12 +398,19 @@ define([], function () {
 			for (const [target, column] of Object.entries(columns)) {
 				if (!FIELD_NAME_RE.test(target)) throw new Error(`Invalid field name "${target}" in the column mapping of source ${name}`);
 				if (!COLUMN_RE.test(column)) throw new Error(`Invalid column "${column}" in the column mapping of source ${name}`);
-				(columnMaps[target] = columnMaps[target] || []).push(`${isThis}, '${column}'`);
+				// a column that already has the field's name needs no mapping
+				if (column !== target) columnMaps.push(`\`adb_map_column(${target}, ${lookup}, "${column}")\``);
 			}
 		}
 		const usesScope = staticScopes.length > 0 || !!scopeColumn;
 		const lookupFiles = lookupsArray.map(({lookup}) => `| \`input_adb_lookup(${lookup})\``);
 		const lookupNames = lookupsArray.map(({lookup, name}) => `source_lookup=${splQuote(lookup)}, ${splQuote(name)}`);
+		// The priority merge (merge_method coalesce) builds field names from the source names. A name that is already a plain identifier is
+		// used as it is (the field is {source}_x); otherwise each row gets adb_slug, the name made safe, and {adb_slug}_x is used.
+		const needsSlug = lookupsArray.some(({name}) => sourceSlug(name) !== name);
+		const slugField = needsSlug ? 'adb_slug' : 'source';
+		const partOf = (lookup) => (needsSlug ? sourceSlug(lookup) : lookup);
+		let usesCoalesce = false;
 
 		for (const field of fieldArray) {
 			const {name, content} = field;
@@ -426,7 +444,9 @@ define([], function () {
 				keyFields.push(name);
 				if (content.key_scope === 'scoped') scopedKeys.push(`adbk_${name}`);
 				keyTemps.push(`adbk_${name} = ${keepCase ? `lower(${name})` : name}`);
-				const blocked = valueFilter(`adbk_${name}`, keyBlocklist, caseSensitive && !keepCase, 'key blocklist');
+				// The default blocklist is a macro (the same for every key field); a customized one is written out
+				const cs = caseSensitive && !keepCase;
+				const blocked = usesDefaultBlocklist ? `\`adb_key_blocklist${cs ? '_cs' : ''}(adbk_${name})\`` : valueFilter(`adbk_${name}`, keyBlocklist, cs, 'key blocklist');
 				if (blocked) blocklistClauses.push(blocked);
 			}
 
@@ -443,7 +463,7 @@ define([], function () {
 			// Allowed sources: values from any other source are discarded before the merge.
 			const allowed = (content.allowed_sources || '').split(',').map((x) => x.trim()).filter(Boolean);
 			for (const src of allowed) {
-				if (!SOURCE_NAME_RE.test(src)) throw new Error(`Invalid allowed source "${src}" for field ${name}`);
+				if (!isValidSourceName(src)) throw new Error(`Invalid allowed source "${src}" for field ${name}`);
 			}
 			if (allowed.length) allowedSources.push(`${name} = if(in(source, ${allowed.map(splQuote).join(', ')}), ${name}, null())`);
 
@@ -479,18 +499,20 @@ define([], function () {
 					statsFinal.push(`latest(${name}) as ${name}`);
 
 				} else if (content.merge_method == 'coalesce') {
-					fieldSplit.push(`{source}_${name} = ${name}`);
+					usesCoalesce = true;
+					fieldSplit.push(`{${slugField}}_${name} = ${name}`);
 
-					const mergeOrderArray = content.merge_order.split(',');
+					const mergeOrderArray = content.merge_order.split(',').map((x) => x.trim());
 					for (const lookup of mergeOrderArray) {
-						if (!MERGE_ORDER_RE.test(lookup)) throw new Error(`Invalid merge order entry "${lookup}" for field ${name}`);
+						if (!isValidSourceName(lookup)) throw new Error(`Invalid merge order entry "${lookup}" for field ${name}`);
 					}
 					usesLatest = true;
-					const perLookup = mergeOrderArray.map((lookup) => `latest(${lookup}_${name}) as ${lookup}_${name}`);
+					const part = (lookup) => `${partOf(lookup)}_${name}`;
+					const perLookup = mergeOrderArray.map((lookup) => `latest(${part(lookup)}) as ${part(lookup)}`);
 					stats = stats.concat(perLookup);
 					statsFinal = statsFinal.concat(perLookup);
 
-					const postEvalMerge = mergeOrderArray.map((lookup) => `'${lookup}_${name}'`);
+					const postEvalMerge = mergeOrderArray.map((lookup) => `'${part(lookup)}'`);
 					coalesce.push(`${name} = coalesce(${postEvalMerge.join(', ')})`);
 
 				} else if (content.merge_method == 'earliest') {
@@ -534,14 +556,21 @@ define([], function () {
 
 		lookupFiles.forEach(command);
 		if (lookupNames.length) { section('Map source lookup to source name'); command(`| eval source=case(${lookupNames.join(', ')})`); }
+		if (usesCoalesce && needsSlug && lookupsArray.length) {
+			const slugs = new Map();
+			for (const {name} of lookupsArray) {
+				const slug = sourceSlug(name);
+				if (slugs.has(slug) && slugs.get(slug) !== name) throw new Error(`The source names "${slugs.get(slug)}" and "${name}" are too alike for the priority merge (they differ only in spaces or punctuation); rename one`);
+				slugs.set(slug, name);
+			}
+			section('Source name as part of a field name (for the priority merge)');
+			command(`| eval adb_slug=case(${lookupsArray.map(({lookup, name}) => `source_lookup=${splQuote(lookup)}, ${splQuote(sourceSlug(name))}`).join(', ')})`);
+		}
 		if (enrichLookups.length) { section('Mark rows from enrich-only sources (they never create or link assets)'); command(`| eval adb_auth=case(${enrichLookups.map((l) => `source_lookup=${splQuote(l)}, 0`).join(', ')}, true(), 1)`); }
 		if (rowFilters.length) { section('Row filters (written against the source columns)'); command(`| where ${rowFilters.join(' AND ')}`); }
 		if (timeMaps.length) { section('Time columns of sources that do not use _time'); command(`| eval _time=case(${timeMaps.join(', ')}, true(), _time)`); }
 		if (ageFilters.length) { section('Drop rows older than a source\'s max age'); command(`| where ${ageFilters.join(' AND ')}`); }
-		if (Object.keys(columnMaps).length) {
-			section('Map source columns to fields');
-			command(`| eval ${Object.entries(columnMaps).map(([target, cases]) => `${target} = case(${cases.join(', ')}, true(), ${target})`).join(', ')}`);
-		}
+		if (columnMaps.length) { section('Map source columns to fields'); command(`| eval ${columnMaps.join(', ')}`); }
 		if (usesScope) {
 			section('Scope (site or tenant) of each row');
 			command(`| eval scope = lower(case(${staticScopes.concat(['true()', scopeColumn ? `'${scopeColumn}'` : 'null()']).join(', ')}))`);
@@ -549,7 +578,7 @@ define([], function () {
 		if (allowedSources.length) { section('Discard values from sources a field does not accept'); command(`| eval ${allowedSources.join(', ')}`); }
 		// Source lookups often have many columns the merge never uses. Drop them as early as possible; an eval expression may
 		// read any column, so with expressions the pruning waits until after they ran.
-		const keepColumns = () => `| fields ${['_time', 'source', 'source_lookup'].concat(usesScope ? ['scope'] : [], enrichLookups.length ? ['adb_auth'] : [], table).join(', ')}`;
+		const keepColumns = () => `| fields ${['_time', 'source', 'source_lookup'].concat(usesCoalesce && needsSlug ? ['adb_slug'] : [], usesScope ? ['scope'] : [], enrichLookups.length ? ['adb_auth'] : [], table).join(', ')}`;
 		if (!evalExp.length && table.length) { section('Keep only the columns the merge uses'); command(keepColumns()); }
 		if (multivalue.length) { section('Split multivalue fields'); command(`| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`); }
 		if (normalize.length) { section('Normalize values'); normalize.forEach(command); }
@@ -579,7 +608,7 @@ define([], function () {
 		command('| search _key=*');
 		if (recentMv) {
 			section('Tag multivalue values with their time (so the most recent ones can be kept)');
-			command(`| eval ${dedupMv.map((n) => `${n} = mvmap(${n}, printf("%015.3f", coalesce(_time, 0)) . "|" . ${n})`).join(', ')}`);
+			command(`| eval ${dedupMv.map((n) => `\`adb_tag_time(${n})\``).join(', ')}`);
 		}
 		// _time is carried through the first stats so that `latest` still has a timestamp in the final stats
 		if (stats.length) command(`| stats values(source) as source, values(source_lookup) as source_lookup, max(_time) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat(usesLatest ? ['latest(_time) as _time'] : []).concat(enrichLookups.length ? ['max(adb_auth) as adb_auth'] : [], keyRefs.map((k) => `values(${k}) as ${k}`), stats).join(', ')} by _key`);
@@ -587,15 +616,12 @@ define([], function () {
 		// adbmerge only needs the keys, so only the keys travel through the command (every column would otherwise be serialized
 		// twice, in and out, which was the largest single cost); its answer is joined back to the full rows by a row id.
 		section('Merge: only the keys go through adbmerge, the result is joined back by row id');
-		command('| streamstats count as adb_rid');
-		command(`| appendpipe [| fields adb_rid, _key, adb_auth | adbmerge max_keys=${parseMaxKeys(fieldArray)}${parseMaxKeyShare(general) ? ` max_key_share=${parseMaxKeyShare(general)}` : ''} overflow=emit | eval adb_light=1]`);
-		command(`| eventstats values(asset) as asset, ${RUN_COUNTERS.map((c) => `max(${c}) as ${c}`).join(', ')} by adb_rid`);
-		command('| where (isnull(adb_light) AND isnotnull(asset)) OR adb_overflow=1');
+		command(`| \`adb_merge(${parseMaxKeys(fieldArray)}, ${parseMaxKeyShare(general)})\``);
 		section('Clusters that were too large to merge go to assetdb_overflow for review, not into assetdb');
-		command('| appendpipe [| where adb_overflow=1 | eval _key=md5(mvjoin(asset, "::")), run_time=now() | rename adb_cluster_keys as cluster_keys, adb_cluster_rows as cluster_rows | table _key asset cluster_keys cluster_rows source source_lookup run_time | outputlookup assetdb_overflow | where 1=0]');
+		command('| `adb_save_overflow`');
 		command('| where isnull(adb_overflow)');
 		command('| eval _key = md5(mvjoin(mvsort(asset), "::"))');
-		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat(RUN_COUNTERS.map((c) => `max(${c}) as ${c}`), statsFinal).join(', ')} by _key`);
+		if (stats.length) command(`| stats values(asset) as asset, values(source) as source, values(source_lookup) as source_lookup, max(last_seen) as last_seen, ${(usesScope ? ['values(scope) as scope'] : []).concat(['`adb_counters`'], statsFinal).join(', ')} by _key`);
 		if (avgEval.length) { section('Calculate averages'); command(`| eval ${avgEval.join(', ')}`); }
 		if (conflictFields.length) {
 			section('Flag fields whose sources disagree');
@@ -603,25 +629,18 @@ define([], function () {
 		}
 		if (earliestFinal.length) { section('Pick the earliest values'); command(`| eval ${earliestFinal.join(', ')}`); }
 		if (coalesce.length) { section('Define coalesce fields based on lookup priority'); command(`| eval ${coalesce.join(', ')}`); }
-		if (dedupMv.length) { section('Newest values first: sort, de-duplicate and strip the time prefix'); command(`| eval ${dedupMv.map((n) => `${n} = mvdedup(mvmap(mvreverse(mvsort(${n})), replace(${n}, "^[^|]*\\|", "")))`).join(', ')}`); }
+		if (dedupMv.length) { section('Newest values first: sort, de-duplicate and strip the time prefix'); command(`| eval ${dedupMv.map((n) => `\`adb_newest_first(${n})\``).join(', ')}`); }
 		if (fillnull.length) { section('Fill null values (after the merge, only where an asset has no value at all)'); command(`| eval ${fillnull.join(', ')}`); }
 		if (maxValues.length) { section('Trim multivalue fields'); command(`| eval ${maxValues.join(', ')}`); }
 		if (stats.length) {
 			const minRatio = parseMinRatio(general);
 			const keep = parseRunsToKeep(general);
 			section('Run safety: how many assets did the last successful run produce?');
-			command('| eventstats count as adb_assets_out');
-			// a marker row keeps the stream (and so the run record) alive when no asset is produced at all
-			command('| append [| makeresults | eval adb_is_marker=1 | table adb_is_marker]');
-			command('| append [| inputlookup assetdb_runs | where status="ok" | sort 0 -run_time | head 1 | eval adb_is_prev=1 | rename assets_out as adb_prev_out | table adb_is_prev adb_prev_out]');
-			command('| eventstats max(adb_prev_out) as adb_prev, max(adb_assets_out) as adb_assets_out');
-			command(`| eval adb_guard = if(isnotnull(adb_prev) AND adb_assets_out < adb_prev * ${minRatio}, 1, 0)`);
+			command(`| \`adb_run_guard(${minRatio})\``);
 			section(`Record this run in assetdb_runs (the last ${keep} runs are kept)`);
-			command('| appendpipe [| stats max(adb_assets_out) as assets_out, max(adb_prev) as assets_prev, max(adb_guard) as guard, max(adb_total) as rows_in, max(adb_null_keys) as null_keys, max(adb_large_keys) as overflow_assets, max(adb_enrich_unmatched) as enrich_unmatched, max(adb_enrich_ambiguous) as enrich_ambiguous, max(adb_junk_keys) as junk_keys, max(adb_junk_rows) as junk_rows'
-				+ ` | eval run_time=now(), min_ratio=${minRatio}, status=case(isnull(assets_out) OR assets_out=0, "empty", guard=1, "blocked_low_count", true(), "ok"), _key=run_time . "_" . substr(md5(tostring(random())), 1, 8)`
-				+ ` | fields - guard | inputlookup append=true assetdb_runs | sort 0 -run_time | head ${keep} | outputlookup assetdb_runs | where 1=0]`);
+			command(`| \`adb_record_run(${minRatio}, ${keep})\``);
 			section('Only write the asset database when the run passed the safety check');
-			command('| where isnull(adb_is_marker) AND isnull(adb_is_prev) AND adb_guard=0');
+			command('| `adb_write_gate`');
 		}
 		if (table.length) { section('Output to KV store'); command(`| table _key, asset, source, source_lookup, last_seen, ${usesScope ? 'scope, ' : ''}${conflictFields.length ? 'conflicts, ' : ''}${table.join(', ')}`); }
 		command('| outputlookup override_if_empty=false assetdb');
@@ -629,8 +648,108 @@ define([], function () {
 		return lines;
 	}
 
+	// ---------------------------------------------------------------------------------------------------------------
+	// Explorer support: the adb_provenance macro. Its definition depends on the configuration, so the Configure page
+	// regenerates it (like adb_enrich_outputs) every time it saves. adb_icon is a macro the user writes (default/macros.conf).
+	// ---------------------------------------------------------------------------------------------------------------
+
+	// The only values the adb_icon macro may produce. The explorer visualization draws a glyph for each (viz/shared/icons.mjs).
+	const ICON_CHOICES = ['server', 'desktop', 'laptop', 'mobile', 'tablet', 'network', 'printer', 'iot', 'virtual', 'storage', 'cloud', 'other'];
+
+	const PROV_MV = '~|~';     // between the values of a multivalue field in the provenance rows
+	const PROV_SEEN = '~^~';   // between the value and the source's last-seen time (internal to the macro)
+
+	/**
+	 * The search a click on a Coverage heatmap cell opens in a new window: the assets of one group (the value of the "Group by"
+	 * field, or all assets) with a Covered column that says whether `source` supplied data for each, uncovered first.
+	 * `by` is a field name or "No grouping"; a name that is not a plain field name is ignored (so nothing is injected).
+	 * The row of the heatmap that stands for every asset is passed as `group` === `allLabel`.
+	 */
+	function buildCoverageDrillSearch(by, group, source, allLabel) {
+		const lines = ['| inputlookup assetdb'];
+		if (by && by !== 'No grouping' && FIELD_NAME_RE.test(by) && group !== allLabel) {
+			if (group === '(no value)') lines.push('| where isnull(' + by + ') OR mvcount(mvfilter(len(trim(' + by + ')) > 0)) = 0');
+			else lines.push('| where mvcount(mvfilter(' + by + ' = ' + splQuote(group) + ')) > 0');
+		}
+		lines.push('| eval Covered = if(mvcount(mvfilter(source = ' + splQuote(source) + ')) > 0, "Yes", "No")');
+		lines.push('| sort 0 Covered');
+		lines.push('| fields - _key _mkv_child');
+		lines.push('| table Covered *');
+		return lines.join('\n');
+	}
+
+	/**
+	 * The definition of the adb_provenance(key) macro (Splunk removes the quotes of a quoted macro argument, so the macro adds its own
+	 * around the key; call it as adb_provenance(<_key>)): what every enabled source holds for the asset whose _key is
+	 * `key`, as rows of (source, field, value, seen, adb_key); adb_key repeats the asset so a visualization can drop rows
+	 * that arrive after the selection moved on. Values of a multivalue field are joined with PROV_MV. It reads each
+	 * source the way the merge does (column mapping, time column, row filter, max age) but before normalizing, and keeps
+	 * the rows that share a key value with the asset. One source can be slow to read in full, so this runs on demand for
+	 * one selected asset, never for the whole estate.
+	 *
+	 * @return {Object}	{ args: 'key', definition: SPL without a leading pipe }
+	 */
+	function buildProvenanceMacro(fieldArray) {
+		const fields = fieldArray.filter((e) => e.name !== 'general' && FIELD_NAME_RE.test(e.name) && !['0', 'false', 'no'].includes(String((e.content || {}).enabled).toLowerCase()));
+		const names = fields.map((e) => e.name);
+		const keyNames = fields.filter((e) => parseInt((e.content || {}).key_field)).map((e) => e.name);
+		const sources = getLookupArray(fieldArray).filter(sourceEnabled);
+		if (!names.length || !keyNames.length || !sources.length) {
+			return {args: 'key', definition: 'makeresults count=1 | where 1=0 | eval source=null(), field=null(), value=null(), seen=null(), adb_key=null() | fields - _time'};
+		}
+		const multivalue = fields.filter((e) => (e.content || {}).field_type === 'multivalue').map((e) => e.name);   // the merge splits these on "|"
+		const parts = sources.map((src) => {
+			const {lookup, name} = src;
+			if (!LOOKUP_FILE_RE.test(lookup)) throw new Error(`Invalid lookup "${lookup}"`);
+			if (!isValidSourceName(name)) throw new Error(`Invalid source name "${name}"`);
+			// The merge's order: row filter (written against the source columns), time column, max age, then column mapping. What is not
+			// needed to find the asset's rows (source name, time stamp) is added after the key match, so it only runs on the rows that match.
+			const lines = [`| inputlookup ${lookup}`];
+			if (src.filter) { checkEvalExpression(src.filter); checkBalancedParens(src.filter); lines.push(`| where (${src.filter})`); }
+			if (src.time_field && !COLUMN_RE.test(src.time_field)) throw new Error(`Invalid time column "${src.time_field}" for source ${name}`);
+			const seenExpr = `adb_seen=${src.time_field ? `tonumber('${src.time_field}')` : 'tonumber(_time)'}`;
+			if (src.max_age) {
+				if (!MAX_AGE_RE.test(src.max_age)) throw new Error(`Invalid max age "${src.max_age}" for source ${name}`);
+				lines.push(`| eval ${seenExpr}`, `| where isnull(adb_seen) OR adb_seen >= relative_time(now(), "-${src.max_age}")`);
+			}
+			const columns = src.columns && typeof src.columns === 'object' ? src.columns : {};
+			Object.entries(columns).forEach(([target, column]) => {
+				if (!FIELD_NAME_RE.test(target)) throw new Error(`Invalid field name "${target}" in the column mapping of source ${name}`);
+				if (!COLUMN_RE.test(column)) throw new Error(`Invalid column "${column}" in the column mapping of source ${name}`);
+				if (column !== target) lines.push(`| eval ${target}='${column}'`);
+			});
+			if (multivalue.length) lines.push(`| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`);
+			// What every source does alike lives in two macros (macros.conf): adb_prov_match finds the asset's rows by its keys (search is
+			// case-insensitive, so the keys need no lowercasing), adb_prov_end names the source and keeps the columns. Quoted arguments, because
+			// they hold commas or spaces (Splunk takes the quotes off). The key is passed as it is: the macro quotes it itself.
+			lines.push(`| \`adb_prov_match($key$, "${keyNames.join(', ')}")\``);
+			lines.push(`| \`adb_prov_end("${name}", ${src.max_age ? 'adb_seen' : seenExpr.replace(/^adb_seen=/, '')}, "${names.join(' ')}")\``);
+			return `| append [${lines.join(' ')}]`;
+		});
+		const tail = [
+			'| where isnotnull(adb_source)',
+			'| eval adb_seen=coalesce(adb_seen, 0)',
+			'| stats values(*) as *, max(adb_seen) as adb_max by adb_source',
+			'| eval adb_seen=adb_max',
+			`| foreach ${names.join(' ')} [eval <<FIELD>>=if(isnull(<<FIELD>>), null(), mvjoin(<<FIELD>>, ${splQuote(PROV_MV)}) . ${splQuote(PROV_SEEN)} . adb_seen)]`,
+			`| table adb_source ${names.join(' ')}`,
+			'| untable adb_source field value',
+			'| where isnotnull(value)',
+			`| eval parts=split(value, ${splQuote(PROV_SEEN)}), value=mvindex(parts, 0), seen=mvindex(parts, 1)`,
+			'| rename adb_source as source',
+			'| eval adb_key="$key$"',
+			'| table source field value seen adb_key',
+		];
+		return {args: 'key', definition: 'makeresults count=1 | where 1=0 ' + parts.join(' ') + ' ' + tail.join(' ')};
+	}
+
 	return {
 		buildSearchLines: buildSearchLines,
+		buildProvenanceMacro: buildProvenanceMacro,
+		ICON_CHOICES: ICON_CHOICES,
+		PROV_MV: PROV_MV,
+		RUN_COUNTERS: RUN_COUNTERS,
+		buildCoverageDrillSearch: buildCoverageDrillSearch,
 		getLookupArray: getLookupArray,
 		safeParse: safeParse,
 		splQuote: splQuote,
@@ -643,12 +762,15 @@ define([], function () {
 		DEFAULT_RUNS_TO_KEEP: DEFAULT_RUNS_TO_KEEP,
 		getKeyBlocklist: getKeyBlocklist,
 		DEFAULT_KEY_BLOCKLIST: DEFAULT_KEY_BLOCKLIST,
+		valueFilter: valueFilter,
 		DEFAULT_MAX_KEY_SHARE: DEFAULT_MAX_KEY_SHARE,
 		sourceEnabled: sourceEnabled,
 		checkBalancedParens: checkBalancedParens,
 		MAX_AGE_RE: MAX_AGE_RE,
 		parseMaxValues: parseMaxValues,
 		FIELD_NAME_RE: FIELD_NAME_RE,
+		isValidSourceName: isValidSourceName,
+		sourceSlug: sourceSlug,
 		NORMALIZERS: NORMALIZERS,
 		cimPresetFields: cimPresetFields,
 		buildPreviewSearches: buildPreviewSearches,
