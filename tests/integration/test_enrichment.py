@@ -1,4 +1,6 @@
 """The adb_enrich* macros against a real Splunk, using a temporary merged collection instead of assetdb."""
+import re
+
 import pytest
 
 from sandbox import Sandbox, field
@@ -10,7 +12,11 @@ def merged(splunk, run_id, request):
     box.fields = [field("mac", key_field="1", normalizer="mac"), field("ip", key_field="1", key_scope="scoped"), field("owner", field_type="single")]
     box.add_source("paris", [{"mac": "aa:bb:cc:dd:ee:01", "ip": "10.0.0.5", "owner": "pierre"}], scope="paris")
     box.add_source("dallas", [{"mac": "aa:bb:cc:dd:ee:02", "ip": "10.0.0.5", "owner": "dana"}], scope="dallas")
-    box.run()
+    # adb_enrich_outputs is rewritten by the Configure page for the fields of the installation, so the temporary collection needs those columns too
+    outputs = splunk.get("/servicesNS/nobody/assetdb/data/macros/adb_enrich_outputs").json()["entry"][0]["content"]["definition"]
+    builtin = {"_key", "source", "source_lookup", "last_seen"}
+    extra = [c for c in re.findall(r"(\w+) AS asset_", outputs) if c not in builtin]
+    box.run(columns=sorted(set(extra) | {f["name"] for f in box.fields}))
     yield box
     box.close()
 
