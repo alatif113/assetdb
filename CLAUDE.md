@@ -40,7 +40,7 @@ The pieces only make sense together:
 - `input_adb_lookup` sets `adb_src` (an internal marker) and `source_lookup` from it, so a `source_lookup` column inside a source lookup (a copy of a merged result) is ignored. `inputlookup append=true` chains all lookups in one pipeline, which is why the marker is set only where it is null.
 - In `stats`, single-quoted field names (`values('ip{}')`) are not field names: `rename "ip{}" as ip` first. `eval` accepts the single quotes.
 - `adb_provenance` is generated; it calls the shared macros `adb_prov_match` and `adb_prov_end` (macros.conf). Quoted macro arguments lose their quotes (that is how lists with commas are passed); `$key$` is passed bare and quoted by the macro.
-- The Explorer's "differs" compares each source with the newest one and with the final value of the asset (`viz/shared/provenance.mjs`); never only with the final value, which the merge has normalized.
+- The Explorer's "differs" compares each source with the final value of the asset (`viz/shared/provenance.mjs`): a source agrees when everything it holds is part of the final value (case, spacing, order and repeats ignored), and differs otherwise; with no final value it is compared with the newest source.
 - The repo lives in iCloud Drive, which evicts and duplicates files: `node_modules` is a symlink to `node_modules.nosync` (iCloud skips `.nosync`), and stray `name 2.ext` copies are git-ignored and excluded from the package (the archive check fails if one gets in). If a build suddenly fails with a missing module, run `npm ci`.
 
 - `python.required = 3.13` and splunk-sdk 3.x mean `adbmerge` needs a Splunk whose custom commands run on Python 3.13 (10.4.2 is tested; 10.0 always uses its bundled Python 3.9).

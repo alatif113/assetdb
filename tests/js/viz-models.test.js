@@ -167,7 +167,9 @@ test('case, spacing, order and repeats do not make a source differ; another valu
 	const rows = [{ source: 'a', field: 'city', value: ['Toronto'], seen: 30 }, { source: 'b', field: 'city', value: [' TORONTO '], seen: 20 }, { source: 'c', field: 'city', value: ['Oslo'], seen: 10 }];
 	assert.deepStrictEqual(buildProvenance(rows, { city: ['toronto'] }).city.map((x) => [x.s, x.st, !!x.used]), [['a', 'agree', true], ['b', 'agree', false], ['c', 'differ', false]]);
 	const mv = buildProvenance([{ source: 'a', field: 'ip', value: ['2.2.2.2', '1.1.1.1', '1.1.1.1'], seen: 9 }, { source: 'b', field: 'ip', value: ['1.1.1.1'], seen: 5 }], { ip: ['1.1.1.1', '2.2.2.2'] });
-	assert.deepStrictEqual(mv.ip.map((x) => [x.s, x.st]), [['a', 'agree'], ['b', 'differ']], 'the same set in another order agrees; a part of it differs');
+	assert.deepStrictEqual(mv.ip.map((x) => [x.s, x.st]), [['a', 'agree'], ['b', 'agree']], 'the same set in another order agrees, and so does a part of it');
+	const extra = buildProvenance([{ source: 'a', field: 'ip', value: ['1.1.1.1', '9.9.9.9'], seen: 9 }, { source: 'b', field: 'ip', value: [], seen: 5 }], { ip: ['1.1.1.1', '2.2.2.2'] });
+	assert.deepStrictEqual(extra.ip.map((x) => [x.s, x.st]), [['a', 'differ'], ['b', 'differ']], 'a value the final lacks, or no value, differs');
 	// nothing agrees with the final value: no source is marked as used
 	assert.strictEqual(buildProvenance([{ source: 'a', field: 'x', value: ['1'], seen: 2 }], { x: ['9'] }).x.some((e) => e.used), false);
 	// without a final value the sources are compared with the newest one

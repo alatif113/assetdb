@@ -165,7 +165,7 @@ The app has two dashboards for looking at the result. They are in the app menu n
 
 - Next to each field you see which sources supply the value that was kept. Sources are compared with each other: the most recently seen source is the one used, and a source that holds different values from it is shown in amber with `≠` (case, spacing and order are ignored, so copies of each other never differ, and neither does a single source). Click a field to compare the value of every source, with its last-seen date.
 - Fields that no source filled in are folded away under *Show N fields with no value*.
-- *N fields differ* lists the fields where sources disagreed. Several records of the same source for one asset are not counted as sources disagreeing.
+- *N fields differ* lists the fields where sources disagreed. A source agrees when everything it holds is part of the final value, so one of several IPs is not a disagreement. Several records of the same source for one asset are not counted as sources disagreeing.
 
 **Coverage.** A heatmap of how much of your estate each source covers. Pick a field in *Group by* (or leave it on *No grouping*), and each cell shows the share of the assets in that group that a source contributed to. Click a cell to open a search in a new window that lists the assets of that group and whether that source covers each one. Use the legend handles to fade cells outside a range, and click a column header to sort.
 

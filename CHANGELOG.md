@@ -50,6 +50,7 @@ Changes since 1.5.7.
 ### Fixes in the Explorer and the merge
 
 - **A source lookup that is a copy of a merged result was not counted as a source.** Its own `source_lookup` column named an old lookup, so its rows (and the source name, the Coverage column and the Explorer) followed that name. `input_adb_lookup` now always names the lookup it reads and ignores that column.
+- **"Differs" for fields with several values.** A source that holds only some of the final values (one of an asset's IPs, say) now agrees; it differs when it holds a value the final one lacks, or none.
 - **The Explorer marked a source as "differs" although it held the final value.** A source now agrees when it holds the value of the asset (or, for a field with one value, a set that contains it), as well as when it matches the newest source.
 - **`adb_provenance` is shorter.** What every source does alike is in two macros, `adb_prov_match` and `adb_prov_end`.
 
