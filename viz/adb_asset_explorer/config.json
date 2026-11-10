@@ -9,7 +9,7 @@
     "name": "AssetDB Asset Explorer",
     "description": "Search assets, then see their fields and which source supplied each value.",
     "category": "Custom",
-    "icon": null,
+    "icon": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMmE5ZDhmIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+PGNpcmNsZSBjeD0iMTAiIGN5PSIxMCIgcj0iNi41Ii8+PHBhdGggZD0iTTE1IDE1bDYgNiIvPjxwYXRoIGQ9Ik03LjUgOC41aDVNNy41IDExLjVoMyIgc3Ryb2tlLXdpZHRoPSIxLjYiLz48L3N2Zz4=",
     "dataContract": { "requiredDataSources": ["primary"], "optionalDataSources": ["provenance"] },
     "size": { "initialWidth": 1200, "initialHeight": 900 },
     "optionsSchema": {},
