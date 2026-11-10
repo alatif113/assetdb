@@ -176,3 +176,15 @@ test('case, spacing, order and repeats do not make a source differ; another valu
 	const none = buildProvenance([{ source: 'a', field: 'x', value: ['1'], seen: 2 }, { source: 'b', field: 'x', value: ['2'], seen: 1 }], { x: [''] });
 	assert.deepStrictEqual(none.x.map((e) => [e.s, e.st]), [['a', 'agree'], ['b', 'differ']]);
 });
+
+test('an adb_all row is the pinned All row and not a group, so a field with several values does not inflate the total', async () => {
+	const { parseMatrix, allRow } = await load('matrix.mjs');
+	// two groups that overlap (an asset with both tags is in both): 6 + 5 group members, but 8 assets
+	const m = parseMatrix({ fields: ['Group', 'EDR', 'adb_total'].map((name) => ({ name })), columns: [['adb_all', 'pci', 'dmz'], ['50', '100', '20'], ['8', '6', '5']] });
+	assert.deepStrictEqual(m.rows.map((r) => r.label), ['pci', 'dmz']);
+	const top = allRow(m, 'All assets');
+	assert.strictEqual(top.total, 8); assert.deepStrictEqual(top.values, [50]); assert.deepStrictEqual(top.counts, [4]); assert.strictEqual(top.pinned, true);
+	// without it the row is the weighted average of the groups, as before
+	const plain = parseMatrix({ fields: ['Group', 'EDR', 'adb_total'].map((name) => ({ name })), columns: [['a', 'b'], ['100', '0'], ['6', '4']] });
+	assert.strictEqual(allRow(plain, 'All').total, 10); assert.deepStrictEqual(allRow(plain, 'All').values, [60]);
+});

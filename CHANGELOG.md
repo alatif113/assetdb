@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.1
+
+Fixes found by a comprehensive test of ten sources, the merge and both dashboards (see docs/TESTING.md).
+
+- **The Explorer showed sources as "differs" when they agreed.** The per-source values were read raw, before the normalizers, validation and ignore lists, and compared with the merged value: a MAC with dashes, an FQDN with a trailing dot, an operating system name against its family, a tag list with an ignored value, a number written 5.0 against 5. `adb_provenance` now reads each source the way the merge does (allowed sources, normalizers, case, validation, ignore lists, eval expressions, numbers). It is rewritten the next time you open or save on the Configure page.
+- **The Explorer missed a source's row when it knew the asset only by a spelling of its MAC address** that the merge normalizes (dashes, dots, upper case). Fixed by the same change, since the asset's keys are now matched against normalized values.
+- **Coverage: the "All assets" row counted an asset once per group** when grouped by a field with several values (tags, IP addresses, categories), so it showed more assets than exist and a skewed share per source. The search now returns the pseudo-group `adb_all` (every asset once) and the heatmap pins it. Other rows are unchanged.
+
 ## 1.7.0
 
 Changes since 1.6.0.

@@ -264,6 +264,11 @@ The first template needs no add-on. A template that says "adapt before use" in i
 
 ## Changelog
 
+### 1.7.1
+
+- The Explorer no longer shows a source as *differs* when only the spelling differs (a MAC with dashes, a trailing dot, a tag the merge ignores), and it finds a source's record even when it knows the asset only by such a spelling.
+- Coverage counts every asset once in its *All assets* row when you group by a field with several values (tags, IP addresses).
+
 ### 1.7.0
 
 #### Changes to know about

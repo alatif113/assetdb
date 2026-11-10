@@ -6,7 +6,10 @@ import { asList } from './util.mjs';
  *   adb_total   the number of assets in the row
  *   <name>__n   how many assets that series covers in the row
  * Anything else starting with "_" is ignored (Splunk internal fields).
+ * A row labelled adb_all counts every asset once. It is the pinned "All" row, and is not a group: grouped by a field with several values an
+ * asset sits in several groups, so the groups add up to more than the assets.
  */
+export const ALL_ROW = 'adb_all';
 export function parseMatrix(data) {
 	if (!data || !data.fields || !data.columns || !data.columns.length || !data.columns[0].length) return null;
 	const names = data.fields.map((f) => (f && f.name) || String(f));
@@ -28,14 +31,16 @@ export function parseMatrix(data) {
 		rows.push({ label: String(asList(cell(0, r))[0] || ''), total: isNaN(total) ? null : total, values, counts });
 	}
 	const hasTotal = totalCol >= 0;
-	return { rowField: names[0], series, rows, hasTotal, hasCounts: hasTotal || Object.keys(countCol).length > 0 };
+	const at = rows.findIndex((r) => r.label === ALL_ROW), all = at >= 0 ? rows.splice(at, 1)[0] : null;
+	return { rowField: names[0], series, rows, all, hasTotal, hasCounts: hasTotal || Object.keys(countCol).length > 0 };
 }
 
 const mean = (a) => { const v = a.filter((x) => !isNaN(x)); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : NaN; };
 
-/** A pinned "All" row: the average of each series weighted by row size. Needs adb_total. */
+/** A pinned "All" row: the adb_all row when the data has one, otherwise the average of each series weighted by row size. Needs adb_total. */
 export function allRow(model, label) {
 	if (!model.hasTotal) return null;
+	if (model.all && model.all.total) return { label: label || 'All', total: model.all.total, values: model.all.values.map((v) => (isNaN(v) ? NaN : Math.round(v))), counts: model.all.counts, pinned: true };
 	const total = model.rows.reduce((s, r) => s + (r.total || 0), 0);
 	if (!total) return null;
 	const values = model.series.map((_, k) => {

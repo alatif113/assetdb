@@ -86,3 +86,20 @@ test('adb_provenance: the macro quotes the key itself, because Splunk strips the
 	const xml = fs.readFileSync(path.join(__dirname, '..', '..', 'default', 'data', 'ui', 'views', 'assetdb_explorer.xml'), 'utf8');
 	assert.ok(xml.includes('`adb_provenance($adb_asset$)`') && !/adb_provenance\(.*\|s/.test(xml), 'the dashboard passes the key without quotes');
 });
+
+test('adb_provenance reads each source the way the merge does: allowed sources, normalizers, case, validation, ignore lists, numbers', () => {
+	const cfg = [
+		general([{ name: 'A', lookup: 'a.csv' }, { name: 'B', lookup: 'b.csv' }]),
+		field('mac', { key_field: '1', field_type: 'multivalue', case_sensitive: '0', normalizer: 'mac', validation_type: 'mac' }),
+		field('tags', { field_type: 'multivalue', case_sensitive: '0', ignore_values: '["decom"]' }),
+		field('vlan', { allowed_sources: 'B' }),
+		field('cost', { value_type: 'number' }),
+		field('domain', { eval_expression: 'replace(mac, "x", "y")' }),
+	];
+	const def = G.buildProvenanceMacro(cfg).definition;
+	const [a, b] = def.split('| append [').slice(1);
+	assert.ok(/eval vlan = null\(\)/.test(a) && !/eval vlan = null\(\)/.test(b), 'a field that only accepts source B is blank for A');
+	['`normalize_mac(mac)`', 'mac=mvfilter(match(mac, ', 'tags = mvfilter(NOT (in(lower(tags), "decom")))', 'domain = replace(mac, "x", "y")', 'cost = tonumber(cost)'].forEach((x) => assert.ok(a.includes(x), 'source A: ' + x));
+	assert.ok(/foreach mac, tags, [^\]]*\[eval <<FIELD>>=lower\(<<FIELD>>\)\]/.test(a), 'case insensitive fields are lowercased');
+	assert.ok(a.indexOf('split(<<FIELD>>') < a.indexOf('normalize_mac') && a.indexOf('normalize_mac') < a.indexOf('adb_prov_match'), 'split, normalize, then match the asset keys');
+});

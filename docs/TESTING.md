@@ -126,6 +126,21 @@ They use a temporary KV collection/lookup `adbtest_<runid>` and temporary CSV lo
 exported) and delete them afterwards. The real `assetdb` collection and `assetdb.conf` are not
 touched. If a run is killed, remove leftovers matching `adbtest_*` under Settings -> Lookups.
 
+## The comprehensive estate test
+
+`tests/integration/test_comprehensive.py` builds a synthetic estate (`world.py`: 140 assets seen by ten active sources and one disabled one, with
+noisy MAC and host spellings, junk keys, a key shared by 55 assets, a three source chain, retired and stale rows) and merges it with a field
+configuration that uses every merge method, normalizers, validation, ignore lists, fill null, allowed sources, an eval expression, conflict
+tracking and a priority merge across source names with spaces. `world.expected()` is an independent model of the merge; the test compares every
+asset and field with it, then runs the searches of the Explorer and Coverage dashboards (read from the view XML by `gen_dashboard.js`) and compares
+them with the model. All objects are temporary (`adbtest_*`); the real `assetdb` is never read or written.
+
+    cd tests/integration && ../../.venv/bin/python -m pytest test_comprehensive.py -q
+    ADB_DUMP=../../dist/comprehensive ../../.venv/bin/python -m pytest test_comprehensive.py -q   # also writes the real search results
+    node tests/e2e/comprehensive.mjs                                                                # renders them in both visualizations
+
+`comprehensive.mjs` needs `npm i --no-save playwright` and `npm run build:viz`.
+
 ## Troubleshooting
 
 | Symptom | Fix |

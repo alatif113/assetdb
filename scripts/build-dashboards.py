@@ -78,11 +78,13 @@ GROUPS = """| rest /servicesNS/nobody/assetdb/data/transforms/lookups splunk_ser
 # One pass over the assets, keeping only what is counted (_key is not needed: a field name is). Every asset also gets the pseudo-source
 # adb_total, so the count of that "source" per group is the number of assets in the group and no eventstats over all the assets is
 # needed (500,000 assets: 7-8 s with eventstats and dc, 2-2.4 s now, same result).
+# Grouped by a field that holds several values (tags, ip, category) an asset is counted in each of its groups, so the sizes of the groups do
+# not add up to the number of assets. The pseudo-group adb_all holds every asset once; the heatmap uses it as its pinned "All assets" row.
 COVERAGE = """| inputlookup assetdb
 | fields source, "$cov_by$"
 | eval adb_g=if("$cov_by$"="No grouping", "All assets", '$cov_by$')
 | eval adb_g=mvdedup(mvmap(adb_g, if(len(trim(adb_g)) > 0, adb_g, null())))
-| eval adb_g=coalesce(adb_g, "(no value)"), source=mvappend(source, "adb_total")
+| eval adb_g=coalesce(adb_g, "(no value)"), adb_g=if("$cov_by$"="No grouping", adb_g, mvappend(adb_g, "adb_all")), source=mvappend(source, "adb_total")
 | mvexpand adb_g
 | mvexpand source
 | stats count as n by adb_g source
@@ -91,7 +93,9 @@ COVERAGE = """| inputlookup assetdb
 | xyseries adb_g source pct
 | fillnull value=0
 | rename adb_g as Group
-| sort 0 Group
+| eval adb_o=if(Group="adb_all", 0, 1)
+| sort 0 adb_o Group
+| fields - adb_o
 | head %(max)d""" % {"max": MAX_GROUPS}
 
 

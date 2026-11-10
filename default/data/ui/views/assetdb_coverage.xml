@@ -6,7 +6,7 @@
 | fields source, "$cov_by$"
 | eval adb_g=if("$cov_by$"="No grouping", "All assets", '$cov_by$')
 | eval adb_g=mvdedup(mvmap(adb_g, if(len(trim(adb_g)) > 0, adb_g, null())))
-| eval adb_g=coalesce(adb_g, "(no value)"), source=mvappend(source, "adb_total")
+| eval adb_g=coalesce(adb_g, "(no value)"), adb_g=if("$cov_by$"="No grouping", adb_g, mvappend(adb_g, "adb_all")), source=mvappend(source, "adb_total")
 | mvexpand adb_g
 | mvexpand source
 | stats count as n by adb_g source
@@ -15,7 +15,9 @@
 | xyseries adb_g source pct
 | fillnull value=0
 | rename adb_g as Group
-| sort 0 Group
+| eval adb_o=if(Group="adb_all", 0, 1)
+| sort 0 adb_o Group
+| fields - adb_o
 | head 500]]></query>
     <earliest>-1m</earliest>
     <latest>now</latest>

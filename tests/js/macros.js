@@ -1,6 +1,7 @@
 'use strict';
 // Expands the backtick macros of default/macros.conf in a piece of SPL, the way Splunk does (arguments by `$name$`), so tests can check
-// what the generated merge search does without caring which part of it is a named macro. Only macros with a one line definition are read.
+// what the generated merge search does without caring which part of it is a named macro. A definition may continue on the next line after a
+// trailing backslash (as in macros.conf).
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -9,7 +10,7 @@ const CONF = path.join(__dirname, '..', '..', 'default', 'macros.conf');
 function parseMacros(text = fs.readFileSync(CONF, 'utf8')) {
 	const macros = {};
 	let cur = null;
-	for (const raw of text.split('\n')) {
+	for (const raw of text.replace(/\\\r?\n/g, '').split('\n')) {
 		const line = raw.trim();
 		const head = /^\[(.+)\]$/.exec(line);
 		if (head) { cur = macros[head[1]] = { args: [], definition: '' }; continue; }

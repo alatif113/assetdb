@@ -679,6 +679,48 @@ define([], function () {
 	}
 
 	/**
+	 * The value cleaning of the merge, for one source, as SPL for the provenance macro: {nulls, steps}. `nulls` blank the fields that do not accept
+	 * values from this source (allowed sources); `steps` are the commands that follow the multivalue split: normalizers, lowercasing, validation,
+	 * ignore lists, eval expressions and number conversion, in the order the merge runs them (see buildSearchLines).
+	 */
+	function provenanceCleaning(fieldArray, fields, sourceName) {
+		const general = (fieldArray.find((e) => e.name === 'general') || {}).content || {};
+		const nulls = [], normalize = [], lower = [], validation = [], ignored = [], exprs = [], typed = [];
+		fields.forEach(({name, content}) => {
+			const c = content || {};
+			const isKey = !!parseInt(c.key_field);
+			const hasCase = c.case_sensitive !== undefined && c.case_sensitive !== '';
+			const caseSensitive = !!parseInt(hasCase ? c.case_sensitive : (general.default_case_sensitive || 0));
+			const keepCase = isKey && !caseSensitive && !!parseInt(c.keep_case || 0);
+			const allowed = (c.allowed_sources || '').split(',').map((x) => x.trim()).filter(Boolean);
+			if (allowed.length && !allowed.includes(sourceName)) nulls.push(`${name} = null()`);
+			let normalizer = c.normalizer;
+			if (!normalizer || normalizer === 'default') normalizer = general.default_normalizer || 'none';
+			if (NORMALIZERS[normalizer]) normalize.push(`| \`${NORMALIZERS[normalizer]}(${name})\``);
+			if (!caseSensitive && !keepCase) lower.push(name);
+			const vt = c.validation_type || 'none';
+			if (VALIDATION_TYPES[vt]) validation.push(`${name}=mvfilter(match(${name}, ${splQuote(VALIDATION_TYPES[vt])}))`);
+			if (c.validation) validation.push(`${name}=mvfilter(match(${name}, ${splQuote(c.validation)}))`);
+			const own = c.ignore_values ? safeParse(c.ignore_values, null) : null;
+			const inherit = c.inherit_ignore === undefined || c.inherit_ignore === '' ? true : !!parseInt(c.inherit_ignore);
+			const global = inherit ? safeParse(general.ignore_values, []) : [];
+			if (Array.isArray(own)) {
+				const clause = valueFilter(name, own.concat(Array.isArray(global) ? global : []), caseSensitive, 'ignore');
+				if (clause) ignored.push(clause);
+			}
+			if (c.eval_expression) { checkEvalExpression(c.eval_expression); exprs.push(`${name} = ${c.eval_expression}`); }
+			if (c.field_type === 'single' && ['number', 'time'].includes(c.value_type)) typed.push(`${name} = tonumber(${name})`);
+		});
+		const steps = normalize.slice();
+		if (lower.length) steps.push(`| foreach ${lower.join(', ')} [eval <<FIELD>>=lower(<<FIELD>>)]`);
+		if (validation.length) steps.push(`| eval ${validation.join(', ')}`);
+		if (ignored.length) steps.push(`| eval ${ignored.join(', ')}`);
+		if (exprs.length) steps.push(`| eval ${exprs.join(', ')}`);
+		if (typed.length) steps.push(`| eval ${typed.join(', ')}`);
+		return {nulls, steps};
+	}
+
+	/**
 	 * The definition of the adb_provenance(key) macro (Splunk removes the quotes of a quoted macro argument, so the macro adds its own
 	 * around the key; call it as adb_provenance(<_key>)): what every enabled source holds for the asset whose _key is
 	 * `key`, as rows of (source, field, value, seen, adb_key); adb_key repeats the asset so a visualization can drop rows
@@ -718,7 +760,14 @@ define([], function () {
 				if (!COLUMN_RE.test(column)) throw new Error(`Invalid column "${column}" in the column mapping of source ${name}`);
 				if (column !== target) lines.push(`| eval ${target}='${column}'`);
 			});
+			// Values are shown the way the merge reads them: values the field does not take from this source are left out, then split, normalized,
+			// lowercased where the field ignores case, validated, filtered by the ignore lists and given their eval expressions. Without this a
+			// MAC written with dashes, an FQDN with a trailing dot or an ignored tag would look like a disagreement with the merged value, and a
+			// row that only knows the MAC in another spelling would not be found for the asset.
+			const clean = provenanceCleaning(fieldArray, fields, name);
+			if (clean.nulls.length) lines.push(`| eval ${clean.nulls.join(', ')}`);
 			if (multivalue.length) lines.push(`| foreach ${multivalue.join(', ')} [eval <<FIELD>>=split(<<FIELD>>, "|")]`);
+			clean.steps.forEach((step) => lines.push(step));
 			// What every source does alike lives in two macros (macros.conf): adb_prov_match finds the asset's rows by its keys (search is
 			// case-insensitive, so the keys need no lowercasing), adb_prov_end names the source and keeps the columns. Quoted arguments, because
 			// they hold commas or spaces (Splunk takes the quotes off). The key is passed as it is: the macro quotes it itself.
