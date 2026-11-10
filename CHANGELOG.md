@@ -1,37 +1,14 @@
 # Changelog
 
-## 1.6.0
+## 1.7.0
 
-Changes since 1.5.7.
+Changes since 1.6.0.
 
-### Breaking changes
-
-**Requirements**
-- **`adbmerge` needs Python 3.13.** `commands.conf` now sets `python.required = 3.13` and the app ships splunk-sdk 3.0.1. Splunk 10.0, which always runs commands on its bundled Python 3.9, can no longer run the command. Use a Splunk version that can run commands on Python 3.13 (tested: 10.4.2).
-
-**Removed macros.** Searches that use them stop working:
-- `retain_adb_lookup(2)`, `ageout_adb_lookup(2)`, `join_mv_fields`, `split_mv_fields` and `host_from_dns(2)`. The merge never used them. Copy the definitions from 1.5.7 `macros.conf` into your own app if you rely on them.
-
-**Changed macros**
-- `input_adb_lookup(lookup)` also sets `source_lookup` to the lookup name. A `source_lookup` column inside the lookup is ignored: a lookup that is a copy of a merged result (or was renamed) carries the old name, which made its rows count as another source. The source name, the coverage columns and the Explorer then followed the stale name.
-- `normalize_mac` now lowercases the result (it kept the case as written), and `normalize_mac` and `normalize_os` work on multivalue fields. `normalize_os` recognizes more systems (OS X, Darwin, Sonoma, Sequoia, Tahoe).
-
-**Merge results can differ from 1.5.7**
-- `adbmerge` now merges across all input chunks. Before, rows more than one chunk (about 20,000 events) apart were silently left unjoined, so large inputs produced more, smaller assets. Expect fewer assets after upgrading.
-- Defaults that skip data: keys found in more than **50** rows are no longer used for matching (*Max rows per key*), and a key blocklist (all-zero and broadcast MACs, `0.0.0.0`, `::`, loopback, link-local, `localhost`, `unknown`, `none`, `null`, `n/a` and similar) is applied to every key field. Both can be changed or turned off in Settings.
-- **Run safety is on by default.** A run that produces fewer than 50% of the assets of the last successful run is not saved (status `blocked_low_count`), and a run with no assets never overwrites the asset database. If your inventory legitimately shrinks by more than half, lower *Minimum size vs last run*.
-- Multivalue fields over *Max values* now keep the most recent values (by `_time`). Before, they kept the alphabetically first. Set *Value order* to *Alphabetical* to get the old behavior. *Max values* is limited to 1 to 100.
-- *Fill null* is applied after the merge, only to assets with no value at all. Before, it was added per source row and competed with real values.
-- *Keep original case* is rejected with the host name, FQDN, user name, email and OS normalizers, which lowercase the value and defeated it. Fields with that combination must change one of the two.
-- The `assetdb` collection has new columns: `source`, `source_lookup`, `last_seen`, `scope` and `conflicts`. Existing columns are unchanged.
-
-**Saved search and permissions**
-- `assetdb-lookupgen` no longer sets `dispatch.earliest_time` or `dispatch.latest_time`, and has a 60 minute schedule window. It is rewritten the first time you save on the Configure page; until then your scheduled runs use the old search text.
-- Only the `admin` role can write the app's configuration, saved search, collections and lookup definitions. Before, `power` could write app-level objects. The world-writable `viewstates` entry and the unused `props` and `eventtypes` exports are removed from `default.meta`.
-- The app navigation has one entry, Configure. The Search entry is gone (use the Search app).
-- `assetdb.conf` is now replicated in search head clusters (`server.conf`).
-
-**Configuration compatibility.** `assetdb.conf` keeps its existing keys; the new ones (`enabled`, `key_scope`, `validation_type`, and so on) are optional, so a 1.5.7 configuration loads as it is.
+### Changes that affect existing searches and results
+- **`input_adb_lookup(lookup)` always names the lookup it reads.** A `source_lookup` column inside the lookup is now ignored: a lookup that is a copy of a merged result (or was renamed) carried the old name, which made its rows count as another source. The macro leaves an `adb_src` helper column in your own searches that use it; drop it with `fields - adb_src`.
+- **The Explorer's "differs" rule is new.** See *Fields differ* below.
+- **The Configure page has a dark theme** and is dark by default; it follows a light Splunk preference.
+- Source names may contain spaces and punctuation (see below). Existing names keep working.
 
 ### Explorer and Coverage, themes, navigation
 - Two new classic dashboards in the app menu, **Explorer** and **Coverage**, built on two custom visualizations that ship in the app. The Explorer searches assets (100 at a time, most recently seen first), lists the fields of the selected one and shows which source supplied each value. Coverage is a heatmap of the share of assets each source covers, grouped by any field; a click on a cell opens a search of that group's assets in a new window. The visualizations also ship as Dashboard Studio visualizations (`assetdb.adb_heatmap`, `assetdb.adb_asset_explorer`, Splunk 10.4 or later).
@@ -71,6 +48,42 @@ Measured on 500,000 rows / assets on Splunk 10.4.2 (searches reviewed one by one
 ### Merge search
 - The steps of the merge search that do not depend on the configuration are now macros (`adb_merge`, `adb_save_overflow`, `adb_run_guard`, `adb_record_run`, `adb_write_gate`, `adb_tag_time`, `adb_newest_first`, `adb_counters`), so the generated search is about half as long and reads as a list of steps. The default key blocklist is a macro too (`adb_key_blocklist`, `adb_key_blocklist_cs`); a customized blocklist is still written out in full. The result is the same: on a live data set the old and the new search produced identical merge results. A search saved by an earlier version keeps working and is rewritten the next time you save on the Configure page.
 
+### Normalizers
+- New normalizer *Operating system family* (macro `normalize_os_family`): maps values such as `Windows Server 2019`, `windows_10`, `Ubuntu 22.04` or `macOS Sonoma` to `Windows Server`, `Windows Desktop`, `Linux` or `Mac` (also `iOS`, `iPadOS`, `Android`, `Unix`, `Hypervisor` and `Network device`; anything else is `Other`). The existing *Operating system* normalizer (specific names such as `ubuntu` or `redhat`) is renamed in the list for clarity; it works as before.
+
+## 1.6.0
+
+Changes since 1.5.7.
+
+### Breaking changes
+
+**Requirements**
+- **`adbmerge` needs Python 3.13.** `commands.conf` now sets `python.required = 3.13` and the app ships splunk-sdk 3.0.1. Splunk 10.0, which always runs commands on its bundled Python 3.9, can no longer run the command. Use a Splunk version that can run commands on Python 3.13 (tested: 10.4.2).
+
+**Removed macros.** Searches that use them stop working:
+- `retain_adb_lookup(2)`, `ageout_adb_lookup(2)`, `join_mv_fields`, `split_mv_fields` and `host_from_dns(2)`. The merge never used them. Copy the definitions from 1.5.7 `macros.conf` into your own app if you rely on them.
+
+**Changed macros**
+- `input_adb_lookup(lookup)` also sets `source_lookup` (to the lookup name when the lookup has no such column).
+- `normalize_mac` now lowercases the result (it kept the case as written), and `normalize_mac` and `normalize_os` work on multivalue fields. `normalize_os` recognizes more systems (OS X, Darwin, Sonoma, Sequoia, Tahoe).
+
+**Merge results can differ from 1.5.7**
+- `adbmerge` now merges across all input chunks. Before, rows more than one chunk (about 20,000 events) apart were silently left unjoined, so large inputs produced more, smaller assets. Expect fewer assets after upgrading.
+- Defaults that skip data: keys found in more than **50** rows are no longer used for matching (*Max rows per key*), and a key blocklist (all-zero and broadcast MACs, `0.0.0.0`, `::`, loopback, link-local, `localhost`, `unknown`, `none`, `null`, `n/a` and similar) is applied to every key field. Both can be changed or turned off in Settings.
+- **Run safety is on by default.** A run that produces fewer than 50% of the assets of the last successful run is not saved (status `blocked_low_count`), and a run with no assets never overwrites the asset database. If your inventory legitimately shrinks by more than half, lower *Minimum size vs last run*.
+- Multivalue fields over *Max values* now keep the most recent values (by `_time`). Before, they kept the alphabetically first. Set *Value order* to *Alphabetical* to get the old behavior. *Max values* is limited to 1 to 100.
+- *Fill null* is applied after the merge, only to assets with no value at all. Before, it was added per source row and competed with real values.
+- *Keep original case* is rejected with the host name, FQDN, user name, email and OS normalizers, which lowercase the value and defeated it. Fields with that combination must change one of the two.
+- The `assetdb` collection has new columns: `source`, `source_lookup`, `last_seen`, `scope` and `conflicts`. Existing columns are unchanged.
+
+**Saved search and permissions**
+- `assetdb-lookupgen` no longer sets `dispatch.earliest_time` or `dispatch.latest_time`, and has a 60 minute schedule window. It is rewritten the first time you save on the Configure page; until then your scheduled runs use the old search text.
+- Only the `admin` role can write the app's configuration, saved search, collections and lookup definitions. Before, `power` could write app-level objects. The world-writable `viewstates` entry and the unused `props` and `eventtypes` exports are removed from `default.meta`.
+- The app navigation has one entry, Configure. The Search entry is gone (use the Search app).
+- `assetdb.conf` is now replicated in search head clusters (`server.conf`).
+
+**Configuration compatibility.** `assetdb.conf` keeps its existing keys; the new ones (`enabled`, `key_scope`, `validation_type`, and so on) are optional, so a 1.5.7 configuration loads as it is.
+
 ### Configure page
 - Rewritten: Sources, Fields, Pipeline and Settings tabs, a status strip, read-only tables with an Enabled switch and Edit, Duplicate and Remove icons, and draft-and-save editing (nothing is written until Save).
 - Warning icons on rows for lookups that cannot be read, sources with no rows and fields that no enabled source supplies.
@@ -83,7 +96,6 @@ Measured on 500,000 rows / assets on Splunk 10.4.2 (searches reviewed one by one
 ### Merge
 - Source options: enabled, role (authoritative or enrich only), column mapping, scope, max age, time column and row filter.
 - Field options: normalizer presets, typed validation, ignore lists (values, regex, CIDR) with a global list, allowed sources, earliest, sum, min, max, average and coalesce methods, conflict flags, keep original case, value type and description.
-- New normalizer *Operating system family* (macro `normalize_os_family`): maps values such as `Windows Server 2019`, `windows_10`, `Ubuntu 22.04` or `macOS Sonoma` to `Windows Server`, `Windows Desktop`, `Linux` or `Mac` (also `iOS`, `iPadOS`, `Android`, `Unix`, `Hypervisor` and `Network device`; anything else is `Other`). The existing *Operating system* normalizer (specific names such as `ubuntu` or `redhat`) is renamed in the list for clarity; it works as before.
 - Key quality: global key blocklist and shared-key guard. Scoped keys for the same address in different sites or tenants.
 - Run history in `assetdb_runs`, oversized clusters in `assetdb_overflow`, and the disabled alert search `assetdb-run-alert`.
 - CIM field presets and the enrichment macros `adb_enrich`, `adb_enrich_mac`, `adb_enrich_ip`, `adb_enrich_host`, `adb_enrich_scoped` and `adb_enrich_with`.

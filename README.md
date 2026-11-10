@@ -264,6 +264,23 @@ The first template needs no add-on. A template that says "adapt before use" in i
 
 ## Changelog
 
+### 1.7.0
+
+#### Changes to know about
+
+- **`input_adb_lookup` always names the lookup it reads** and ignores a `source_lookup` column inside it, so a copy of a merged result still counts as its own source. It leaves an `adb_src` helper column in your own searches; drop it with `fields - adb_src`.
+- **The Explorer's *differs* rule is new.** A source agrees when everything it holds is part of the asset's merged value (case, spacing and order ignored), so one of several IPs is not a difference. The count under the asset name and the list it opens always match.
+
+#### New
+
+- A source shows its vendor's logo on the Configure page, the Explorer and Coverage, picked from its name or lookup name.
+- Source names can contain spaces and punctuation.
+- Ten more source templates (36 in all): runZero, Nozomi Networks, Claroty xDome, HCL BigFix, ManageEngine, Trellix ePO, Device42, Workspace ONE UEM, Cisco Secure Endpoint and Symantec Endpoint Protection. The Active Directory template reads last logon and manager.
+- Dark theme for Configure, Explorer and Coverage, with loading skeletons and menu icons.
+- The merge no longer loses results past 200 MB of memory on very large inputs, and the Explorer and Coverage pages are 3 to 4 times faster at 500,000 assets.
+
+See CHANGELOG.md for the full list.
+
 ### 1.6.0
 
 #### Breaking changes in 1.6.0
