@@ -1,5 +1,5 @@
 // Bundles every viz/<name>/src/visualization.js twice:
-//   appserver/static/visualizations/<name>/{visualization.js,config.json}  for Dashboard Studio (Splunk 10.4+, see default/visualizations.conf)
+//   appserver/static/visualizations/<name>/{visualization.js,config.json,preview.png}  for Dashboard Studio (Splunk 10.4+, see default/visualizations.conf)
 //   appserver/static/js/classic/<name>.min.js                                       for the classic dashboards (any Splunk), where the page puts the
 //     visualization in an iframe and viz/shared/classic-host.mjs stands in for the Studio extension API.
 // Run with: npm run build:viz  (--out <dir> builds both trees somewhere else, which the freshness check uses.)
@@ -34,6 +34,7 @@ for (const name of names) {
 		bundle: true, format: 'esm', platform: 'browser', target: 'es2020', minify: true, sourcemap: false, legalComments: 'none', plugins: [cssInject],
 	});
 	copyFileSync(join(root, name, 'config.json'), join(dir, 'config.json'));
+	if (existsSync(join(root, name, 'preview.png'))) copyFileSync(join(root, name, 'preview.png'), join(dir, 'preview.png'));
 	await build({
 		entryPoints: [join(root, name, 'src', 'visualization.js')], outfile: join(classicOut, name + '.min.js'),
 		bundle: true, format: 'iife', platform: 'browser', target: 'es2020', minify: true, sourcemap: false, legalComments: 'none', plugins: [cssInject],

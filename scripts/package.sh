@@ -117,8 +117,8 @@ verify_archive() { # file
   [[ -z "$bad" ]] || die "$EX_FAIL" "Only png files may be in static/ and only *.min.js in appserver/static/js: $bad"
   tar -tzf "$f" | grep -q "^$id/appserver/static/js/src" && die "$EX_FAIL" "JavaScript sources must not ship"
   tar -tzf "$f" | grep -qE "^$id/(viz|node_modules)(/|$)" && die "$EX_FAIL" "Visualization sources must not ship (only the built files in appserver/static/visualizations)"
-  bad=$(tar -tzf "$f" | grep -E "^$id/appserver/static/visualizations/[^/]+/[^/]+$" | grep -vE "/(visualization\.js|config\.json)$" || true)
-  [[ -z "$bad" ]] || die "$EX_FAIL" "Only visualization.js and config.json may be in a visualization folder: $bad"
+  bad=$(tar -tzf "$f" | grep -E "^$id/appserver/static/visualizations/[^/]+/[^/]+$" | grep -vE "/(visualization\.js|config\.json|preview\.png)$" || true)
+  [[ -z "$bad" ]] || die "$EX_FAIL" "Only visualization.js, config.json and preview.png may be in a visualization folder: $bad"
   bad=$(tar -tzf "$f" | grep -E "^$id/appserver/static/js/classic/[^/]+$" | grep -vE "\.min\.js$" || true)
   [[ -z "$bad" ]] || die "$EX_FAIL" "Only .min.js files may be in appserver/static/js/classic: $bad"
   for viz in $(grep -E '^\[' "$ROOT_DIR/default/visualizations.conf" | tr -d '[]'); do
